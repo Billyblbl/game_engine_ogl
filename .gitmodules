@@ -1,0 +1,7 @@
+[submodule "epitech_module_project"]
+	path = epitech_module_project
+	url = git@github.com:EpitechPromo2022/M-GAM-906-PAR-9-1-openglproject-maxime.tarel.git
+[submodule "imgui"]
+	path = imgui
+	url = https://github.com/ocornut/imgui.git
+	branch = docking

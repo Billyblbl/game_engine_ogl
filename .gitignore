@@ -1,0 +1,11 @@
+*.o
+*.a
+*.lib
+*.so
+*.dll
+*.log
+*.ini
+
+.vscode
+build
+env.sh

@@ -15,12 +15,15 @@ INC = .
 INC += $(IMGUI)
 INC += $(IMGUI)/backends
 INC += $(GLFW)/include
+INC += $(GLEW)/include
 
 LIB = .
 LIB += $(GLFW)/lib
+LIB += $(GLEW)/lib
 
 # LDFLAGS += -lvulkan-1
 LDFLAGS += -lglfw3
+LDFLAGS += -lglew32
 LDFLAGS += -lopengl32
 
 CFLAGS = -g3 -std=c++20
@@ -39,8 +42,12 @@ $(BUILD_DIR):
 $(IMGUI_MODULE): $(IMGUI_SRC) $(BUILD_DIR)
 	cat $(IMGUI_SRC) | $(CXX) -c -x c++ $(CFLAGS) $(INC:%=-I%) -o $@ -
 
+# $(APP_MODULE): $(SRC) $(BUILD_DIR)
+# 	cat $(SRC) | $(CXX) -c -x c++ $(CFLAGS) $(INC:%=-I%) -o $@ -
+
 $(APP_MODULE): $(SRC) $(BUILD_DIR)
-	cat $(SRC) | $(CXX) -c -x c++ $(CFLAGS) $(INC:%=-I%) -o $@ -
+	$(CXX) -c $(SRC) $(CFLAGS) $(INC:%=-I%) -o $@
+
 
 $(APP): $(APP_MODULE) $(IMGUI_MODULE)
 	$(CXX) $(CFLAGS) $(APP_MODULE) $(IMGUI_MODULE) $(INC:%=-I%) $(LIB:%=-L%) $(LDFLAGS) -o $@
@@ -50,4 +57,4 @@ clean:
 
 re: clean all
 
-.PHONY: all clean re
+.PHONY: all clean re $(APP_MODULE)

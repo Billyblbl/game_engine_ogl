@@ -3,6 +3,7 @@
 // If you are new to Dear ImGui, read documentation from the docs/ folder + read the top of imgui.cpp.
 // Read online: https://github.com/ocornut/imgui/tree/master/docs
 
+#include <limits>
 #include <stdio.h>
 #include <chrono>
 #include <imgui/imgui.h>
@@ -15,7 +16,8 @@
 #include <glutils.cpp>
 #include <rendering.cpp>
 #include <vertex.cpp>
-
+#include <transform.cpp>
+#include <buffer.cpp>
 
 static void glfw_error_callback(int error, const char* description) {
 	fprintf(stderr, "GLFW Error %d: %s\n", error, description);
@@ -53,14 +55,17 @@ int main(int, char**) {
 	if (!glfwInit())
 		return 1;
 
+	auto dimensions = glm::ivec2(1920/2, 1080/2);
+
 	// Create window with graphics context
-	GLFWwindow* window = glfwCreateWindow(1280, 720, "Test renderer", NULL, NULL);
+	GLFWwindow* window = glfwCreateWindow(dimensions.x, dimensions.y, "Test renderer", NULL, NULL);
 	if (window == NULL)
 		return 1;
 	glfwMakeContextCurrent(window);
 	glfwSwapInterval(1); // Enable vsync
 
 	{// Init OpenGL
+		printf("Initializing OpenGL\n");
 		GLenum err = glewInit();
 		if (GLEW_OK != err) {
 			fprintf(stderr, "GLEW Error: %s\n", glewGetErrorString(err));
@@ -84,6 +89,7 @@ int main(int, char**) {
 	}
 
 	{// Init DearImgui
+		printf("Initializing DearImgui\n");
 		const char* glsl_version = getVersion();
 		// Setup Dear ImGui context
 		IMGUI_CHECKVERSION();
@@ -131,15 +137,15 @@ int main(int, char**) {
 
 	//Render data
 	auto simpleDrawPipeline = createRenderPipeline(
-		loadShader("./shaders/simpleDraw.vert", GL_VERTEX_SHADER),
-		loadShader("./shaders/simpleDraw.frag", GL_FRAGMENT_SHADER)
+		loadShader("./shaders/camera2DRender.vert", GL_VERTEX_SHADER),
+		loadShader("./shaders/camera2DRender.frag", GL_FRAGMENT_SHADER)
 	);
 	//simple rect
 	auto vertices = std::array{
-		DefaultVertex2D { glm::vec2(.3f), glm::vec4(1.f, 0.f, 0.f, 1.f) },
-		DefaultVertex2D { glm::vec2(.3f, .7f), glm::vec4(0.f, 1.f, 0.f, 1.f) },
-		DefaultVertex2D { glm::vec2(.7f), glm::vec4(0.f, 0.f, 1.f, 1.f) },
-		DefaultVertex2D { glm::vec2(.7f, .3f), glm::vec4(0,0,0,1) }
+		DefaultVertex2D { glm::vec2(-300.f), glm::vec4(1.f, 0.f, 0.f, 1.f) },
+		DefaultVertex2D { glm::vec2(-300.f, 300.f), glm::vec4(0.f, 1.f, 0.f, 1.f) },
+		DefaultVertex2D { glm::vec2(300.f), glm::vec4(0.f, 0.f, 1.f, 1.f) },
+		DefaultVertex2D { glm::vec2(300.f, -300.f), glm::vec4(0,0,0,1) }
 	};
 	auto indices = std::array{
 		// 0u, 1u, 2u,
@@ -150,11 +156,17 @@ int main(int, char**) {
 
 	auto vbo = createBufferSpan(std::span(vertices.data(), vertices.size()));
 	auto ibo = createBufferSpan(std::span(indices.data(), indices.size()));
-	auto vao = recordVAO(vertexAttributesOf<DefaultVertex2D>, sizeof(DefaultVertex2D), vbo, ibo);
+	auto vao = recordVAO<DefaultVertex2D>(vbo, ibo);
 
 	// Our state
-	bool show_demo_window = true;
 	auto clock = Time::Start();
+	auto cameraTransform = Transform2D{};
+	auto orthoCamera = OrthoCamera { glm::vec3(dimensions, 1) };
+
+	auto viewProjectionMatrix = mapObject(glm::inverse(cameraTransform.matrix()));
+	auto modelMatrix = mapObject(glm::mat4());
+
+	fflush(stdout);
 
 	// Main loop
 	while (!glfwWindowShouldClose(window)) {
@@ -163,27 +175,50 @@ int main(int, char**) {
 		// - When io.WantCaptureMouse is true, do not dispatch mouse input data to your main application, or clear/overwrite your copy of the mouse data.
 		// - When io.WantCaptureKeyboard is true, do not dispatch keyboard input data to your main application, or clear/overwrite your copy of the keyboard data.
 		// Generally you may always pass all inputs to dear imgui, and hide them from your application based on those two flags.
-		glfwPollEvents();
-		glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
-
-		{//Render Imgui overlay
-		// Start the Dear ImGui frame
-			ImGui_ImplOpenGL3_NewFrame();
-			ImGui_ImplGlfw_NewFrame();
-			ImGui::NewFrame();
-
-			// 1. Show the big demo window (Most of the sample code is in ImGui::ShowDemoWindow()! You can browse its code to learn more about Dear ImGui!).
-			if (show_demo_window)
-				ImGui::ShowDemoWindow(&show_demo_window);
-
-			// Rendering
-			ImGui::Render();
+		{// General Update
+			clock.Update();
+			glfwPollEvents();
 			int display_w, display_h;
 			glfwGetFramebufferSize(window, &display_w, &display_h);
-			glViewport(0, 0, display_w, display_h);
-			ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
+			orthoCamera.dimensions.x = display_w;
+			orthoCamera.dimensions.y = display_h;
+			GL_GUARD(glViewport(0, 0, display_w, display_h));
+			GL_GUARD(glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT));
+		}
 
+		{//Imgui overlay
+			ImGui_ImplOpenGL3_NewFrame();
+			ImGui_ImplGlfw_NewFrame();
+
+			ImGui::NewFrame();
+			ImGui::Begin("Camera controls");
+			{
+				ImGui::Text("Camera Transform");
+				ImGui::DragFloat2("Position", (float*)&cameraTransform.translation, .1f, .0f, .0f, "%.3f");
+				ImGui::DragFloat("Rotation", &cameraTransform.rotation, .1f, .0f, .0f, "%.3f");
+				ImGui::DragFloat2("Scale", (float*)&cameraTransform.scale, .1f, .0f, .0f, "%.3f");
+
+				ImGui::Text("Ortho Camera");
+				ImGui::DragFloat3("Dimensions", (float*)&orthoCamera.dimensions, .1f, .0f, .0f, "%.3f");
+				ImGui::DragFloat3("Center", (float*)&orthoCamera.center, .1f, .0f, .0f, "%.3f");
+			}
+			ImGui::End();
+			ImGui::Render();
+
+			viewProjectionMatrix.obj = orthoCamera.matrix() * glm::inverse(cameraTransform.matrix());
+		}
+
+		{//Render scene
+			auto ubos = std::array {
+				bind<glm::mat4>(viewProjectionMatrix, 0),
+				bind<glm::mat4>(modelMatrix, 1)
+			};
+			draw(simpleDrawPipeline, vao, indices.size(), 1, noBinds, noBinds, std::span(ubos));
+		}
+
+		{// Draw overlay
+			ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
 			// Update and Render additional Platform Windows
 			// (Platform functions may change the current OpenGL context, so we save/restore it to make it easier to paste this code elsewhere.
 			//  For this specific demo app we could also call glfwMakeContextCurrent(window) directly)
@@ -193,13 +228,7 @@ int main(int, char**) {
 				ImGui::RenderPlatformWindowsDefault();
 				glfwMakeContextCurrent(backup_current_context);
 			}
-
 		}
-
-		{//Render scene
-			draw(simpleDrawPipeline, vao, indices.size());
-		}
-
 
 		glfwSwapBuffers(window);
 	}

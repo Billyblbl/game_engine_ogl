@@ -26,6 +26,13 @@ template<> constexpr auto MakeVertexAttributeSpec<glm::ivec4>(size_t offset) { r
 
 #define SpecsOf(vertex, attribute) MakeVertexAttributeSpec<decltype(vertex::attribute)>(offsetof(vertex, attribute))
 
+template<typename T> constexpr VertexAttributeSpecs vertexAttributesOf[] = {};
+
+template<typename T> GLuint recordVAO(GLuint vbo, GLuint ibo) {
+	static_assert(std::size(vertexAttributesOf<T>) > 0, "No Attributes defined");
+	return recordVAO(vertexAttributesOf<T>, sizeof(T), vbo, ibo);
+}
+
 GLuint recordVAO(
 	std::span<const VertexAttributeSpecs>	attributes,
 	GLsizei stride,
@@ -54,7 +61,6 @@ GLuint recordVAO(
 	return id;
 }
 
-template<typename T> constexpr VertexAttributeSpecs vertexAttributesOf[] = {};
 
 struct DefaultVertex2D {
 	glm::vec2 position;

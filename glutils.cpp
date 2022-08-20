@@ -198,19 +198,25 @@ void CheckGLError(const std::string_view& expression, const std::string_view& fi
 #define GL_GUARD(x) x
 #endif
 
-template <typename T> static GLuint createBufferSpan(const std::span<T> buffer) {
+#define CGL_BUFFER_MAPPED (GL_MAP_WRITE_BIT | GL_MAP_PERSISTENT_BIT)
+
+template <typename T> static GLuint createBufferSpan(const std::span<T> buffer, std::span<T>* mapping = nullptr) {
 	GLuint id;
 	GL_GUARD(glCreateBuffers(1, &id));
-	GL_GUARD(glNamedBufferStorage(id, sizeof(T) * buffer.size(), buffer.data(), 0));
+	GL_GUARD(glNamedBufferStorage(id, buffer.size_bytes(), buffer.data(), (mapping == nullptr) ? 0 : CGL_BUFFER_MAPPED));
+	if (mapping != nullptr) {
+		auto ptr = GL_GUARD(glMapNamedBufferRange(id, 0, sizeof(T), CGL_BUFFER_MAPPED | GL_MAP_FLUSH_EXPLICIT_BIT));
+		*mapping = std::span(reinterpret_cast<T*>(ptr), buffer.size());
+	}
 	return id;
 }
 
 template <typename T> static GLuint createBufferSingle(const T& buffer, T** mapping = nullptr) {
 	GLuint id;
 	GL_GUARD(glCreateBuffers(1, &id));
-	GL_GUARD(glNamedBufferStorage(id, sizeof(T), &buffer, (mapping == nullptr) ? 0 : (GL_MAP_WRITE_BIT | GL_MAP_PERSISTENT_BIT)));
+	GL_GUARD(glNamedBufferStorage(id, sizeof(T), &buffer, (mapping == nullptr) ? 0 : CGL_BUFFER_MAPPED));
 	if (mapping != nullptr) {
-		auto ptr = GL_GUARD(glMapNamedBufferRange(id, 0, sizeof(T), GL_MAP_WRITE_BIT | GL_MAP_PERSISTENT_BIT | GL_MAP_FLUSH_EXPLICIT_BIT));
+		auto ptr = GL_GUARD(glMapNamedBufferRange(id, 0, sizeof(T), CGL_BUFFER_MAPPED | GL_MAP_FLUSH_EXPLICIT_BIT));
 		*mapping = reinterpret_cast<T*>(ptr);
 	}
 	return id;

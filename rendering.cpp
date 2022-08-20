@@ -6,6 +6,7 @@
 #include <fstream>
 #include <string_view>
 #include <span>
+#include <buffer.cpp>
 
 GLuint createShader(std::string_view source, GLenum type) {
 	auto shader = GL_GUARD(glCreateShader(type));
@@ -86,14 +87,20 @@ void unbindUBO(GPUBinding& binding) { GL_GUARD(glBindBufferRange(GL_UNIFORM_BUFF
 void unbindSSBO(GPUBinding& binding) { GL_GUARD(glBindBufferRange(GL_SHADER_STORAGE_BUFFER, binding.target, 0, 0, binding.size)); }
 		// GL_GUARD(glBindBufferBase(GL_SHADER_STORAGE_BUFFER, ssbo.binding, ssbo.id));
 
+template<typename T> GPUBinding	bind(GLuint id, GLuint target) { return GPUBinding { id, target, sizeof(T) }; }
+template<typename T> GPUBinding	bind(const MappedObject<T>& mapping, GLuint target) { return GPUBinding { mapping.id, target, sizeof(mapping.obj) }; }
+template<typename T> GPUBinding	bind(const MappedBuffer<T>& mapping, GLuint target) { return GPUBinding { mapping.id, target, mapping.obj.size_bytes() }; }
+
+constexpr std::span<GPUBinding> noBinds = {};
+
 void draw(
 	GLuint pipeline,
 	GLuint vao,
 	GLsizei indexCount,
 	int instanceCount = 1,
-	std::span<GPUBinding> textures = std::span<GPUBinding>(),
-	std::span<GPUBinding> ssbos = std::span<GPUBinding>(),
-	std::span<GPUBinding> ubos = std::span<GPUBinding>()
+	std::span<GPUBinding> textures = noBinds,
+	std::span<GPUBinding> ssbos = noBinds,
+	std::span<GPUBinding> ubos = noBinds
 ) {
 	GL_GUARD(glUseProgram(pipeline));
 	for (auto &&texture : textures) bindTexture(texture);
@@ -109,5 +116,6 @@ void draw(
 	for (auto &&texture : textures) unbindTexture(texture);
 	GL_GUARD(glUseProgram(0));
 }
+
 
 #endif

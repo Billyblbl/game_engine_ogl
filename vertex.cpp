@@ -4,15 +4,15 @@
 #include <span>
 #include <GL/glew.h>
 #include <glutils.cpp>
-#include <glm/glm/glm.hpp>
+#include <glm/glm.hpp>
 
 struct VertexAttributeSpecs {
 	GLint memberCount = 0;
 	GLenum memberType = 0;
-	size_t offset;
+	size_t offset = 0;
 };
 
-template<typename T> constexpr auto MakeVertexAttributeSpec(size_t offset) { return VertexAttributeSpecs{}; };
+template<typename T> constexpr auto MakeVertexAttributeSpec(size_t offset) { return VertexAttributeSpecs{ 0, 0, offset }; };
 template<> constexpr auto MakeVertexAttributeSpec<float>(size_t offset) { return VertexAttributeSpecs{ 1, GL_FLOAT, offset }; };
 template<> constexpr auto MakeVertexAttributeSpec<glm::vec1>(size_t offset) { return VertexAttributeSpecs{ 1, GL_FLOAT, offset }; };
 template<> constexpr auto MakeVertexAttributeSpec<glm::vec2>(size_t offset) { return VertexAttributeSpecs{ 2, GL_FLOAT, offset }; };
@@ -61,15 +61,14 @@ GLuint recordVAO(
 	return id;
 }
 
-
 struct DefaultVertex2D {
 	glm::vec2 position;
-	glm::vec4 color;
+	glm::vec2 uv;
 };
 
 template<> constexpr VertexAttributeSpecs vertexAttributesOf<DefaultVertex2D>[2] = {
 	SpecsOf(DefaultVertex2D, position),
-	SpecsOf(DefaultVertex2D, color)
+	SpecsOf(DefaultVertex2D, uv)
 };
 
 #endif

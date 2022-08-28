@@ -13,6 +13,8 @@ SRC = main.cpp
 
 INC = .
 INC += $(IMGUI)
+INC += $(GLM)
+INC += $(STB)
 INC += $(IMGUI)/backends
 INC += $(GLFW)/include
 INC += $(GLEW)/include

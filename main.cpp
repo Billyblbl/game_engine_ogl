@@ -9,7 +9,7 @@
 #include <imgui/imgui.h>
 #include <imgui/backends/imgui_impl_glfw.h>
 #include <imgui/backends/imgui_impl_opengl3.h>
-#include <glm/glm/glm.hpp>
+#include <glm/glm.hpp>
 #include <GL/glew.h>
 #include <GLFW/glfw3.h> // Will drag system OpenGL headers
 #include <time.cpp>
@@ -18,9 +18,30 @@
 #include <vertex.cpp>
 #include <transform.cpp>
 #include <buffer.cpp>
+#include <textures.cpp>
 
 static void glfw_error_callback(int error, const char* description) {
 	fprintf(stderr, "GLFW Error %d: %s\n", error, description);
+}
+
+const static GLenum SeverityIncluded[] = {
+	GL_DEBUG_SEVERITY_HIGH,
+	GL_DEBUG_SEVERITY_MEDIUM,
+	GL_DEBUG_SEVERITY_LOW
+	// GL_DEBUG_SEVERITY_NOTIFICATION
+};
+
+static void ogl_debug_callback(GLenum source,
+	GLenum type,
+	GLuint id,
+	GLenum severity,
+	GLsizei length,
+	const GLchar* message,
+	const void* userParam
+) {
+	for (auto &&i : SeverityIncluded) if (i == severity) {
+		fprintf(stderr, "OpenGL Debug %d: %s on %u, %s\n", type, GLtoString(type), id, message);
+	}
 }
 
 const char* getVersion() {
@@ -49,13 +70,14 @@ const char* getVersion() {
 	return glsl_version;
 }
 
-int main(int, char**) {
+int main(int ac, char** av) {
 	// Setup window
 	glfwSetErrorCallback(glfw_error_callback);
 	if (!glfwInit())
 		return 1;
 
-	auto dimensions = glm::ivec2(1920/2, 1080/2);
+	auto dimensions = glm::ivec2(1920 / 2, 1080 / 2);
+	glfwWindowHint(GLFW_OPENGL_DEBUG_CONTEXT, GL_TRUE);
 
 	// Create window with graphics context
 	GLFWwindow* window = glfwCreateWindow(dimensions.x, dimensions.y, "Test renderer", NULL, NULL);
@@ -73,11 +95,16 @@ int main(int, char**) {
 		}
 		fprintf(stdout, "Status: Using GLEW %s\n", glewGetString(GLEW_VERSION));
 
-		//TODO replace with glm vector
-		ImVec4 clear_color = ImVec4(0.45f, 0.55f, 0.60f, 1.00f);
+		auto clear_color = glm::vec4(0.45f, 0.55f, 0.60f, 1.00f);
 
 		int display_w, display_h;
 		glfwGetFramebufferSize(window, &display_w, &display_h);
+
+		glEnable(GL_DEBUG_OUTPUT);
+		glEnable(GL_DEBUG_OUTPUT_SYNCHRONOUS);
+		glDebugMessageCallback(ogl_debug_callback, NULL);
+		glDebugMessageControl(GL_DONT_CARE, GL_DONT_CARE, GL_DONT_CARE, 0, NULL, GL_TRUE);
+
 		GL_GUARD(glViewport(0, 0, display_w, display_h));
 
 		// GL_GUARD(glEnable(GL_CULL_FACE));
@@ -137,15 +164,31 @@ int main(int, char**) {
 
 	//Render data
 	auto simpleDrawPipeline = createRenderPipeline(
-		loadShader("./shaders/camera2DRender.vert", GL_VERTEX_SHADER),
-		loadShader("./shaders/camera2DRender.frag", GL_FRAGMENT_SHADER)
+		loadShader("./shaders/camera2DRenderTextured.vert", GL_VERTEX_SHADER),
+		loadShader("./shaders/camera2DRenderTextured.frag", GL_FRAGMENT_SHADER)
 	);
+
+	// auto whitePixel = 1.f;
+	// auto whiteTexture = Textures::createFromSource(std::span(&whitePixel, 1), glm::uvec2(1));
+	// glm::vec3 testTexture[] = {
+	// 	glm::vec3(0, 0, 0),
+	// 	glm::vec3(0, 0, 1),
+	// 	glm::vec3(0, 1, 0),
+	// 	glm::vec3(0, 1, 1),
+	// 	glm::vec3(1, 0, 0),
+	// 	glm::vec3(1, 0, 1),
+	// 	glm::vec3(1, 1, 0),
+	// 	glm::vec3(1, 1, 1),
+	// };
+	// auto texture = Textures::createFromSource(std::span(testTexture), glm::uvec2(4, 2), Textures::Nearest);
+	auto texture = Textures::loadFromFile("../2022-08-06_19.36.27.png");
+
 	//simple rect
 	auto vertices = std::array{
-		DefaultVertex2D { glm::vec2(-300.f), glm::vec4(1.f, 0.f, 0.f, 1.f) },
-		DefaultVertex2D { glm::vec2(-300.f, 300.f), glm::vec4(0.f, 1.f, 0.f, 1.f) },
-		DefaultVertex2D { glm::vec2(300.f), glm::vec4(0.f, 0.f, 1.f, 1.f) },
-		DefaultVertex2D { glm::vec2(300.f, -300.f), glm::vec4(0,0,0,1) }
+		DefaultVertex2D { glm::vec2(-300.f, -300.f), glm::vec2(0, 1) },
+		DefaultVertex2D { glm::vec2(-300.f, 300.f), glm::vec2(0, 0) },
+		DefaultVertex2D { glm::vec2(300.f, 300.f), glm::vec2(1, 0) },
+		DefaultVertex2D { glm::vec2(300.f, -300.f), glm::vec2(1, 1) }
 	};
 	auto indices = std::array{
 		// 0u, 1u, 2u,
@@ -161,7 +204,7 @@ int main(int, char**) {
 	// Our state
 	auto clock = Time::Start();
 	auto cameraTransform = Transform2D{};
-	auto orthoCamera = OrthoCamera { glm::vec3(dimensions, 1) };
+	auto orthoCamera = OrthoCamera{ glm::vec3(dimensions, 1) };
 
 	auto viewProjectionMatrix = mapObject(glm::inverse(cameraTransform.matrix()));
 	auto modelMatrix = mapObject(glm::mat4());
@@ -210,11 +253,12 @@ int main(int, char**) {
 		}
 
 		{//Render scene
-			auto ubos = std::array {
-				bind<glm::mat4>(viewProjectionMatrix, 0),
-				bind<glm::mat4>(modelMatrix, 1)
+			auto ubos = std::array{
+				bind(viewProjectionMatrix, 0),
+				bind(modelMatrix, 1)
 			};
-			draw(simpleDrawPipeline, vao, indices.size(), 1, noBinds, noBinds, std::span(ubos));
+			auto textures = std::array{ bind(texture, 1) };
+			draw(simpleDrawPipeline, vao, indices.size(), 1, std::span(textures), noBinds, std::span(ubos));
 		}
 
 		{// Draw overlay
@@ -244,6 +288,7 @@ int main(int, char**) {
 
 		glfwDestroyWindow(window);
 		glfwTerminate();
+
 	}
 
 	return 0;

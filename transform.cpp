@@ -1,8 +1,8 @@
 #ifndef GTRANSFORM
 # define GTRANSFORM
 
-#include <glm/glm/glm.hpp>
-#include <glm/glm/gtc/matrix_transform.hpp>
+#include <glm/glm.hpp>
+#include <glm/gtc/matrix_transform.hpp>
 
 struct Transform2D {
 	glm::vec2 translation = glm::vec2(0);

@@ -179,13 +179,35 @@ const char* GLtoString(GLenum value) {
 	case GL_TEXTURE_WRAP_S: return serialiseDefine(GL_TEXTURE_WRAP_S);
 	case GL_TEXTURE_WRAP_T: return serialiseDefine(GL_TEXTURE_WRAP_T);
 	case GL_REPEAT: return serialiseDefine(GL_REPEAT);
+	case GL_DEBUG_SOURCE_API: return serialiseDefine(GL_DEBUG_SOURCE_API);
+	case GL_DEBUG_SOURCE_WINDOW_SYSTEM: return serialiseDefine(GL_DEBUG_SOURCE_WINDOW_SYSTEM);
+	case GL_DEBUG_SOURCE_SHADER_COMPILER: return serialiseDefine(GL_DEBUG_SOURCE_SHADER_COMPILER);
+	case GL_DEBUG_SOURCE_THIRD_PARTY: return serialiseDefine(GL_DEBUG_SOURCE_THIRD_PARTY);
+	case GL_DEBUG_SOURCE_APPLICATION: return serialiseDefine(GL_DEBUG_SOURCE_APPLICATION);
+	case GL_DEBUG_SOURCE_OTHER: return serialiseDefine(GL_DEBUG_SOURCE_OTHER);
+	case GL_DEBUG_TYPE_ERROR: return serialiseDefine(GL_DEBUG_TYPE_ERROR);
+
+	case GL_DEBUG_TYPE_DEPRECATED_BEHAVIOR: return serialiseDefine(GL_DEBUG_TYPE_DEPRECATED_BEHAVIOR);
+	case GL_DEBUG_TYPE_UNDEFINED_BEHAVIOR: return serialiseDefine(GL_DEBUG_TYPE_UNDEFINED_BEHAVIOR);
+	case GL_DEBUG_TYPE_PORTABILITY: return serialiseDefine(GL_DEBUG_TYPE_PORTABILITY);
+	case GL_DEBUG_TYPE_PERFORMANCE: return serialiseDefine(GL_DEBUG_TYPE_PERFORMANCE);
+	case GL_DEBUG_TYPE_MARKER: return serialiseDefine(GL_DEBUG_TYPE_MARKER);
+	case GL_DEBUG_TYPE_PUSH_GROUP: return serialiseDefine(GL_DEBUG_TYPE_PUSH_GROUP);
+	case GL_DEBUG_TYPE_POP_GROUP: return serialiseDefine(GL_DEBUG_TYPE_POP_GROUP);
+	case GL_DEBUG_TYPE_OTHER: return serialiseDefine(GL_DEBUG_TYPE_OTHER);
+
+	case GL_DEBUG_SEVERITY_HIGH: return serialiseDefine(GL_DEBUG_SEVERITY_HIGH);
+	case GL_DEBUG_SEVERITY_MEDIUM: return serialiseDefine(GL_DEBUG_SEVERITY_MEDIUM);
+	case GL_DEBUG_SEVERITY_LOW: return serialiseDefine(GL_DEBUG_SEVERITY_LOW);
+	case GL_DEBUG_SEVERITY_NOTIFICATION: return serialiseDefine(GL_DEBUG_SEVERITY_NOTIFICATION);
+
 	default: return "Unknown OpenGL enum";
 	}
 }
 
 void CheckGLError(const std::string_view& expression, const std::string_view& fileName, const int32_t lineNumber) {
 	for (auto err = glGetError(); err != GL_NO_ERROR; err = glGetError()) {
-		std::printf("Error in file %s, line %d, when executing %s : %x %s\n", fileName, lineNumber, expression, err, GLtoString(err));
+		std::printf("Error in file %s:%d, when executing %s : %x %s\n", fileName.data(), lineNumber, expression.data(), err, GLtoString(err));
 	}
 }
 
@@ -222,4 +244,24 @@ template <typename T> static GLuint createBufferSingle(const T& buffer, T** mapp
 	return id;
 }
 
+struct GLFormat {
+	GLenum element;
+	GLenum vec[5];
+	std::span<const GLenum, 5> pixel;
+};
+
+constexpr GLenum ZeroedOut[] = {0,0,0,0,0};
+constexpr GLenum FloatsPixelFormats[] = { 0, GL_RED, GL_RG, GL_RGB, GL_RGBA };
+constexpr GLenum IntegerPixelFormats[] = { 0, GL_RED_INTEGER, GL_RG_INTEGER, GL_RGB_INTEGER, GL_RGBA_INTEGER };
+
+template<typename T> constexpr GLFormat Format = {0,{0,0,0,0,0},ZeroedOut};
+template<> constexpr GLFormat Format<glm::f32> = { GL_FLOAT, { 0, GL_R32F, GL_RG32F, GL_RGB32F, GL_RGBA32F }, FloatsPixelFormats };
+template<> constexpr GLFormat Format<glm::i32> = { GL_INT, { 0, GL_R32I, GL_RG32I, GL_RGB32I, GL_RGBA32I }, IntegerPixelFormats };
+template<> constexpr GLFormat Format<glm::u32> = { GL_UNSIGNED_INT, { 0, GL_R32UI, GL_RG32UI, GL_RGB32UI, GL_RGBA32UI }, IntegerPixelFormats };
+template<> constexpr GLFormat Format<glm::i16> = { GL_SHORT, { 0, GL_R16I, GL_RG16I, GL_RGB16I, GL_RGBA16I }, IntegerPixelFormats };
+template<> constexpr GLFormat Format<glm::u16> = { GL_UNSIGNED_SHORT, { 0, GL_R16UI, GL_RG16UI, GL_RGB16UI, GL_RGBA16UI }, IntegerPixelFormats };
+template<> constexpr GLFormat Format<glm::i8> = { GL_BYTE, { 0, GL_R8I, GL_RG8I, GL_RGB8I, GL_RGBA8I }, IntegerPixelFormats };
+template<> constexpr GLFormat Format<glm::u8> = { GL_UNSIGNED_BYTE, { 0, GL_R8UI, GL_RG8UI, GL_RGB8UI, GL_RGBA8UI }, IntegerPixelFormats };
+
+// constexpr GLFormat FormatUntyped = Format<void>;
 #endif

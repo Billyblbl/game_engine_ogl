@@ -91,9 +91,19 @@ void unbindSSBO(GPUBinding& binding) { GL_GUARD(glBindBufferRange(GL_SHADER_STOR
 GPUBinding	bind(GLuint id, GLuint target, size_t size) { return GPUBinding { id, target, (GLsizeiptr)size }; }
 GPUBinding	bind(const Textures::Texture& mapping, GLuint target) { return GPUBinding { mapping.id, target, mapping.dimensions.x * mapping.dimensions.y * mapping.channels }; }
 template<typename T> GPUBinding	bind(const MappedObject<T>& mapping, GLuint target) { return GPUBinding { mapping.id, target, sizeof(mapping.obj) }; }
-template<typename T> GPUBinding	bind(const MappedBuffer<T>& mapping, GLuint target) { return GPUBinding { mapping.id, target, mapping.obj.size_bytes() }; }
+template<typename T> GPUBinding	bind(const MappedBuffer<T>& mapping, GLuint target) { return GPUBinding { mapping.id, target, (GLsizeiptr)mapping.obj.size_bytes() }; }
 
 constexpr std::span<GPUBinding> noBinds = {};
+
+struct Material {
+	GLuint renderProgram;
+	std::span<GPUBinding>	textures;
+};
+
+struct RenderData {
+	GLuint vao;
+	Material* material;
+};
 
 void draw(
 	GLuint pipeline,

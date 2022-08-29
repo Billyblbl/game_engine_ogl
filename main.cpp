@@ -21,6 +21,11 @@
 #include <textures.cpp>
 #include <utils.cpp>
 
+#define MAX_ENTITIES 10
+#define MAX_DRAW_BATCH 10
+#define CAMERA_TRANSFORM_INDEX 0
+#define RECT_TRANSFORM_INDEX 1
+
 static void glfw_error_callback(int error, const char* description) {
 	fprintf(stderr, "GLFW Error %d: %s\n", error, description);
 }
@@ -44,6 +49,12 @@ static void ogl_debug_callback(GLenum source,
 		fprintf(stderr, "OpenGL Debug %d: %s on %u, %s\n", type, GLtoString(type), id, message);
 	}
 }
+
+//TODO replace with ECS-like system
+struct Renderable {
+	Transform2D* transform = nullptr;
+	RenderData* renderData = nullptr;
+};
 
 const char* getVersion() {
 #if defined(IMGUI_IMPL_OPENGL_ES2)
@@ -165,11 +176,11 @@ int main(int ac, char** av) {
 		auto imguiIO = ImGui::GetIO();
 
 		//Render data
-		auto simpleDrawPipeline = createRenderPipeline(
-			loadShader("./shaders/camera2DRenderTextured.vert", GL_VERTEX_SHADER),
-			loadShader("./shaders/camera2DRenderTextured.frag", GL_FRAGMENT_SHADER)
+		auto drawPipeline = createRenderPipeline(
+			loadShader("./shaders/camera2DRenderTexturedBatched.vert", GL_VERTEX_SHADER),
+			loadShader("./shaders/camera2DRenderTexturedBatched.frag", GL_FRAGMENT_SHADER)
 		);
-		deferDo{ GL_GUARD(glDeleteProgram(simpleDrawPipeline)); };
+		deferDo{ GL_GUARD(glDeleteProgram(drawPipeline)); };
 
 		// auto whitePixel = 1.f;
 		// auto whiteTexture = Textures::createFromSource(std::span(&whitePixel, 1), glm::uvec2(1));
@@ -201,9 +212,15 @@ int main(int ac, char** av) {
 			1u, 2u, 3u
 		};
 
-		auto vbo = createBufferSpan(std::span(vertices.data(), vertices.size()));
-		auto ibo = createBufferSpan(std::span(indices.data(), indices.size()));
+		auto vbo = createBufferSpan(std::span(vertices));
+		auto ibo = createBufferSpan(std::span(indices));
 		auto vao = recordVAO<DefaultVertex2D>(vbo, ibo);
+
+		auto bindings = std::array{ bind(texture, 0) };
+
+		Material matrl = { drawPipeline, std::span(bindings) };
+		RenderData rdData = { vao, &matrl };
+
 		deferDo{
 			fflush(stdout);
 			GL_GUARD(glDeleteVertexArrays(1, &vao));
@@ -211,16 +228,31 @@ int main(int ac, char** av) {
 			GL_GUARD(glDeleteBuffers(2, buffers));
 		};
 
-		// Our state
+		// State
 		auto clock = Time::Start();
-		auto cameraTransform = Transform2D{};
+
+		//Pseudo components
+		Transform2D entityTransforms[MAX_ENTITIES];
+		RenderData entityRenderData[MAX_ENTITIES];
+		Renderable renderableEntities[MAX_ENTITIES];
+
+		auto& cameraTransform = entityTransforms[CAMERA_TRANSFORM_INDEX];
+		auto& rect1 = renderableEntities[0] = { &entityTransforms[RECT_TRANSFORM_INDEX], &entityRenderData[0] };
+		auto& rect2 = renderableEntities[1] = { &entityTransforms[RECT_TRANSFORM_INDEX + 1], &entityRenderData[1] };
+
+		const auto renderableEntitiesCount = 2;
+		const auto usedTransforms = 3;
+
 		auto orthoCamera = OrthoCamera{ glm::vec3(dimensions, 1) };
 
+		auto drawBatchMatrices = mapBuffer<glm::mat4>(MAX_DRAW_BATCH);
+		auto reservedBatchSlots = 0;
+
 		auto viewProjectionMatrix = mapObject(glm::inverse(cameraTransform.matrix()));
-		auto modelMatrix = mapObject(glm::mat4());
+
 		deferDo{
 			GL_GUARD(glUnmapNamedBuffer(viewProjectionMatrix.id));
-			GL_GUARD(glUnmapNamedBuffer(modelMatrix.id));
+			GL_GUARD(glUnmapNamedBuffer(drawBatchMatrices.id));
 		};
 
 		fflush(stdout);
@@ -240,6 +272,7 @@ int main(int ac, char** av) {
 				glfwGetFramebufferSize(window, &display_w, &display_h);
 				orthoCamera.dimensions.x = display_w;
 				orthoCamera.dimensions.y = display_h;
+				rect1.transform->rotation += clock.dt.count();
 				GL_GUARD(glViewport(0, 0, display_w, display_h));
 				GL_GUARD(glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT));
 			}
@@ -249,12 +282,18 @@ int main(int ac, char** av) {
 				ImGui_ImplGlfw_NewFrame();
 
 				ImGui::NewFrame();
-				ImGui::Begin("Camera controls");
+				ImGui::Begin("Controls (0:camera, 1:rect1, 2:rec2)");
 				{
-					ImGui::Text("Camera Transform");
-					ImGui::DragFloat2("Position", (float*)&cameraTransform.translation, .1f, .0f, .0f, "%.3f");
-					ImGui::DragFloat("Rotation", &cameraTransform.rotation, .1f, .0f, .0f, "%.3f");
-					ImGui::DragFloat2("Scale", (float*)&cameraTransform.scale, .1f, .0f, .0f, "%.3f");
+
+					for (size_t i = 0; i < usedTransforms; i++) {
+						auto& transform = entityTransforms[i];
+						ImGui::PushID(i);
+						ImGui::Text("Transform2D");
+						ImGui::DragFloat2("Position", (float*)&transform.translation, .1f, .0f, .0f, "%.3f");
+						ImGui::DragFloat("Rotation", &transform.rotation, .1f, .0f, .0f, "%.3f");
+						ImGui::DragFloat2("Scale", (float*)&transform.scale, .1f, .0f, .0f, "%.3f");
+						ImGui::PopID();
+					}
 
 					ImGui::Text("Ortho Camera");
 					ImGui::DragFloat3("Dimensions", (float*)&orthoCamera.dimensions, .1f, .0f, .0f, "%.3f");
@@ -267,12 +306,22 @@ int main(int ac, char** av) {
 			}
 
 			{//Render scene
-				auto ubos = std::array{
-					bind(viewProjectionMatrix, 0),
-					bind(modelMatrix, 1)
-				};
-				auto textures = std::array{ bind(texture, 1) };
-				draw(simpleDrawPipeline, vao, indices.size(), 1, std::span(textures), noBinds, std::span(ubos));
+
+				for (auto&& ent : std::span(renderableEntities).subspan(0, renderableEntitiesCount)) {
+					//!Should only keep things with the same RenderData in the same batch
+					drawBatchMatrices.obj[reservedBatchSlots++] = ent.transform->matrix();
+				}
+
+				auto ubos = std::array{ bind(viewProjectionMatrix, 0) };
+				auto ssbos = std::array{ bind(drawBatchMatrices, 0) };
+				auto textures = std::array{ bind(texture, 0) };
+				draw(
+					drawPipeline, vao, indices.size(), reservedBatchSlots,
+					textures,
+					ssbos,
+					ubos
+				);
+				reservedBatchSlots = 0;
 			}
 
 			{// Draw overlay
@@ -293,9 +342,6 @@ int main(int ac, char** av) {
 	}
 
 	{// Cleanup
-		// GLuint buffers[] = { vbo, ibo };
-		// GL_GUARD(glDeleteBuffers(2, buffers));
-		// GL_GUARD(glDeleteVertexArrays(1, &vao));
 
 		ImGui_ImplOpenGL3_Shutdown();
 		ImGui_ImplGlfw_Shutdown();

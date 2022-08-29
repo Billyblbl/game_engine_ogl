@@ -24,7 +24,7 @@ namespace Time {
 
 	Clock Start() {
 		Clock clock;
-		clock.start = clock.lastFrame = clock.start;
+		clock.start = clock.lastFrame = std::chrono::steady_clock::now();
 		return clock;
 	}
 

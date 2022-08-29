@@ -4,6 +4,7 @@
 #include <string_view>
 #include <span>
 #include <cstdio>
+#include <optional>
 #include <GLFW/glfw3.h> // Will drag system OpenGL headers
 
 #define serialiseDefine(d) #d
@@ -222,25 +223,34 @@ void CheckGLError(const std::string_view& expression, const std::string_view& fi
 
 #define CGL_BUFFER_MAPPED (GL_MAP_WRITE_BIT | GL_MAP_PERSISTENT_BIT)
 
-template <typename T> static GLuint createBufferSpan(const std::span<T> buffer, std::span<T>* mapping = nullptr) {
+template<typename T, typename U, size_t S> auto spanCast(std::span<U, S> original) {
+	return std::span((T*)original.data(), original.size_bytes() / sizeof(T));
+}
+
+static GLuint createBuffer(GLsizeiptr size, std::span<std::byte>* mapping = nullptr, std::optional<std::span<std::byte>> initialValues = std::nullopt) {
 	GLuint id;
 	GL_GUARD(glCreateBuffers(1, &id));
-	GL_GUARD(glNamedBufferStorage(id, buffer.size_bytes(), buffer.data(), (mapping == nullptr) ? 0 : CGL_BUFFER_MAPPED));
+	auto initialPtr = initialValues ? initialValues.value().data() : nullptr;
+	GL_GUARD(glNamedBufferStorage(id, size, initialPtr, (mapping == nullptr) ? 0 : CGL_BUFFER_MAPPED));
 	if (mapping != nullptr) {
-		auto ptr = GL_GUARD(glMapNamedBufferRange(id, 0, sizeof(T), CGL_BUFFER_MAPPED | GL_MAP_FLUSH_EXPLICIT_BIT));
-		*mapping = std::span(reinterpret_cast<T*>(ptr), buffer.size());
+		auto ptr = GL_GUARD(glMapNamedBufferRange(id, 0, size, CGL_BUFFER_MAPPED | GL_MAP_FLUSH_EXPLICIT_BIT));
+		*mapping = std::span(reinterpret_cast<std::byte*>(ptr), size);
 	}
 	return id;
 }
 
+template <typename T, size_t S> static GLuint createBufferSpan(const std::span<T, S> buffer, std::span<T>* mapping = nullptr) {
+	std::span<std::byte> data;
+	auto id =  createBuffer(buffer.size_bytes(), mapping == nullptr ? nullptr : &data, spanCast<std::byte>(buffer));
+	if (mapping != nullptr) *mapping = spanCast<T>(data);
+	return id;
+}
+
+
 template <typename T> static GLuint createBufferSingle(const T& buffer, T** mapping = nullptr) {
-	GLuint id;
-	GL_GUARD(glCreateBuffers(1, &id));
-	GL_GUARD(glNamedBufferStorage(id, sizeof(T), &buffer, (mapping == nullptr) ? 0 : CGL_BUFFER_MAPPED));
-	if (mapping != nullptr) {
-		auto ptr = GL_GUARD(glMapNamedBufferRange(id, 0, sizeof(T), CGL_BUFFER_MAPPED | GL_MAP_FLUSH_EXPLICIT_BIT));
-		*mapping = reinterpret_cast<T*>(ptr);
-	}
+	std::span<std::byte> data;
+	auto id =  createBuffer(sizeof(T), mapping == nullptr ? nullptr : &data, spanCast<std::byte>(std::span(&buffer, 1)));
+	if (mapping != nullptr) *mapping = spanCast<T>(data).data();
 	return id;
 }
 

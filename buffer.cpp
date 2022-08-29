@@ -26,4 +26,10 @@ template<typename T> MappedBuffer<T> mapBuffer(std::span<T> data) {
 	return MappedBuffer { id, span };
 }
 
+template<typename T> MappedBuffer<T> mapBuffer(GLsizeiptr size) {
+	auto data = std::span<std::byte>();
+	auto id = createBuffer(size * sizeof(T), &data);
+	return MappedBuffer { id, spanCast<T>(data) };
+}
+
 #endif

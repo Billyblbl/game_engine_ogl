@@ -71,11 +71,11 @@ const char* getVersion() {
 	glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);  // 3.2+ only
 	glfwWindowHint(GLFW_OPENGL_FORWARD_COMPAT, GL_TRUE);            // Required on Mac
 #else
-	// GL 3.0 + GLSL 130
+	// GL 4.6 + GLSL 130
 	//TODO check if we can use more up to date glsl version
 	const char* glsl_version = "#version 130";
-	glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 3);
-	glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 0);
+	glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 4);
+	glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 6);
 	//glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);  // 3.2+ only
 	//glfwWindowHint(GLFW_OPENGL_FORWARD_COMPAT, GL_TRUE);            // 3.0+ only
 #endif
@@ -195,7 +195,7 @@ int main(int ac, char** av) {
 		// 	glm::vec3(1, 1, 1),
 		// };
 		// auto texture = Textures::createFromSource(std::span(testTexture), glm::uvec2(4, 2), Textures::Nearest);
-		auto texture = Textures::loadFromFile("../2022-08-06_19.36.27.png");
+		auto texture = Textures::loadFromFile("../360_F_270622417_2gasOBUwqXdcpkgEl9PUihhhnQZeX4nQ.jpg");
 		deferDo{ GL_GUARD(glDeleteTextures(1, &texture.id)); };
 
 		//simple rect
@@ -230,6 +230,7 @@ int main(int ac, char** av) {
 
 		// State
 		auto clock = Time::Start();
+		auto rotationSpeed = 1.f;
 
 		//Pseudo components
 		Transform2D entityTransforms[MAX_ENTITIES];
@@ -272,7 +273,9 @@ int main(int ac, char** av) {
 				glfwGetFramebufferSize(window, &display_w, &display_h);
 				orthoCamera.dimensions.x = display_w;
 				orthoCamera.dimensions.y = display_h;
-				rect1.transform->rotation += clock.dt.count();
+				rect1.transform->rotation += clock.dt.count()*rotationSpeed;
+				if (rect1.transform->rotation > 360*2)
+					rect1.transform->rotation -= 360*2;
 				GL_GUARD(glViewport(0, 0, display_w, display_h));
 				GL_GUARD(glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT));
 			}
@@ -298,6 +301,9 @@ int main(int ac, char** av) {
 					ImGui::Text("Ortho Camera");
 					ImGui::DragFloat3("Dimensions", (float*)&orthoCamera.dimensions, .1f, .0f, .0f, "%.3f");
 					ImGui::DragFloat3("Center", (float*)&orthoCamera.center, .1f, .0f, .0f, "%.3f");
+
+					ImGui::Text("Animation");
+					ImGui::DragFloat("Rotation Speed", &rotationSpeed, .1f, .0f, .0f, "%.3f");
 				}
 				ImGui::End();
 				ImGui::Render();

@@ -10,7 +10,11 @@ layout(binding = 0) uniform sampler2D texture;
 // 	mat4 viewMatrix;
 // }
 
+const float alphaDiscard = 0.01;
+
 void main() {
 	outColor = texture2D(texture, uv);
+	if (outColor.a < alphaDiscard)
+		discard;
 	// outColor = vec4(1, 0.0, 0.0, 1.0);
 }

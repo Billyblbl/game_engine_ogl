@@ -126,6 +126,9 @@ int main(int ac, char** av) {
 			GL_GUARD(glEnable(GL_DEPTH_TEST));
 			GL_GUARD(glDepthFunc(GL_LEQUAL));
 			GL_GUARD(glClearColor(clear_color.x * clear_color.w, clear_color.y * clear_color.w, clear_color.z * clear_color.w, clear_color.w));
+			GL_GUARD(glEnable(GL_BLEND));
+			GL_GUARD(glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA));
+
 		}
 
 		{// Init DearImgui
@@ -195,7 +198,7 @@ int main(int ac, char** av) {
 		// 	glm::vec3(1, 1, 1),
 		// };
 		// auto texture = Textures::createFromSource(std::span(testTexture), glm::uvec2(4, 2), Textures::Nearest);
-		auto texture = Textures::loadFromFile("../360_F_270622417_2gasOBUwqXdcpkgEl9PUihhhnQZeX4nQ.jpg");
+		auto texture = Textures::loadFromFile("C:/Users/billy/Documents/assets/boss-spaceship-2d-sprites-pixel-art/PNG_Parts&Spriter_Animation/Boss_ship1/Boss_ship7.png", Textures::Linear, Textures::Clamp);
 		deferDo{ GL_GUARD(glDeleteTextures(1, &texture.id)); };
 
 		//simple rect
@@ -273,9 +276,9 @@ int main(int ac, char** av) {
 				glfwGetFramebufferSize(window, &display_w, &display_h);
 				orthoCamera.dimensions.x = display_w;
 				orthoCamera.dimensions.y = display_h;
-				rect1.transform->rotation += clock.dt.count()*rotationSpeed;
-				if (rect1.transform->rotation > 360*2)
-					rect1.transform->rotation -= 360*2;
+				rect1.transform->rotation += clock.dt.count() * rotationSpeed;
+				if (rect1.transform->rotation > 360 * 2)
+					rect1.transform->rotation -= 360 * 2;
 				GL_GUARD(glViewport(0, 0, display_w, display_h));
 				GL_GUARD(glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT));
 			}

@@ -20,6 +20,7 @@
 #include <buffer.cpp>
 #include <textures.cpp>
 #include <utils.cpp>
+#include <inputs.cpp>
 
 #define MAX_ENTITIES 10
 #define MAX_DRAW_BATCH 10
@@ -95,6 +96,7 @@ int main(int ac, char** av) {
 	GLFWwindow* window = glfwCreateWindow(dimensions.x, dimensions.y, "Test renderer", NULL, NULL);
 	if (window == NULL)
 		return 1;
+	auto& inputContext = allocateInputContext(window);
 	{
 		glfwMakeContextCurrent(window);
 		glfwSwapInterval(1); // Enable vsync
@@ -254,6 +256,18 @@ int main(int ac, char** av) {
 
 		auto viewProjectionMatrix = mapObject(glm::inverse(cameraTransform.matrix()));
 
+		// TODO proper input targets
+		auto camVelocity = glm::vec2(0);
+		auto camSpeed = 10.f;
+		inputContext.keyHandlers[GLFW::Keys::W][GLFW::Action::Release] = [&](){ camVelocity.y -= 1.f; };
+		inputContext.keyHandlers[GLFW::Keys::W][GLFW::Action::Press] = [&](){ camVelocity.y += 1.f; };
+		inputContext.keyHandlers[GLFW::Keys::A][GLFW::Action::Release] = [&](){ camVelocity.x += 1.f; };
+		inputContext.keyHandlers[GLFW::Keys::A][GLFW::Action::Press] = [&](){ camVelocity.x -= 1.f; };
+		inputContext.keyHandlers[GLFW::Keys::S][GLFW::Action::Release] = [&](){ camVelocity.y += 1.f; };
+		inputContext.keyHandlers[GLFW::Keys::S][GLFW::Action::Press] = [&](){ camVelocity.y -= 1.f; };
+		inputContext.keyHandlers[GLFW::Keys::D][GLFW::Action::Release] = [&](){ camVelocity.x -= 1.f; };
+		inputContext.keyHandlers[GLFW::Keys::D][GLFW::Action::Press] = [&](){ camVelocity.x += 1.f; };
+
 		deferDo{
 			GL_GUARD(glUnmapNamedBuffer(viewProjectionMatrix.id));
 			GL_GUARD(glUnmapNamedBuffer(drawBatchMatrices.id));
@@ -276,6 +290,7 @@ int main(int ac, char** av) {
 				glfwGetFramebufferSize(window, &display_w, &display_h);
 				orthoCamera.dimensions.x = display_w;
 				orthoCamera.dimensions.y = display_h;
+				cameraTransform.translation += camVelocity * clock.dt.count() * camSpeed;
 				rect1.transform->rotation += clock.dt.count() * rotationSpeed;
 				if (rect1.transform->rotation > 360 * 2)
 					rect1.transform->rotation -= 360 * 2;
@@ -307,6 +322,9 @@ int main(int ac, char** av) {
 
 					ImGui::Text("Animation");
 					ImGui::DragFloat("Rotation Speed", &rotationSpeed, .1f, .0f, .0f, "%.3f");
+
+					ImGui::Text("Keyboard");
+					ImGui::DragFloat("Camera Speed", &camSpeed, .1f, .0f, .0f, "%.3f");
 				}
 				ImGui::End();
 				ImGui::Render();

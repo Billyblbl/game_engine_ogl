@@ -6,6 +6,8 @@
 #include <vector>
 #include <functional>
 #include <glm/glm.hpp>
+#include <cstring>
+#include <span>
 
 //TODO check if use of unordered_map is overkill here
 
@@ -22,6 +24,7 @@ namespace GLFW {
 		enum Type : int {
 			UNKNOWN = GLFW_KEY_UNKNOWN,
 			SPACE = GLFW_KEY_SPACE,
+			FIRST = SPACE,
 			APOSTROPHE = GLFW_KEY_APOSTROPHE,
 			COMMA = GLFW_KEY_COMMA,
 			MINUS = GLFW_KEY_MINUS,
@@ -141,7 +144,187 @@ namespace GLFW {
 			RIGHT_ALT = GLFW_KEY_RIGHT_ALT,
 			RIGHT_SUPER = GLFW_KEY_RIGHT_SUPER,
 			MENU = GLFW_KEY_MENU,
-			LAST = GLFW_KEY_LAST
+			LAST = GLFW_KEY_LAST,
+			COUNT = LAST - FIRST
+		};
+
+		const Type List[] = {
+			SPACE,
+			APOSTROPHE,
+			COMMA,
+			MINUS,
+			PERIOD,
+			SLASH,
+			Key0,
+			Key1,
+			Key2,
+			Key3,
+			Key4,
+			Key5,
+			Key6,
+			Key7,
+			Key8,
+			Key9,
+			SEMICOLON,
+			EQUAL,
+			A,
+			B,
+			C,
+			D,
+			E,
+			F,
+			G,
+			H,
+			I,
+			J,
+			K,
+			L,
+			M,
+			N,
+			O,
+			P,
+			Q,
+			R,
+			S,
+			T,
+			U,
+			V,
+			W,
+			X,
+			Y,
+			Z,
+			LEFT_BRACKET,
+			BACKSLASH,
+			RIGHT_BRACKET,
+			GRAVE_ACCENT,
+			WORLD_1,
+			WORLD_2,
+			ESCAPE,
+			ENTER,
+			TAB,
+			BACKSPACE,
+			INSERT,
+			DELETE,
+			RIGHT,
+			LEFT,
+			DOWN,
+			UP,
+			PAGE_UP,
+			PAGE_DOWN,
+			HOME,
+			END,
+			CAPS_LOCK,
+			SCROLL_LOCK,
+			NUM_LOCK,
+			PRINT_SCREEN,
+			PAUSE,
+			F1,
+			F2,
+			F3,
+			F4,
+			F5,
+			F6,
+			F7,
+			F8,
+			F9,
+			F10,
+			F11,
+			F12,
+			F13,
+			F14,
+			F15,
+			F16,
+			F17,
+			F18,
+			F19,
+			F20,
+			F21,
+			F22,
+			F23,
+			F24,
+			F25,
+			KP_0,
+			KP_1,
+			KP_2,
+			KP_3,
+			KP_4,
+			KP_5,
+			KP_6,
+			KP_7,
+			KP_8,
+			KP_9,
+			KP_DECIMAL,
+			KP_DIVIDE,
+			KP_MULTIPLY,
+			KP_SUBTRACT,
+			KP_ADD,
+			KP_ENTER,
+			KP_EQUAL,
+			LEFT_SHIFT,
+			LEFT_CONTROL,
+			LEFT_ALT,
+			LEFT_SUPER,
+			RIGHT_SHIFT,
+			RIGHT_CONTROL,
+			RIGHT_ALT,
+			RIGHT_SUPER,
+			MENU,
+		};
+	}
+
+	namespace Mouse {
+		enum Type : int {
+			LAST = GLFW_MOUSE_BUTTON_LAST,
+			LEFT = GLFW_MOUSE_BUTTON_LEFT,
+			RIGHT = GLFW_MOUSE_BUTTON_RIGHT,
+			MIDDLE = GLFW_MOUSE_BUTTON_MIDDLE,
+			COUNT = LAST
+		};
+	}
+
+	namespace Gamepad {
+		enum Type : int {
+			A = GLFW_GAMEPAD_BUTTON_A,
+			B = GLFW_GAMEPAD_BUTTON_B,
+			X = GLFW_GAMEPAD_BUTTON_X,
+			Y = GLFW_GAMEPAD_BUTTON_Y,
+			LEFT_BUMPER = GLFW_GAMEPAD_BUTTON_LEFT_BUMPER,
+			RIGHT_BUMPER = GLFW_GAMEPAD_BUTTON_RIGHT_BUMPER,
+			BACK = GLFW_GAMEPAD_BUTTON_BACK,
+			START = GLFW_GAMEPAD_BUTTON_START,
+			GUIDE = GLFW_GAMEPAD_BUTTON_GUIDE,
+			LEFT_THUMB = GLFW_GAMEPAD_BUTTON_LEFT_THUMB,
+			RIGHT_THUMB = GLFW_GAMEPAD_BUTTON_RIGHT_THUMB,
+			DPAD_UP = GLFW_GAMEPAD_BUTTON_DPAD_UP,
+			DPAD_RIGHT = GLFW_GAMEPAD_BUTTON_DPAD_RIGHT,
+			DPAD_DOWN = GLFW_GAMEPAD_BUTTON_DPAD_DOWN,
+			DPAD_LEFT = GLFW_GAMEPAD_BUTTON_DPAD_LEFT,
+
+			LAST = GLFW_GAMEPAD_BUTTON_LAST,
+			COUNT = LAST,
+
+			CROSS = GLFW_GAMEPAD_BUTTON_CROSS,
+			CIRCLE = GLFW_GAMEPAD_BUTTON_CIRCLE,
+			SQUARE = GLFW_GAMEPAD_BUTTON_SQUARE,
+			TRIANGLE = GLFW_GAMEPAD_BUTTON_TRIANGLE
+		};
+
+		const Type List[] = {
+			A,
+			B,
+			X,
+			Y,
+			LEFT_BUMPER,
+			RIGHT_BUMPER,
+			BACK,
+			START,
+			GUIDE,
+			LEFT_THUMB,
+			RIGHT_THUMB,
+			DPAD_UP,
+			DPAD_RIGHT,
+			DPAD_DOWN,
+			DPAD_LEFT
 		};
 	}
 }
@@ -151,28 +334,49 @@ namespace Input {
 		enum Type : uint8_t {
 			None = 0,
 			Pressed = 1,
-			Changed = 2,
-			Down = Pressed | Changed,
-			Up = Changed
+			Down = 2,
+			Up = 4
 		};
-	}
 
-	using KeyHandlers = std::function<void()>[3];
+		Type operator|=(Type& a, Type b) {
+			return a = (Type)(a | b);
+		}
+	}
 
 	template<int d>
 	using AxisD = glm::vec<d, float>;
-
-	using Axis = AxisD<1>;
+	using Axis = float;
 
 	struct Context {
-		std::unordered_map<GLFW::Keys::Type, KeyHandlers> keyHandlers;
+		GLFWwindow* window = nullptr;
+		Button::Type keyStates[GLFW::Keys::COUNT];
+		Button::Type mouseButtonStates[GLFW::Mouse::COUNT];
+		Button::Type gamepadButtonStates[GLFW::Gamepad::COUNT];
 	};
+
+	void poll(Context& context) {
+		for (auto key : GLFW::Keys::List)
+			context.keyStates[key - GLFW::Keys::FIRST] = Button::None;
+		glfwPollEvents();
+		for (auto key : GLFW::Keys::List) {
+			if (glfwGetKey(context.window, key) == GLFW::Action::Press) {
+				context.keyStates[key - GLFW::Keys::FIRST] |= Button::Pressed;
+			}
+		}
+	}
 
 }
 
-
-
 static std::unordered_map<GLFWwindow*, Input::Context> GInputContexts;
+
+Input::Context* getInputContext(GLFWwindow* window) {
+	auto contextSearch = GInputContexts.find(window);
+	if (contextSearch == GInputContexts.end())
+		return nullptr;
+	else
+		return &contextSearch->second;
+}
+
 void contextKeyCallback(
 	GLFWwindow* window,
 	GLFW::Keys::Type key,
@@ -180,18 +384,20 @@ void contextKeyCallback(
 	GLFW::Action::Type action,
 	int mods
 ) {
-	auto contextSearch = GInputContexts.find(window);
-	if (contextSearch == GInputContexts.end()) return;
-	auto& context = contextSearch->second;
-	auto handlerSearch = context.keyHandlers.find(key);
-	if (handlerSearch == context.keyHandlers.end()) return;
-	auto& handler = handlerSearch->second;
-	if (handler[action])
-		handler[action]();
+	if (action != GLFW::Action::Press && action != GLFW::Action::Release) return;
+	auto context = getInputContext(window);
+	if (context == nullptr)
+		return;
+	else if (action != GLFW::Action::Press)
+		context->keyStates[key - GLFW::Keys::FIRST] |= Input::Button::Down;
+	else if (action != GLFW::Action::Release)
+		context->keyStates[key - GLFW::Keys::FIRST] |= Input::Button::Up;
 }
 
 Input::Context& allocateInputContext(GLFWwindow* window) {
 	auto& newContext = GInputContexts[window];
+	newContext.window = window;
+	memset(newContext.keyStates, 0, sizeof(newContext.keyStates));
 	glfwSetKeyCallback(window, (GLFWkeyfun)&contextKeyCallback);
 	return newContext;
 }

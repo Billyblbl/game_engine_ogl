@@ -96,6 +96,7 @@ int main(int ac, char** av) {
 	GLFWwindow* window = glfwCreateWindow(dimensions.x, dimensions.y, "Test renderer", NULL, NULL);
 	if (window == NULL)
 		return 1;
+
 	auto& inputContext = allocateInputContext(window);
 	{
 		glfwMakeContextCurrent(window);
@@ -257,16 +258,7 @@ int main(int ac, char** av) {
 		auto viewProjectionMatrix = mapObject(glm::inverse(cameraTransform.matrix()));
 
 		// TODO proper input targets
-		auto camVelocity = glm::vec2(0);
 		auto camSpeed = 10.f;
-		inputContext.keyHandlers[GLFW::Keys::W][GLFW::Action::Release] = [&](){ camVelocity.y -= 1.f; };
-		inputContext.keyHandlers[GLFW::Keys::W][GLFW::Action::Press] = [&](){ camVelocity.y += 1.f; };
-		inputContext.keyHandlers[GLFW::Keys::A][GLFW::Action::Release] = [&](){ camVelocity.x += 1.f; };
-		inputContext.keyHandlers[GLFW::Keys::A][GLFW::Action::Press] = [&](){ camVelocity.x -= 1.f; };
-		inputContext.keyHandlers[GLFW::Keys::S][GLFW::Action::Release] = [&](){ camVelocity.y += 1.f; };
-		inputContext.keyHandlers[GLFW::Keys::S][GLFW::Action::Press] = [&](){ camVelocity.y -= 1.f; };
-		inputContext.keyHandlers[GLFW::Keys::D][GLFW::Action::Release] = [&](){ camVelocity.x -= 1.f; };
-		inputContext.keyHandlers[GLFW::Keys::D][GLFW::Action::Press] = [&](){ camVelocity.x += 1.f; };
 
 		deferDo{
 			GL_GUARD(glUnmapNamedBuffer(viewProjectionMatrix.id));
@@ -283,9 +275,20 @@ int main(int ac, char** av) {
 			// - When io.WantCaptureKeyboard is true, do not dispatch keyboard input data to your main application, or clear/overwrite your copy of the keyboard data.
 			// Generally you may always pass all inputs to dear imgui, and hide them from your application based on those two flags.
 
+			auto camVelocity = glm::vec2(0);
 			{// General Update
 				clock.Update();
-				glfwPollEvents();
+
+				Input::poll(inputContext);
+				if (inputContext.keyStates[GLFW::Keys::W - GLFW::Keys::FIRST] & Input::Button::Pressed)
+					camVelocity.y += 1.f;
+				if (inputContext.keyStates[GLFW::Keys::A - GLFW::Keys::FIRST] & Input::Button::Pressed)
+					camVelocity.x -= 1.f;
+				if (inputContext.keyStates[GLFW::Keys::S - GLFW::Keys::FIRST] & Input::Button::Pressed)
+					camVelocity.y -= 1.f;
+				if (inputContext.keyStates[GLFW::Keys::D - GLFW::Keys::FIRST] & Input::Button::Pressed)
+					camVelocity.x += 1.f;
+
 				int display_w, display_h;
 				glfwGetFramebufferSize(window, &display_w, &display_h);
 				orthoCamera.dimensions.x = display_w;
@@ -325,6 +328,7 @@ int main(int ac, char** av) {
 
 					ImGui::Text("Keyboard");
 					ImGui::DragFloat("Camera Speed", &camSpeed, .1f, .0f, .0f, "%.3f");
+					ImGui::InputFloat2("Velocity", (float*)&camVelocity);
 				}
 				ImGui::End();
 				ImGui::Render();

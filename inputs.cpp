@@ -352,15 +352,31 @@ namespace Input {
 		Button::Type keyStates[GLFW::Keys::COUNT];
 		Button::Type mouseButtonStates[GLFW::Mouse::COUNT];
 		Button::Type gamepadButtonStates[GLFW::Gamepad::COUNT];
+		glm::dvec2 mousePos = glm::dvec2(0);
+		glm::dvec2 mouseDelta = glm::dvec2(0);
+		glm::dvec2 scrollDelta = glm::dvec2(0);
 	};
 
 	void poll(Context& context) {
-		for (auto key : GLFW::Keys::List)
-			context.keyStates[key - GLFW::Keys::FIRST] = Button::None;
+
+		{ //Reset states
+			for (auto key : GLFW::Keys::List)
+				context.keyStates[key - GLFW::Keys::FIRST] = Button::None;
+			for (int i = 0; i < GLFW::Mouse::COUNT; i++)
+				context.keyStates[i] = Button::None;
+			context.mouseDelta = glm::dvec2(0);
+			context.scrollDelta = glm::dvec2(0);
+		}
+
 		glfwPollEvents();
-		for (auto key : GLFW::Keys::List) {
-			if (glfwGetKey(context.window, key) == GLFW::Action::Press) {
+
+		{ // Read pressed button states
+			for (auto key : GLFW::Keys::List) if (glfwGetKey(context.window, key) == GLFW::Action::Press) {
 				context.keyStates[key - GLFW::Keys::FIRST] |= Button::Pressed;
+			}
+
+			for (int i = 0; i < GLFW::Mouse::COUNT; i++) if (glfwGetMouseButton(context.window, i)) {
+				context.mouseButtonStates[i] |= Button::Pressed;
 			}
 		}
 	}
@@ -394,11 +410,49 @@ void contextKeyCallback(
 		context->keyStates[key - GLFW::Keys::FIRST] |= Input::Button::Up;
 }
 
+void contextMouseButtonCallback(
+	GLFWwindow* window,
+	GLFW::Mouse::Type button,
+	GLFW::Action::Type action,
+	int mods
+) {
+	if (action != GLFW::Action::Press && action != GLFW::Action::Release) return;
+	auto context = getInputContext(window);
+	if (context == nullptr)
+		return;
+	else if (action != GLFW::Action::Press)
+		context->mouseButtonStates[button] |= Input::Button::Down;
+	else if (action != GLFW::Action::Release)
+		context->mouseButtonStates[button] |= Input::Button::Up;
+}
+
+void contextMousePosCallback(GLFWwindow* window, double x, double y) {
+	auto context = getInputContext(window);
+	if (context != nullptr) {
+		auto newPos = glm::dvec2(x, y);
+		context->mouseDelta += newPos - context->mousePos;
+		context->mousePos = newPos;
+	}
+}
+
+void contextScrollCallback(GLFWwindow* window, double x, double y) {
+	auto context = getInputContext(window);
+	if (context != nullptr) {
+		context->scrollDelta += glm::dvec2(x, y);
+	}
+}
+
 Input::Context& allocateInputContext(GLFWwindow* window) {
 	auto& newContext = GInputContexts[window];
 	newContext.window = window;
 	memset(newContext.keyStates, 0, sizeof(newContext.keyStates));
+	memset(newContext.mouseButtonStates, 0, sizeof(newContext.mouseButtonStates));
+	memset(newContext.gamepadButtonStates, 0, sizeof(newContext.gamepadButtonStates));
 	glfwSetKeyCallback(window, (GLFWkeyfun)&contextKeyCallback);
+	glfwSetMouseButtonCallback(window, (GLFWmousebuttonfun)&contextMouseButtonCallback);
+	glfwGetCursorPos(window, &newContext.mousePos.x, &newContext.mousePos.y);
+	glfwSetCursorPosCallback(window, (GLFWcursorposfun)&contextMousePosCallback);
+	glfwSetScrollCallback(window, (GLFWscrollfun)&contextScrollCallback);
 	return newContext;
 }
 

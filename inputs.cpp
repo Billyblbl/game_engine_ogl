@@ -372,6 +372,23 @@ namespace Input {
 	using AxisD = glm::vec<d, float>;
 	using Axis = float;
 
+	Axis composite(Button::Type negative, Button::Type positive) {
+		Axis value = 0.f;
+		if (negative & Button::Pressed)
+			value -= 1.f;
+		if (positive & Button::Pressed)
+			value += 1.f;
+		return value;
+	}
+
+	AxisD<2> composite(Button::Type negativeH, Button::Type positiveH, Button::Type negativeV, Button::Type positiveV) {
+		return AxisD<2>(composite(negativeH, positiveH), composite(negativeV, positiveV));
+	}
+
+	AxisD<3> composite(Button::Type negativeH, Button::Type positiveH, Button::Type negativeV, Button::Type positiveV, Button::Type negativeD, Button::Type positiveD) {
+		return AxisD<3>(composite(negativeH, positiveH), composite(negativeV, positiveV), composite(negativeD, positiveD));
+	}
+
 }
 
 namespace GLFW {
@@ -381,11 +398,11 @@ namespace GLFW {
 			Input::Button::Type buttons[std::size(GLFWgamepadstate{}.buttons)];
 			Input::Axis axes[std::size(GLFWgamepadstate{}.axes)];
 
-			operator GLFWgamepadstate*() {
+			operator GLFWgamepadstate* () {
 				return (GLFWgamepadstate*)this;
 			}
 
-			operator const GLFWgamepadstate*() const {
+			operator const GLFWgamepadstate* () const {
 				return (const GLFWgamepadstate*)this;
 			}
 

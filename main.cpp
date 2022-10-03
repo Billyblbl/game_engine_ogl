@@ -283,10 +283,17 @@ int main(int ac, char** av) {
 
 				Input::poll(inputContext);
 
-				for (auto&& [id, state] : inputContext.gamepads) if (id == availableGamepads[0]) {
-					camVelocity.x = state.axes[GLFW::Gamepad::LEFT_X];
-					camVelocity.y = state.axes[GLFW::Gamepad::LEFT_Y];
-				}
+				// for (auto&& [id, state] : inputContext.gamepads) if (id == availableGamepads[0]) {
+				// 	camVelocity.x = state.axes[GLFW::Gamepad::LEFT_X];
+				// 	camVelocity.y = state.axes[GLFW::Gamepad::LEFT_Y];
+				// }
+
+				camVelocity = Input::composite(
+					inputContext.keyStates[indexOf(GLFW::Keys::A)],
+					inputContext.keyStates[indexOf(GLFW::Keys::D)],
+					inputContext.keyStates[indexOf(GLFW::Keys::S)],
+					inputContext.keyStates[indexOf(GLFW::Keys::W)]
+				);
 
 				// if (inputContext.keyStates[indexOf(GLFW::Keys::W)] & Input::Button::Pressed)
 				// 	camVelocity.y += 1.f;

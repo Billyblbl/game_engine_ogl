@@ -148,6 +148,8 @@ namespace GLFW {
 			COUNT = LAST - FIRST
 		};
 
+		int indexOf(Type key) { return key - FIRST; }
+
 		const Type List[] = {
 			SPACE,
 			APOSTROPHE,
@@ -301,12 +303,22 @@ namespace GLFW {
 			DPAD_LEFT = GLFW_GAMEPAD_BUTTON_DPAD_LEFT,
 
 			LAST = GLFW_GAMEPAD_BUTTON_LAST,
-			COUNT = LAST,
+			B_COUNT = LAST,
 
 			CROSS = GLFW_GAMEPAD_BUTTON_CROSS,
 			CIRCLE = GLFW_GAMEPAD_BUTTON_CIRCLE,
 			SQUARE = GLFW_GAMEPAD_BUTTON_SQUARE,
 			TRIANGLE = GLFW_GAMEPAD_BUTTON_TRIANGLE
+		};
+
+		enum Axis : int {
+			LEFT_X = GLFW_GAMEPAD_AXIS_LEFT_X,
+			LEFT_Y = GLFW_GAMEPAD_AXIS_LEFT_Y,
+			RIGHT_X = GLFW_GAMEPAD_AXIS_RIGHT_X,
+			RIGHT_Y = GLFW_GAMEPAD_AXIS_RIGHT_Y,
+			LEFT_TRIGGER = GLFW_GAMEPAD_AXIS_LEFT_TRIGGER,
+			RIGHT_TRIGGER = GLFW_GAMEPAD_AXIS_RIGHT_TRIGGER,
+			A_COUNT = GLFW_GAMEPAD_AXIS_LAST
 		};
 
 		const Type List[] = {
@@ -326,6 +338,8 @@ namespace GLFW {
 			DPAD_DOWN,
 			DPAD_LEFT
 		};
+
+		const int MaxGamepadCount = GLFW_JOYSTICK_LAST;
 	}
 }
 
@@ -341,20 +355,65 @@ namespace Input {
 		Type operator|=(Type& a, Type b) {
 			return a = (Type)(a | b);
 		}
+
+		Type manualUpdate(Type current, Type polled) {
+			Type newState = polled;
+			if ((current & Pressed) != polled) {
+				if (polled == Pressed)
+					newState |= Down;
+				else
+					newState |= Up;
+			}
+			return newState;
+		}
 	}
 
 	template<int d>
 	using AxisD = glm::vec<d, float>;
 	using Axis = float;
 
+}
+
+namespace GLFW {
+	namespace Gamepad {
+
+		struct State {
+			Input::Button::Type buttons[std::size(GLFWgamepadstate{}.buttons)];
+			Input::Axis axes[std::size(GLFWgamepadstate{}.axes)];
+
+			operator GLFWgamepadstate*() {
+				return (GLFWgamepadstate*)this;
+			}
+
+			operator const GLFWgamepadstate*() const {
+				return (const GLFWgamepadstate*)this;
+			}
+
+		};
+
+		void poll(uint8_t id, State& state) {
+			GLFW::Gamepad::State newState;
+			glfwGetGamepadState(id, newState);
+			for (auto i = 0; i < std::size(state.buttons); i++) {
+				newState.buttons[i] = Input::Button::manualUpdate(state.buttons[i], newState.buttons[i]);
+			}
+			state = newState;
+		}
+
+		static_assert(sizeof(State) == sizeof(GLFWgamepadstate));
+	}
+}
+
+namespace Input {
+
 	struct Context {
 		GLFWwindow* window = nullptr;
 		Button::Type keyStates[GLFW::Keys::COUNT];
 		Button::Type mouseButtonStates[GLFW::Mouse::COUNT];
-		Button::Type gamepadButtonStates[GLFW::Gamepad::COUNT];
 		glm::dvec2 mousePos = glm::dvec2(0);
 		glm::dvec2 mouseDelta = glm::dvec2(0);
 		glm::dvec2 scrollDelta = glm::dvec2(0);
+		std::vector<std::pair<uint8_t, GLFW::Gamepad::State>> gamepads;
 	};
 
 	void poll(Context& context) {
@@ -378,6 +437,11 @@ namespace Input {
 			for (int i = 0; i < GLFW::Mouse::COUNT; i++) if (glfwGetMouseButton(context.window, i)) {
 				context.mouseButtonStates[i] |= Button::Pressed;
 			}
+
+			for (auto&& [id, state] : context.gamepads) {
+				GLFW::Gamepad::poll(id, state);
+			}
+
 		}
 	}
 
@@ -442,19 +506,35 @@ void contextScrollCallback(GLFWwindow* window, double x, double y) {
 	}
 }
 
-Input::Context& allocateInputContext(GLFWwindow* window) {
+std::span<uint8_t>	getGamepads() {
+	static uint8_t dest[16];
+	int count = 0;
+	for (int i = 0; i < GLFW::Gamepad::MaxGamepadCount; i++) {
+		if (glfwJoystickIsGamepad(i)) {
+			dest[count++] = i;
+		}
+	}
+	return std::span(dest, count);
+}
+
+Input::Context& allocateInputContext(GLFWwindow* window, std::span<uint8_t> gamepads = {}) {
 	auto& newContext = GInputContexts[window];
 	newContext.window = window;
 	memset(newContext.keyStates, 0, sizeof(newContext.keyStates));
 	memset(newContext.mouseButtonStates, 0, sizeof(newContext.mouseButtonStates));
-	memset(newContext.gamepadButtonStates, 0, sizeof(newContext.gamepadButtonStates));
+	// memset(newContext.gamepadButtonStates, 0, sizeof(newContext.gamepadButtonStates));
 	glfwSetKeyCallback(window, (GLFWkeyfun)&contextKeyCallback);
 	glfwSetMouseButtonCallback(window, (GLFWmousebuttonfun)&contextMouseButtonCallback);
 	glfwGetCursorPos(window, &newContext.mousePos.x, &newContext.mousePos.y);
 	glfwSetCursorPosCallback(window, (GLFWcursorposfun)&contextMousePosCallback);
 	glfwSetScrollCallback(window, (GLFWscrollfun)&contextScrollCallback);
+	newContext.gamepads.reserve(gamepads.size());
+	for (auto gamepadID : gamepads) {
+		auto& [id, state] = newContext.gamepads.emplace_back(std::make_pair(gamepadID, GLFW::Gamepad::State{}));
+		glfwGetGamepadState(id, state);
+	}
+
 	return newContext;
 }
-
 
 #endif

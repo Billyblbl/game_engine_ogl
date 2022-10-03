@@ -97,7 +97,9 @@ int main(int ac, char** av) {
 	if (window == NULL)
 		return 1;
 
-	auto& inputContext = allocateInputContext(window);
+	auto availableGamepads = getGamepads();
+	printf("Detected %lu gamepads\n", availableGamepads.size());
+	auto& inputContext = allocateInputContext(window, availableGamepads);
 	{
 		glfwMakeContextCurrent(window);
 		glfwSwapInterval(1); // Enable vsync
@@ -280,14 +282,20 @@ int main(int ac, char** av) {
 				clock.Update();
 
 				Input::poll(inputContext);
-				if (inputContext.keyStates[GLFW::Keys::W - GLFW::Keys::FIRST] & Input::Button::Pressed)
-					camVelocity.y += 1.f;
-				if (inputContext.keyStates[GLFW::Keys::A - GLFW::Keys::FIRST] & Input::Button::Pressed)
-					camVelocity.x -= 1.f;
-				if (inputContext.keyStates[GLFW::Keys::S - GLFW::Keys::FIRST] & Input::Button::Pressed)
-					camVelocity.y -= 1.f;
-				if (inputContext.keyStates[GLFW::Keys::D - GLFW::Keys::FIRST] & Input::Button::Pressed)
-					camVelocity.x += 1.f;
+
+				for (auto&& [id, state] : inputContext.gamepads) if (id == availableGamepads[0]) {
+					camVelocity.x = state.axes[GLFW::Gamepad::LEFT_X];
+					camVelocity.y = state.axes[GLFW::Gamepad::LEFT_Y];
+				}
+
+				// if (inputContext.keyStates[indexOf(GLFW::Keys::W)] & Input::Button::Pressed)
+				// 	camVelocity.y += 1.f;
+				// if (inputContext.keyStates[indexOf(GLFW::Keys::A)] & Input::Button::Pressed)
+				// 	camVelocity.x -= 1.f;
+				// if (inputContext.keyStates[indexOf(GLFW::Keys::S)] & Input::Button::Pressed)
+				// 	camVelocity.y -= 1.f;
+				// if (inputContext.keyStates[indexOf(GLFW::Keys::D)] & Input::Button::Pressed)
+				// 	camVelocity.x += 1.f;
 
 				int display_w, display_h;
 				glfwGetFramebufferSize(window, &display_w, &display_h);

@@ -1,3 +1,13 @@
+##
+## expects defined
+## GLFW
+## GLEW
+## IMGUI
+## GLM
+## STB
+## BUILD_DIR
+##
+
 CXX=g++
 
 IMGUI_SRC += $(IMGUI)/imgui.cpp

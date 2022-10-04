@@ -3,6 +3,7 @@
 
 #include <glm/glm.hpp>
 #include <glm/gtc/matrix_transform.hpp>
+#include <imgui_extension.cpp>
 
 struct Transform2D {
 	glm::vec2 translation = glm::vec2(0);
@@ -12,12 +13,13 @@ struct Transform2D {
 	glm::mat4 matrix() const {
 		return (
 			glm::translate(glm::mat4(1), glm::vec3(translation, 0)) * // Translation
-			glm::rotate(glm::mat4(1), glm::radians(rotation), glm::vec3(0,0,-1)) * // Rotation
+			glm::rotate(glm::mat4(1), glm::radians(rotation), glm::vec3(0, 0, -1)) * // Rotation
 			glm::scale(glm::mat4(1), glm::vec3(scale, 1)) // Scale;
 		);
 	}
 
 };
+
 
 struct OrthoCamera {
 	glm::vec3	dimensions = glm::vec3(600, 400, 1);
@@ -29,5 +31,26 @@ struct OrthoCamera {
 		return glm::ortho(min.x, max.x, min.y, max.y, min.z, max.z);
 	}
 };
+
+bool EditorWidget(const char* label, Transform2D& data) {
+	bool changed = false;
+	if (ImGui::TreeNode(label)) {
+		changed |= EditorWidget("Position", data.translation);
+		changed |= EditorWidget("Rotation", data.rotation);
+		changed |= EditorWidget("Scale", data.scale);
+		ImGui::TreePop();
+	}
+	return changed;
+}
+
+bool EditorWidget(const char* label, OrthoCamera& data) {
+	bool changed = false;
+	if (ImGui::TreeNode(label)) {
+		changed |= EditorWidget("Dimensions", data.dimensions);
+		changed |= EditorWidget("Center", data.center);
+		ImGui::TreePop();
+	}
+	return changed;
+}
 
 #endif

@@ -21,6 +21,7 @@
 #include <textures.cpp>
 #include <utils.cpp>
 #include <inputs.cpp>
+#include <model.cpp>
 
 #define MAX_ENTITIES 10
 #define MAX_DRAW_BATCH 10
@@ -100,87 +101,72 @@ int main(int ac, char** av) {
 	auto availableGamepads = getGamepads();
 	printf("Detected %lu gamepads\n", availableGamepads.size());
 	auto& inputContext = allocateInputContext(window, availableGamepads);
+	glfwMakeContextCurrent(window);
+	glfwSwapInterval(1); // Enable vsync
+
+	{// Init OpenGL
+		printf("Initializing OpenGL\n");
+		GLenum err = glewInit();
+		if (GLEW_OK != err) {
+			fprintf(stderr, "GLEW Error: %s\n", glewGetErrorString(err));
+			return err;
+		}
+		fprintf(stdout, "Status: Using GLEW %s\n", glewGetString(GLEW_VERSION));
+
+		auto clear_color = glm::vec4(0.45f, 0.55f, 0.60f, 1.00f);
+
+		int display_w, display_h;
+		glfwGetFramebufferSize(window, &display_w, &display_h);
+
+		glEnable(GL_DEBUG_OUTPUT);
+		glEnable(GL_DEBUG_OUTPUT_SYNCHRONOUS);
+		glDebugMessageCallback(ogl_debug_callback, NULL);
+		glDebugMessageControl(GL_DONT_CARE, GL_DONT_CARE, GL_DONT_CARE, 0, NULL, GL_TRUE);
+
+		GL_GUARD(glViewport(0, 0, display_w, display_h));
+
+		// GL_GUARD(glEnable(GL_CULL_FACE));
+		GL_GUARD(glDisable(GL_CULL_FACE));
+		// GL_GUARD(glCullFace(GL_BACK));
+		GL_GUARD(glEnable(GL_DEPTH_TEST));
+		GL_GUARD(glDepthFunc(GL_LEQUAL));
+		GL_GUARD(glClearColor(clear_color.x * clear_color.w, clear_color.y * clear_color.w, clear_color.z * clear_color.w, clear_color.w));
+		GL_GUARD(glEnable(GL_BLEND));
+		GL_GUARD(glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA));
+
+	}
+
+	{// Init DearImgui
+		printf("Initializing DearImgui\n");
+		const char* glsl_version = getVersion();
+		// Setup Dear ImGui context
+		IMGUI_CHECKVERSION();
+		ImGui::CreateContext();
+		ImGuiIO& io = ImGui::GetIO();
+		io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;       // Enable Keyboard Controls
+		//io.ConfigFlags |= ImGuiConfigFlags_NavEnableGamepad;      // Enable Gamepad Controls
+		io.ConfigFlags |= ImGuiConfigFlags_DockingEnable;           // Enable Docking
+		io.ConfigFlags |= ImGuiConfigFlags_ViewportsEnable;         // Enable Multi-Viewport / Platform Windows
+		//io.ConfigViewportsNoAutoMerge = true;
+		//io.ConfigViewportsNoTaskBarIcon = true;
+
+		// Setup Dear ImGui style
+		ImGui::StyleColorsDark();
+		//ImGui::StyleColorsLight();
+
+		// When viewports are enabled we tweak WindowRounding/WindowBg so platform windows can look identical to regular ones.
+		ImGuiStyle& style = ImGui::GetStyle();
+		if (io.ConfigFlags & ImGuiConfigFlags_ViewportsEnable) {
+			style.WindowRounding = 0.0f;
+			style.Colors[ImGuiCol_WindowBg].w = 1.0f;
+		}
+
+		// Setup Platform/Renderer backends
+		ImGui_ImplGlfw_InitForOpenGL(window, true);
+		ImGui_ImplOpenGL3_Init(glsl_version);
+	}
+
 	{
-		glfwMakeContextCurrent(window);
-		glfwSwapInterval(1); // Enable vsync
-
-		{// Init OpenGL
-			printf("Initializing OpenGL\n");
-			GLenum err = glewInit();
-			if (GLEW_OK != err) {
-				fprintf(stderr, "GLEW Error: %s\n", glewGetErrorString(err));
-				return err;
-			}
-			fprintf(stdout, "Status: Using GLEW %s\n", glewGetString(GLEW_VERSION));
-
-			auto clear_color = glm::vec4(0.45f, 0.55f, 0.60f, 1.00f);
-
-			int display_w, display_h;
-			glfwGetFramebufferSize(window, &display_w, &display_h);
-
-			glEnable(GL_DEBUG_OUTPUT);
-			glEnable(GL_DEBUG_OUTPUT_SYNCHRONOUS);
-			glDebugMessageCallback(ogl_debug_callback, NULL);
-			glDebugMessageControl(GL_DONT_CARE, GL_DONT_CARE, GL_DONT_CARE, 0, NULL, GL_TRUE);
-
-			GL_GUARD(glViewport(0, 0, display_w, display_h));
-
-			// GL_GUARD(glEnable(GL_CULL_FACE));
-			GL_GUARD(glDisable(GL_CULL_FACE));
-			// GL_GUARD(glCullFace(GL_BACK));
-			GL_GUARD(glEnable(GL_DEPTH_TEST));
-			GL_GUARD(glDepthFunc(GL_LEQUAL));
-			GL_GUARD(glClearColor(clear_color.x * clear_color.w, clear_color.y * clear_color.w, clear_color.z * clear_color.w, clear_color.w));
-			GL_GUARD(glEnable(GL_BLEND));
-			GL_GUARD(glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA));
-
-		}
-
-		{// Init DearImgui
-			printf("Initializing DearImgui\n");
-			const char* glsl_version = getVersion();
-			// Setup Dear ImGui context
-			IMGUI_CHECKVERSION();
-			ImGui::CreateContext();
-			ImGuiIO& io = ImGui::GetIO();
-			io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;       // Enable Keyboard Controls
-			//io.ConfigFlags |= ImGuiConfigFlags_NavEnableGamepad;      // Enable Gamepad Controls
-			io.ConfigFlags |= ImGuiConfigFlags_DockingEnable;           // Enable Docking
-			io.ConfigFlags |= ImGuiConfigFlags_ViewportsEnable;         // Enable Multi-Viewport / Platform Windows
-			//io.ConfigViewportsNoAutoMerge = true;
-			//io.ConfigViewportsNoTaskBarIcon = true;
-
-			// Setup Dear ImGui style
-			ImGui::StyleColorsDark();
-			//ImGui::StyleColorsLight();
-
-			// When viewports are enabled we tweak WindowRounding/WindowBg so platform windows can look identical to regular ones.
-			ImGuiStyle& style = ImGui::GetStyle();
-			if (io.ConfigFlags & ImGuiConfigFlags_ViewportsEnable) {
-				style.WindowRounding = 0.0f;
-				style.Colors[ImGuiCol_WindowBg].w = 1.0f;
-			}
-
-			// Setup Platform/Renderer backends
-			ImGui_ImplGlfw_InitForOpenGL(window, true);
-			ImGui_ImplOpenGL3_Init(glsl_version);
-
-			// Load Fonts
-			// - If no fonts are loaded, dear imgui will use the default font. You can also load multiple fonts and use ImGui::PushFont()/PopFont() to select them.
-			// - AddFontFromFileTTF() will return the ImFont* so you can store it if you need to select the font among multiple.
-			// - If the file cannot be loaded, the function will return NULL. Please handle those errors in your application (e.g. use an assertion, or display an error and quit).
-			// - The fonts will be rasterized at a given size (w/ oversampling) and stored into a texture when calling ImFontAtlas::Build()/GetTexDataAsXXXX(), which ImGui_ImplXXXX_NewFrame below will call.
-			// - Read 'docs/FONTS.md' for more instructions and details.
-			// - Remember that in C/C++ if you want to include a backslash \ in a string literal you need to write a double backslash \\ !
-			//io.Fonts->AddFontDefault();
-			//io.Fonts->AddFontFromFileTTF("../../misc/fonts/Roboto-Medium.ttf", 16.0f);
-			//io.Fonts->AddFontFromFileTTF("../../misc/fonts/Cousine-Regular.ttf", 15.0f);
-			//io.Fonts->AddFontFromFileTTF("../../misc/fonts/DroidSans.ttf", 16.0f);
-			//io.Fonts->AddFontFromFileTTF("../../misc/fonts/ProggyTiny.ttf", 10.0f);
-			//ImFont* font = io.Fonts->AddFontFromFileTTF("c:\\Windows\\Fonts\\ArialUni.ttf", 18.0f, NULL, io.Fonts->GetGlyphRangesJapanese());
-			//IM_ASSERT(font != NULL);
-		}
-
 		auto imguiIO = ImGui::GetIO();
 
 		//Render data
@@ -207,34 +193,12 @@ int main(int ac, char** av) {
 		deferDo{ GL_GUARD(glDeleteTextures(1, &texture.id)); };
 
 		//simple rect
-		auto vertices = std::array{
-			DefaultVertex2D { glm::vec2(-300.f, -300.f), glm::vec2(0, 1) },
-			DefaultVertex2D { glm::vec2(-300.f, 300.f), glm::vec2(0, 0) },
-			DefaultVertex2D { glm::vec2(300.f, 300.f), glm::vec2(1, 0) },
-			DefaultVertex2D { glm::vec2(300.f, -300.f), glm::vec2(1, 1) }
-		};
-		auto indices = std::array{
-			// 0u, 1u, 2u,
-			// 0u, 2u, 3u
-			0u, 1u, 3u,
-			1u, 2u, 3u
-		};
-
-		auto vbo = createBufferSpan(std::span(vertices));
-		auto ibo = createBufferSpan(std::span(indices));
-		auto vao = recordVAO<DefaultVertex2D>(vbo, ibo);
-
-		auto bindings = std::array{ bind(texture, 0) };
-
-		Material matrl = { drawPipeline, std::span(bindings) };
-		RenderData rdData = { vao, &matrl };
-
-		deferDo{
-			fflush(stdout);
-			GL_GUARD(glDeleteVertexArrays(1, &vao));
-			GLuint buffers[] = {vbo, ibo};
-			GL_GUARD(glDeleteBuffers(2, buffers));
-		};
+		auto [vertices, indices] = createRect(texture.dimensions);
+		auto mesh = uploadMesh(
+			std::span(vertices.data(), vertices.size()),
+			std::span(indices.data(), indices.size())
+		);
+		deferDo{ deleteMesh(mesh); };
 
 		// State
 		auto clock = Time::Start();
@@ -256,10 +220,8 @@ int main(int ac, char** av) {
 
 		auto drawBatchMatrices = mapBuffer<glm::mat4>(MAX_DRAW_BATCH);
 		auto reservedBatchSlots = 0;
-
 		auto viewProjectionMatrix = mapObject(glm::inverse(cameraTransform.matrix()));
 
-		// TODO proper input targets
 		auto camSpeed = 10.f;
 
 		deferDo{
@@ -271,12 +233,6 @@ int main(int ac, char** av) {
 
 		// Main loop
 		while (!glfwWindowShouldClose(window)) {
-			// Poll and handle events (inputs, window resize, etc.)
-			// You can read the io.WantCaptureMouse, io.WantCaptureKeyboard flags to tell if dear imgui wants to use your inputs.
-			// - When io.WantCaptureMouse is true, do not dispatch mouse input data to your main application, or clear/overwrite your copy of the mouse data.
-			// - When io.WantCaptureKeyboard is true, do not dispatch keyboard input data to your main application, or clear/overwrite your copy of the keyboard data.
-			// Generally you may always pass all inputs to dear imgui, and hide them from your application based on those two flags.
-
 			auto camVelocity = glm::vec2(0);
 			{// General Update
 				clock.Update();
@@ -323,27 +279,13 @@ int main(int ac, char** av) {
 				ImGui::NewFrame();
 				ImGui::Begin("Controls (0:camera, 1:rect1, 2:rec2)");
 				{
-
-					for (size_t i = 0; i < usedTransforms; i++) {
-						auto& transform = entityTransforms[i];
-						ImGui::PushID(i);
-						ImGui::Text("Transform2D");
-						ImGui::DragFloat2("Position", (float*)&transform.translation, .1f, .0f, .0f, "%.3f");
-						ImGui::DragFloat("Rotation", &transform.rotation, .1f, .0f, .0f, "%.3f");
-						ImGui::DragFloat2("Scale", (float*)&transform.scale, .1f, .0f, .0f, "%.3f");
-						ImGui::PopID();
-					}
-
-					ImGui::Text("Ortho Camera");
-					ImGui::DragFloat3("Dimensions", (float*)&orthoCamera.dimensions, .1f, .0f, .0f, "%.3f");
-					ImGui::DragFloat3("Center", (float*)&orthoCamera.center, .1f, .0f, .0f, "%.3f");
-
+					EditorWidget("Transforms", std::span(entityTransforms, usedTransforms));
+					EditorWidget("Ortho Camera", orthoCamera);
 					ImGui::Text("Animation");
-					ImGui::DragFloat("Rotation Speed", &rotationSpeed, .1f, .0f, .0f, "%.3f");
-
+					EditorWidget("Rotation Speed", rotationSpeed);
 					ImGui::Text("Keyboard");
-					ImGui::DragFloat("Camera Speed", &camSpeed, .1f, .0f, .0f, "%.3f");
-					ImGui::InputFloat2("Velocity", (float*)&camVelocity);
+					EditorWidget("Camera Speed", camSpeed);
+					EditorWidget("Velocity", camVelocity);
 				}
 				ImGui::End();
 				ImGui::Render();
@@ -352,7 +294,6 @@ int main(int ac, char** av) {
 			}
 
 			{//Render scene
-
 				for (auto&& ent : std::span(renderableEntities).subspan(0, renderableEntitiesCount)) {
 					//!Should only keep things with the same RenderData in the same batch
 					drawBatchMatrices.obj[reservedBatchSlots++] = ent.transform->matrix();
@@ -362,7 +303,7 @@ int main(int ac, char** av) {
 				auto ssbos = std::array{ bind(drawBatchMatrices, 0) };
 				auto textures = std::array{ bind(texture, 0) };
 				draw(
-					drawPipeline, vao, indices.size(), reservedBatchSlots,
+					drawPipeline, mesh.vao, indices.size(), reservedBatchSlots,
 					textures,
 					ssbos,
 					ubos
@@ -370,11 +311,9 @@ int main(int ac, char** av) {
 				reservedBatchSlots = 0;
 			}
 
-			{// Draw overlay
+			{
+				// Draw overlay
 				ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
-				// Update and Render additional Platform Windows
-				// (Platform functions may change the current OpenGL context, so we save/restore it to make it easier to paste this code elsewhere.
-				//  For this specific demo app we could also call glfwMakeContextCurrent(window) directly)
 				if (imguiIO.ConfigFlags & ImGuiConfigFlags_ViewportsEnable) {
 					GLFWwindow* backup_current_context = glfwGetCurrentContext();
 					ImGui::UpdatePlatformWindows();
@@ -387,16 +326,11 @@ int main(int ac, char** av) {
 		}
 	}
 
-	{// Cleanup
-
-		ImGui_ImplOpenGL3_Shutdown();
-		ImGui_ImplGlfw_Shutdown();
-		ImGui::DestroyContext();
-
-		glfwDestroyWindow(window);
-		glfwTerminate();
-
-	}
-
+	// Cleanup
+	ImGui_ImplOpenGL3_Shutdown();
+	ImGui_ImplGlfw_Shutdown();
+	ImGui::DestroyContext();
+	glfwDestroyWindow(window);
+	glfwTerminate();
 	return 0;
 }

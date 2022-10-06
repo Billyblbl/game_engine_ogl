@@ -5,13 +5,16 @@
 #include <GLFW/glfw3.h>
 #include <glm/glm.hpp>
 #include <vertex.cpp>
+#include <glutils.cpp>
 
 struct RenderMesh {
 	GLuint vbo;
 	GLuint ibo;
 	GLuint vao;
+	uint32_t indexCount;
+	GLenum indexType;
+	GLenum drawMode;
 };
-
 
 //
 // 9 Slice Quad sheets
@@ -43,12 +46,27 @@ template<glm::uvec2 dimensions> auto createQuadSheetIndices() {
 	for (auto y = 0; y < dimensions.y; y++) {
 		for (auto x = 0; x < dimensions.x; x++) {
 			auto quadIndex = (y * dimensions.x + x);
-			indices[y * (3 * 2 * dimensions.x) + x] = quadIndex;
-			indices[y * (3 * 2 * dimensions.x) + x + 1] = quadIndex + 1;
-			indices[y * (3 * 2 * dimensions.x) + x + 2] = quadIndex + dimensions.x + 1;
-			indices[y * (3 * 2 * dimensions.x) + x + 3] = quadIndex + dimensions.x + 1;
-			indices[y * (3 * 2 * dimensions.x) + x + 4] = quadIndex + 1;
-			indices[y * (3 * 2 * dimensions.x) + x + 5] = quadIndex + dimensions.x + 2;
+			auto offset = 0;
+
+			// // T1 clockwise
+			// indices[y * (3 * 2 * dimensions.x) + x + offset++] = quadIndex;
+			// indices[y * (3 * 2 * dimensions.x) + x + offset++] = quadIndex + 1;
+			// indices[y * (3 * 2 * dimensions.x) + x + offset++] = quadIndex + dimensions.x + 1;
+
+			// T1 counter clockwise
+			indices[y * (3 * 2 * dimensions.x) + x + offset++] = quadIndex + dimensions.x + 1;
+			indices[y * (3 * 2 * dimensions.x) + x + offset++] = quadIndex + 1;
+			indices[y * (3 * 2 * dimensions.x) + x + offset++] = quadIndex;
+
+			// // T2 clockwise
+			// indices[y * (3 * 2 * dimensions.x) + x + offset++] = quadIndex + dimensions.x + 1;
+			// indices[y * (3 * 2 * dimensions.x) + x + offset++] = quadIndex + 1;
+			// indices[y * (3 * 2 * dimensions.x) + x + offset++] = quadIndex + dimensions.x + 2;
+
+			// T2 counter clockwise
+			indices[y * (3 * 2 * dimensions.x) + x + offset++] = quadIndex + dimensions.x + 2;
+			indices[y * (3 * 2 * dimensions.x) + x + offset++] = quadIndex + 1;
+			indices[y * (3 * 2 * dimensions.x) + x + offset++] = quadIndex + dimensions.x + 1;
 		}
 	}
 	return indices;
@@ -123,12 +141,12 @@ auto createRect9Slice(glm::vec2 content, glm::vec2 borders) {
 	);
 }
 
-template<typename Vertex = DefaultVertex2D, typename Index = uint32_t>
+template<typename Vertex = DefaultVertex2D, typename Index = glm::u32>
 RenderMesh uploadMesh(std::span<Vertex> vertices, std::span<Index> indices) {
 	auto vbo = createBufferSpan(vertices);
 	auto ibo = createBufferSpan(indices);
 	auto vao = recordVAO<Vertex>(vbo, ibo);
-	return { vbo, ibo, vao };
+	return { vbo, ibo, vao, (uint32_t)indices.size(), Format<Index>.element, GL_TRIANGLES };
 }
 
 void deleteMesh(RenderMesh& mesh) {

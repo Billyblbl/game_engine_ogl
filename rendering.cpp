@@ -8,6 +8,7 @@
 #include <span>
 #include <buffer.cpp>
 #include <textures.cpp>
+#include <model.cpp>
 
 GLuint createShader(std::string_view source, GLenum type) {
 	auto shader = GL_GUARD(glCreateShader(type));
@@ -107,8 +108,7 @@ struct RenderData {
 
 void draw(
 	GLuint pipeline,
-	GLuint vao,
-	GLsizei indexCount,
+	const RenderMesh& mesh,
 	int instanceCount = 1,
 	std::span<GPUBinding> textures = noBinds,
 	std::span<GPUBinding> ssbos = noBinds,
@@ -118,9 +118,9 @@ void draw(
 	for (auto &&texture : textures) bindTexture(texture);
 	for (auto &&ubo : ubos) bindUBO(ubo);
 	for (auto &&ssbo : ssbos) bindSSBO(ssbo);
-	GL_GUARD(glBindVertexArray(vao));
+	GL_GUARD(glBindVertexArray(mesh.vao));
 
-	GL_GUARD(glDrawElementsInstanced(GL_TRIANGLES, indexCount, GL_UNSIGNED_INT, nullptr, instanceCount));
+	GL_GUARD(glDrawElementsInstanced(mesh.drawMode, mesh.indexCount, mesh.indexType, nullptr, instanceCount));
 
 	GL_GUARD(glBindVertexArray(0));
 	for (auto &&ssbo : ssbos) unbindSSBO(ssbo);

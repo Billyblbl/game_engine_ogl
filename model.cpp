@@ -1,11 +1,14 @@
 #ifndef GMODEL
 # define GMODEL
 
-#include <tuple>
+#include <span>
 #include <GLFW/glfw3.h>
 #include <glm/glm.hpp>
 #include <vertex.cpp>
 #include <glutils.cpp>
+#include <textures.cpp>
+
+#define MAX_TEXTURES 8
 
 struct RenderMesh {
 	GLuint vbo;
@@ -146,13 +149,28 @@ RenderMesh uploadMesh(std::span<Vertex> vertices, std::span<Index> indices) {
 	auto vbo = createBufferSpan(vertices);
 	auto ibo = createBufferSpan(indices);
 	auto vao = recordVAO<Vertex>(vbo, ibo);
-	return { vbo, ibo, vao, (uint32_t)indices.size(), Format<Index>.element, GL_TRIANGLES };
+	return {
+		vbo, ibo, vao,
+		(uint32_t)indices.size(),
+		Format<Index>.element,
+		GL_TRIANGLES
+	};
 }
 
 void deleteMesh(RenderMesh& mesh) {
 	GL_GUARD(glDeleteVertexArrays(1, &mesh.vao));
 	GLuint buffers[] = { mesh.vbo, mesh.ibo };
 	GL_GUARD(glDeleteBuffers(2, buffers));
+}
+
+RenderMesh createRectMesh(glm::vec2 dimensions) {
+	auto [vertices, indices] = createRect(dimensions);
+	return uploadMesh(std::span(vertices.data(), vertices.size()), indices);
+}
+
+RenderMesh getUnitRectMesh() {
+	static auto mesh = createRectMesh(glm::vec2(1));
+	return mesh;
 }
 
 #endif

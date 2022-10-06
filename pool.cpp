@@ -4,8 +4,8 @@
 #include <span>
 #include <stdint.h>
 
-template<typename T> auto removeInvalidateAt(std::span<T> content, uint64_t index) {
-	content[index] = content.last();
+template<typename T> auto RemoveInvalidateAt(std::span<T> content, uint64_t index) {
+	content[index] = content[content.size() - 1];
 	return content.subspan(0, content.size() - 1);
 }
 
@@ -14,7 +14,7 @@ template<typename T> struct Pool {
 	uint64_t	count = 0;
 
 	T& add(T&& element = T{}) { return buffer[count++] = element; }
-	void removeInvalidateAt(uint64_t index) { count = removeInvalidateAt(allocated(), index).size(); }
+	void removeInvalidateAt(uint64_t index) { count = RemoveInvalidateAt(allocated(), index).size(); }
 	std::span<T> allocated() { return buffer.subspan(0, count); }
 	T& operator[](uint64_t i) { return buffer[i]; }
 };
@@ -34,6 +34,45 @@ struct Arena {
 
 };
 
+template<typename ID = uint32_t>
+struct IDRegistry {
+	Pool<ID> unusedIds;
+	ID next = 0;
+
+	static auto create(Arena& allocator, uint32_t capacity, ID startingID = 0) {
+		return IDRegistry{ Pool<ID> { allocator.allocate<ID>(capacity - 1), 0 }, startingID };
+	}
+
+	auto allocate() {
+		if (unusedIds.count > 0) {
+			ID id = unusedIds[unusedIds.count - 1];
+			unusedIds.removeInvalidateAt(unusedIds.count - 1);
+			return id;
+		} else {
+			return next++;
+		}
+	}
+
+	void deallocate(ID id) {
+		if (next - 1 == id) {
+			next--;
+		} else {
+			unusedIds.add(id);
+		}
+	}
+
+	void reclaim() {
+		for (int i = unusedIds.count - 1; i > -1; i--) {
+			if (unusedIds[i] == next - 1) {
+				unusedIds.removeInvalidateAt(i);
+				next--;
+			}
+		}
+	}
+};
+
+using EntityRegistry = IDRegistry<>;
+
 template<typename T, typename ID = uint32_t> struct LinearDatabase {
 	std::span<ID> ids;
 	Pool<T>	pool;
@@ -52,12 +91,7 @@ template<typename T, typename ID = uint32_t> struct LinearDatabase {
 		return -1;
 	}
 
-	int32_t indexOf(const T& element) {
-		for (auto i = 0; i < pool.count; i++) if (pool[i] == element) {
-			return i;
-		}
-		return -1;
-	}
+	int32_t indexOf(const T& element) { return &element - pool.buffer.data(); }
 
 	T* find(ID id) {
 		auto index = indexOf(id);
@@ -66,6 +100,8 @@ template<typename T, typename ID = uint32_t> struct LinearDatabase {
 		else
 			return &pool[index];
 	}
+
+	ID idOf(const T& element) { return ids[indexOf(element)]; }
 
 	auto& add(ID id, T&& element = {}) {
 		auto& placed = pool.add(std::forward<T>(element));
@@ -77,7 +113,7 @@ template<typename T, typename ID = uint32_t> struct LinearDatabase {
 		auto index = indexOf(id);
 		if (index >= 0) {
 			pool.removeInvalidateAt(index);
-			removeInvalidateAt(ids, index);
+			RemoveInvalidateAt(ids, index);
 		}
 	}
 

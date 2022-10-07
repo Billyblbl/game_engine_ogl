@@ -110,21 +110,21 @@ bool playground(App& app) {
 	Arena allocator = { { memory, 0 } };
 
 	auto entities = EntityRegistry::create(allocator, MAX_ENTITIES, 1);
-	auto entityTransforms = LinearDatabase<Transform2D>::create(allocator, MAX_ENTITIES);
+	auto transforms = LinearDatabase<Transform2D>::create(allocator, MAX_ENTITIES);
 	//TODO find better way to group entities for render stage
-	auto renderableEntities = LinearDatabase<Transform2D*>::create(allocator, MAX_ENTITIES);
+	auto toRender = LinearDatabase<Transform2D*>::create(allocator, MAX_ENTITIES);
 
 	auto cameraEntity = entities.allocate();
 	auto rect1Entity = entities.allocate();
 	auto rect2Entity = entities.allocate();
 
 	// Note(202210052223) : Those references are invalid when removing from the pool
-	auto& cameraTransform = entityTransforms.add(cameraEntity);
+	auto& cameraTransform = transforms.add(cameraEntity);
 	{
-		auto& rect1Transform = entityTransforms.add(rect1Entity);
-		auto& rect2Transform = entityTransforms.add(rect2Entity);
-		renderableEntities.add(rect1Entity, &rect1Transform);
-		renderableEntities.add(rect2Entity, &rect2Transform);
+		auto& rect1Transform = transforms.add(rect1Entity);
+		auto& rect2Transform = transforms.add(rect2Entity);
+		toRender.add(rect1Entity, &rect1Transform);
+		toRender.add(rect2Entity, &rect2Transform);
 	}
 	auto orthoCamera = OrthoCamera{ glm::vec3(app.pixelDimensions, -1) };
 	auto viewProjectionMatrix = mapObject(glm::inverse(cameraTransform.matrix()));
@@ -160,7 +160,7 @@ bool playground(App& app) {
 
 			{ // Test movements
 				cameraTransform.translation += camVelocity * clock.dt.count() * camSpeed;
-				auto rect1Transform = entityTransforms.find(rect1Entity);
+				auto rect1Transform = transforms.find(rect1Entity);
 				rect1Transform->rotation += clock.dt.count() * rotationSpeed;
 				while (rect1Transform->rotation > 360 * 2)
 					rect1Transform->rotation -= 360 * 2;
@@ -177,7 +177,7 @@ bool playground(App& app) {
 			ImGui::NewFrame();
 			ImGui::Begin("Controls (0:camera, 1:rect1, 2:rec2)");
 			{
-				EditorWidget("Transforms", entityTransforms.pool.allocated());
+				EditorWidget("Transforms", transforms.pool.allocated());
 				EditorWidget("Ortho Camera", orthoCamera);
 				ImGui::Text("Animation");
 				EditorWidget("Rotation Speed", rotationSpeed);
@@ -195,7 +195,7 @@ bool playground(App& app) {
 			auto ubos = std::array{ bind(viewProjectionMatrix, 0) }; // Scene global data
 			auto ssbos = std::array{ bind(drawBatchMatricesBuffer, 0) }; // Entities unique data
 			auto textures = std::array{ bind(texture, 0) }; // Entities shared data
-			for (auto&& transform : renderableEntities.pool.allocated()) {
+			for (auto&& transform : toRender.pool.allocated()) {
 				//!Should only keep things with the same render data in the same batch
 				if (drawBatchMatrices.count >= drawBatchMatrices.buffer.size()) {
 					draw(drawPipeline, rect, drawBatchMatrices.count, textures, ssbos, ubos);

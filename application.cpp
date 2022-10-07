@@ -59,7 +59,7 @@ auto createApp(const char* windowTitle, glm::uvec2 windowDimensions, uint8_t gam
 	glfwMakeContextCurrent(window);
 	glfwSwapInterval(1); // Enable vsync
 
-	return App{ window, inputContext, windowDimensions };
+	return App{ window, inputContext, windowDimensions, "" };
 }
 
 bool initOpenGL(App& app) {

@@ -20,27 +20,6 @@
 #define MAX_DRAW_BATCH MAX_ENTITIES
 #define AVERAGE_CACHE_LINE_ACCORDING_TO_THE_INTERNET 64
 
-const static GLenum SeverityIncluded[] = {
-	GL_DEBUG_SEVERITY_HIGH,
-	GL_DEBUG_SEVERITY_MEDIUM,
-	GL_DEBUG_SEVERITY_LOW
-	// GL_DEBUG_SEVERITY_NOTIFICATION
-};
-
-static void ogl_debug_callback(GLenum source,
-	GLenum type,
-	GLuint id,
-	GLenum severity,
-	GLsizei length,
-	const GLchar* message,
-	const void* userParam
-) {
-	for (auto&& i : SeverityIncluded) if (i == severity) {
-		fprintf(stderr, "OpenGL Debug %d: %s on %u, %s\n", type, GLtoString(type), id, message);
-	}
-}
-
-
 const char* getVersion() {
 #if defined(IMGUI_IMPL_OPENGL_ES2)
 	// GL ES 2.0 + GLSL 100
@@ -69,38 +48,6 @@ const char* getVersion() {
 
 
 bool playground(App& app) {
-
-	{// Init OpenGL
-		//TODO error handling
-		printf("Initializing OpenGL\n");
-		GLenum err = glewInit();
-		if (GLEW_OK != err) {
-			fprintf(stderr, "GLEW Error: %s\n", glewGetErrorString(err));
-			return false;
-		}
-		fprintf(stdout, "Status: Using GLEW %s\n", glewGetString(GLEW_VERSION));
-
-		auto clear_color = glm::vec4(0.45f, 0.55f, 0.60f, 1.00f);
-
-		int display_w, display_h;
-		glfwGetFramebufferSize(app.window, &display_w, &display_h);
-
-		glEnable(GL_DEBUG_OUTPUT);
-		glEnable(GL_DEBUG_OUTPUT_SYNCHRONOUS);
-		glDebugMessageCallback(ogl_debug_callback, NULL);
-		glDebugMessageControl(GL_DONT_CARE, GL_DONT_CARE, GL_DONT_CARE, 0, NULL, GL_TRUE);
-
-		GL_GUARD(glViewport(0, 0, display_w, display_h));
-		GL_GUARD(glEnable(GL_CULL_FACE));
-		// GL_GUARD(glDisable(GL_CULL_FACE));
-		GL_GUARD(glCullFace(GL_BACK));
-		// GL_GUARD(glCullFace(GL_FRONT));
-		GL_GUARD(glEnable(GL_DEPTH_TEST));
-		GL_GUARD(glDepthFunc(GL_LEQUAL));
-		GL_GUARD(glClearColor(clear_color.x * clear_color.w, clear_color.y * clear_color.w, clear_color.z * clear_color.w, clear_color.w));
-		GL_GUARD(glEnable(GL_BLEND));
-		GL_GUARD(glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA));
-	}
 
 	{// Init DearImgui
 		printf("Initializing DearImgui\n");

@@ -28,6 +28,7 @@ INC += $(STB)
 INC += $(IMGUI)/backends
 INC += $(GLFW)/include
 INC += $(GLEW)/include
+INC += $(BOX2D)/include
 
 LIB = .
 LIB += $(GLFW)/lib
@@ -37,6 +38,7 @@ LIB += $(GLEW)/lib
 LDFLAGS += -lglfw3
 LDFLAGS += -lglew32
 LDFLAGS += -lopengl32
+LDFLAGS += -lbox2d
 
 CFLAGS = -g3 -std=c++20
 

@@ -92,7 +92,7 @@ bool initOpenGL(App& app) {
 	GL_GUARD(glClearColor(clear_color.x * clear_color.w, clear_color.y * clear_color.w, clear_color.z * clear_color.w, clear_color.w));
 	GL_GUARD(glEnable(GL_BLEND));
 	GL_GUARD(glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA));
-
+	return true;
 }
 
 bool update(App& app, std::string_view focusPath) {

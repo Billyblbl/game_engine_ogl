@@ -25,6 +25,7 @@ namespace Time {
 	Clock Start() {
 		Clock clock;
 		clock.start = clock.lastFrame = std::chrono::steady_clock::now();
+		clock.totalElapsedTime = std::chrono::duration<float>(0);
 		return clock;
 	}
 

@@ -16,6 +16,8 @@
 #include <pool.cpp>
 #include <transform.cpp>
 
+#include <box2d/box2d.h>
+
 #define MAX_ENTITIES 10
 #define MAX_DRAW_BATCH MAX_ENTITIES
 #define AVERAGE_CACHE_LINE_ACCORDING_TO_THE_INTERNET 64
@@ -135,6 +137,42 @@ bool playground(App& app) {
 		GL_GUARD(glUnmapNamedBuffer(drawBatchMatricesBuffer.id));
 	};
 
+
+#pragma region physics
+
+	auto gravity = b2Vec2(0.f, -10.f);
+	auto world = b2World(gravity);
+
+	// Static body
+	b2BodyDef bodyDef;
+	bodyDef.position.Set(0, -10);
+	auto* staticBody = world.CreateBody(&bodyDef);
+
+	b2PolygonShape box;
+	box.SetAsBox(50, 10);
+
+	staticBody->CreateFixture(&box, 0);
+
+	// dynamic body
+	bodyDef.position.Set(0, 0);
+	bodyDef.type = b2_dynamicBody;
+	auto* dynamicBody = world.CreateBody(&bodyDef);
+
+	box.SetAsBox(1, 1);
+
+	b2FixtureDef fixtureDef;
+	fixtureDef.shape = &box;
+	fixtureDef.density = 1;
+	fixtureDef.friction = .3f;
+	dynamicBody->CreateFixture(&fixtureDef);
+
+	auto physicsTimeStep = 1.f / 60.f;
+	auto velocityIterations = 8;
+	auto positionIterations = 3;
+	auto physicsTimePoint = clock.totalElapsedTime.count();
+
+#pragma endregion physics
+
 	// Main loop
 	fflush(stdout);
 	while (update(app, __func__)) {
@@ -150,24 +188,21 @@ bool playground(App& app) {
 				app.inputs.keyStates[indexOf(GLFW::Keys::W)]
 			);
 
-			{ // Update viewport
-				int display_w, display_h;
-				glfwGetFramebufferSize(app.window, &display_w, &display_h);
-				orthoCamera.dimensions.x = display_w;
-				orthoCamera.dimensions.y = display_h;
-				GL_GUARD(glViewport(0, 0, display_w, display_h));
-			}
-
-			{ // Test movements
-				cameraTransform.translation += camVelocity * clock.dt.count() * camSpeed;
-				auto rect1Transform = transforms.find(rect1Entity);
-				rect1Transform->rotation += clock.dt.count() * rotationSpeed;
-				while (rect1Transform->rotation > 360 * 2)
-					rect1Transform->rotation -= 360 * 2;
-			}
+			// Test movements
+			cameraTransform.translation += camVelocity * clock.dt.count() * camSpeed;
 
 			entities.reclaim();
-			GL_GUARD(glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT));
+		}
+
+		{// Physics Update
+			if (clock.totalElapsedTime.count() - physicsTimePoint >= 0.f) {
+				world.Step(physicsTimeStep, velocityIterations, positionIterations);
+				physicsTimePoint += physicsTimeStep;
+			}
+
+			auto timeTillAtPhysicsPoint = physicsTimePoint - clock.totalElapsedTime.count();
+			auto physicsInterpolation = 1.f - timeTillAtPhysicsPoint / physicsTimeStep;
+			//TODO interpolate transforms towards the physics step values
 		}
 
 		{// Build Imgui overlay
@@ -192,19 +227,32 @@ bool playground(App& app) {
 		}
 
 		{// Render scene
-			auto ubos = std::array{ bind(viewProjectionMatrix, 0) }; // Scene global data
-			auto ssbos = std::array{ bind(drawBatchMatricesBuffer, 0) }; // Entities unique data
-			auto textures = std::array{ bind(texture, 0) }; // Entities shared data
-			for (auto&& transform : toRender.pool.allocated()) {
-				//!Should only keep things with the same render data in the same batch
-				if (drawBatchMatrices.count >= drawBatchMatrices.buffer.size()) {
-					draw(drawPipeline, rect, drawBatchMatrices.count, textures, ssbos, ubos);
-					drawBatchMatrices.count = 0;
-				}
-				drawBatchMatrices.add(transform->matrix());
+
+			{ // Update viewport
+				int display_w, display_h;
+				glfwGetFramebufferSize(app.window, &display_w, &display_h);
+				orthoCamera.dimensions.x = display_w;
+				orthoCamera.dimensions.y = display_h;
+				GL_GUARD(glViewport(0, 0, display_w, display_h));
 			}
-			draw(drawPipeline, rect, drawBatchMatrices.count, textures, ssbos, ubos);
-			drawBatchMatrices.count = 0;
+
+			GL_GUARD(glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT));
+
+			{ // Draw entities
+				auto ubos = std::array{ bind(viewProjectionMatrix, 0) }; // Scene global data
+				auto ssbos = std::array{ bind(drawBatchMatricesBuffer, 0) }; // Entities unique data
+				auto textures = std::array{ bind(texture, 0) }; // Entities shared data
+				for (auto&& transform : toRender.pool.allocated()) {
+					//!Should only keep things with the same render data in the same batch
+					if (drawBatchMatrices.count >= drawBatchMatrices.buffer.size()) {
+						draw(drawPipeline, rect, drawBatchMatrices.count, textures, ssbos, ubos);
+						drawBatchMatrices.count = 0;
+					}
+					drawBatchMatrices.add(transform->matrix());
+				}
+				draw(drawPipeline, rect, drawBatchMatrices.count, textures, ssbos, ubos);
+				drawBatchMatrices.count = 0;
+			}
 		}
 
 		{// Draw overlay

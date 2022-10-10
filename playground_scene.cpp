@@ -140,31 +140,33 @@ bool playground(App& app) {
 
 #pragma region physics
 
-	auto gravity = b2Vec2(0.f, -10.f);
+	auto toSimulate = LinearDatabase<b2Body*>::create(allocator, MAX_ENTITIES);
+
+	auto gravity = b2Vec2(0.f, -1.f);
 	auto world = b2World(gravity);
 
-	// Static body
-	b2BodyDef bodyDef;
-	bodyDef.position.Set(0, -10);
-	auto* staticBody = world.CreateBody(&bodyDef);
+	{
+		b2BodyDef bodyDef;
+		b2PolygonShape box;
+		b2FixtureDef fixtureDef;
 
-	b2PolygonShape box;
-	box.SetAsBox(50, 10);
+		// Static body
+		// bodyDef.position.Set(0, -10);
+		// auto* staticBody = toSimulate.add(rect1Entity, world.CreateBody(&bodyDef));
+		// box.SetAsBox(50, 10);
+		// staticBody->CreateFixture(&box, 0);
 
-	staticBody->CreateFixture(&box, 0);
-
-	// dynamic body
-	bodyDef.position.Set(0, 0);
-	bodyDef.type = b2_dynamicBody;
-	auto* dynamicBody = world.CreateBody(&bodyDef);
-
-	box.SetAsBox(1, 1);
-
-	b2FixtureDef fixtureDef;
-	fixtureDef.shape = &box;
-	fixtureDef.density = 1;
-	fixtureDef.friction = .3f;
-	dynamicBody->CreateFixture(&fixtureDef);
+		// dynamic body
+		auto tr = transforms.find(rect2Entity);
+		bodyDef.position.Set(tr->translation.x, tr->translation.y);
+		bodyDef.type = b2_dynamicBody;
+		auto* dynamicBody = toSimulate.add(rect2Entity, world.CreateBody(&bodyDef));
+		box.SetAsBox(1, 1);
+		fixtureDef.shape = &box;
+		fixtureDef.density = 1;
+		fixtureDef.friction = .3f;
+		dynamicBody->CreateFixture(&fixtureDef);
+	}
 
 	auto physicsTimeStep = 1.f / 60.f;
 	auto velocityIterations = 8;
@@ -200,9 +202,23 @@ bool playground(App& app) {
 				physicsTimePoint += physicsTimeStep;
 			}
 
-			auto timeTillAtPhysicsPoint = physicsTimePoint - clock.totalElapsedTime.count();
-			auto physicsInterpolation = 1.f - timeTillAtPhysicsPoint / physicsTimeStep;
-			//TODO interpolate transforms towards the physics step values
+			// auto timeTillAtPhysicsPoint = physicsTimePoint - clock.totalElapsedTime.count();
+			// auto physicsInterpolation = 1.f - timeTillAtPhysicsPoint / physicsTimeStep;
+
+			for (auto i = 0; i < toSimulate.pool.allocated().size(); i++) {
+				auto body = toSimulate.pool[i];
+				auto id = toSimulate.ids[i];
+
+				auto transform = transforms.find(id);
+				if (!transform)
+					fprintf(stderr, "transform-less physics body %u", id);
+				auto pos = body->GetPosition();
+				// transform->translation = glm::mix(transform->translation, glm::vec2(pos.x, pos.y), physicsInterpolation);
+				transform->translation = glm::vec2(pos.x, pos.y);
+				// transform->rotation = glm::mix(transform->rotation, body->GetAngle(), physicsInterpolation);
+				transform->rotation = body->GetAngle();
+			}
+
 		}
 
 		{// Build Imgui overlay
@@ -214,11 +230,19 @@ bool playground(App& app) {
 			{
 				EditorWidget("Transforms", transforms.pool.allocated());
 				EditorWidget("Ortho Camera", orthoCamera);
-				ImGui::Text("Animation");
-				EditorWidget("Rotation Speed", rotationSpeed);
-				ImGui::Text("Keyboard");
+				ImGui::Text("Movement");
 				EditorWidget("Camera Speed", camSpeed);
 				EditorWidget("Velocity", camVelocity);
+
+				ImGui::Separator();
+
+				ImGui::Text("Physics");
+				EditorWidget("Physics time step", physicsTimeStep);
+				EditorWidget("Velocity Iterations", velocityIterations);
+				EditorWidget("Position Iterations", positionIterations);
+				ImGui::Text("Physics time point = %f", physicsTimePoint);
+				ImGui::Text("Time = %f", clock.totalElapsedTime.count());
+
 			}
 			ImGui::End();
 			ImGui::Render();

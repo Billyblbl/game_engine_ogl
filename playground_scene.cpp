@@ -16,7 +16,7 @@
 #include <pool.cpp>
 #include <transform.cpp>
 
-#include <box2d/box2d.h>
+#include <physics2d.cpp>
 
 #define MAX_ENTITIES 10
 #define MAX_DRAW_BATCH MAX_ENTITIES
@@ -121,7 +121,7 @@ bool playground(App& app) {
 	auto rect2Entity = entities.allocate();
 
 	// Note(202210052223) : Those references are invalid when removing from the pool
-	auto& cameraTransform = transforms.add(cameraEntity);
+	auto& cameraWorldTransform = transforms.add(cameraEntity);
 	{
 		auto& rect1Transform = transforms.add(rect1Entity);
 		auto& rect2Transform = transforms.add(rect2Entity);
@@ -129,7 +129,7 @@ bool playground(App& app) {
 		toRender.add(rect2Entity, &rect2Transform);
 	}
 	auto orthoCamera = OrthoCamera{ glm::vec3(app.pixelDimensions, -1) };
-	auto viewProjectionMatrix = mapObject(glm::inverse(cameraTransform.matrix()));
+	auto viewProjectionMatrix = mapObject(glm::inverse(cameraWorldTransform.matrix()));
 	auto drawBatchMatricesBuffer = mapBuffer<glm::mat4>(MAX_DRAW_BATCH);
 	auto drawBatchMatrices = Pool<glm::mat4>{ drawBatchMatricesBuffer.obj };
 	deferDo{
@@ -142,7 +142,7 @@ bool playground(App& app) {
 
 	auto toSimulate = LinearDatabase<b2Body*>::create(allocator, MAX_ENTITIES);
 
-	auto gravity = b2Vec2(0.f, -1.f);
+	auto gravity = b2Vec2(0.f, -9.f);
 	auto world = b2World(gravity);
 
 	{
@@ -151,17 +151,18 @@ bool playground(App& app) {
 		b2FixtureDef fixtureDef;
 
 		// Static body
-		// bodyDef.position.Set(0, -10);
-		// auto* staticBody = toSimulate.add(rect1Entity, world.CreateBody(&bodyDef));
-		// box.SetAsBox(50, 10);
-		// staticBody->CreateFixture(&box, 0);
+		bodyDef.position.Set(0, -10);
+		auto* staticBody = toSimulate.add(rect1Entity, world.CreateBody(&bodyDef));
+		box.SetAsBox(100, 10);
+		staticBody->CreateFixture(&box, 0);
 
 		// dynamic body
 		auto tr = transforms.find(rect2Entity);
+		tr->translation += glm::vec2(0, 200);
 		bodyDef.position.Set(tr->translation.x, tr->translation.y);
 		bodyDef.type = b2_dynamicBody;
 		auto* dynamicBody = toSimulate.add(rect2Entity, world.CreateBody(&bodyDef));
-		box.SetAsBox(1, 1);
+		box.SetAsBox(20, 20);
 		fixtureDef.shape = &box;
 		fixtureDef.density = 1;
 		fixtureDef.friction = .3f;
@@ -172,6 +173,10 @@ bool playground(App& app) {
 	auto velocityIterations = 8;
 	auto positionIterations = 3;
 	auto physicsTimePoint = clock.totalElapsedTime.count();
+	auto debugDraw = B2dDebugDraw();
+
+	world.SetDebugDraw(&debugDraw);
+	debugDraw.SetFlags(b2Draw::e_shapeBit);
 
 #pragma endregion physics
 
@@ -191,19 +196,30 @@ bool playground(App& app) {
 			);
 
 			// Test movements
-			cameraTransform.translation += camVelocity * clock.dt.count() * camSpeed;
+			cameraWorldTransform.translation += camVelocity * clock.dt.count() * camSpeed;
 
 			entities.reclaim();
 		}
 
-		{// Physics Update
-			if (clock.totalElapsedTime.count() - physicsTimePoint >= 0.f) {
-				world.Step(physicsTimeStep, velocityIterations, positionIterations);
-				physicsTimePoint += physicsTimeStep;
+		if (clock.totalElapsedTime.count() - physicsTimePoint >= 0.f) {// Physics Update
+			for (auto i = 0; i < toSimulate.pool.allocated().size(); i++) {
+				auto body = toSimulate.pool[i];
+				auto id = toSimulate.ids[i];
+
+				auto transform = transforms.find(id);
+				if (!transform)
+					fprintf(stderr, "transform-less physics body %u", id);
+
+				auto pos = b2Vec2(transform->translation.x, transform->translation.y);
+				body->SetTransform(pos, -glm::radians(transform->rotation));
+
+				//TODO proper awake on tranform change
+				body->SetAwake(true);
 			}
 
-			// auto timeTillAtPhysicsPoint = physicsTimePoint - clock.totalElapsedTime.count();
-			// auto physicsInterpolation = 1.f - timeTillAtPhysicsPoint / physicsTimeStep;
+			world.Step(physicsTimeStep, velocityIterations, positionIterations);
+			physicsTimePoint += physicsTimeStep;
+
 
 			for (auto i = 0; i < toSimulate.pool.allocated().size(); i++) {
 				auto body = toSimulate.pool[i];
@@ -213,12 +229,9 @@ bool playground(App& app) {
 				if (!transform)
 					fprintf(stderr, "transform-less physics body %u", id);
 				auto pos = body->GetPosition();
-				// transform->translation = glm::mix(transform->translation, glm::vec2(pos.x, pos.y), physicsInterpolation);
 				transform->translation = glm::vec2(pos.x, pos.y);
-				// transform->rotation = glm::mix(transform->rotation, body->GetAngle(), physicsInterpolation);
-				transform->rotation = body->GetAngle();
+				transform->rotation = -glm::degrees(body->GetAngle());
 			}
-
 		}
 
 		{// Build Imgui overlay
@@ -228,26 +241,31 @@ bool playground(App& app) {
 			ImGui::NewFrame();
 			ImGui::Begin("Controls (0:camera, 1:rect1, 2:rec2)");
 			{
+
 				EditorWidget("Transforms", transforms.pool.allocated());
+				EditorWidget("Rigidbodies 2D", toSimulate.pool.allocated());
 				EditorWidget("Ortho Camera", orthoCamera);
 				ImGui::Text("Movement");
 				EditorWidget("Camera Speed", camSpeed);
 				EditorWidget("Velocity", camVelocity);
 
 				ImGui::Separator();
-
 				ImGui::Text("Physics");
-				EditorWidget("Physics time step", physicsTimeStep);
-				EditorWidget("Velocity Iterations", velocityIterations);
-				EditorWidget("Position Iterations", positionIterations);
-				ImGui::Text("Physics time point = %f", physicsTimePoint);
-				ImGui::Text("Time = %f", clock.totalElapsedTime.count());
+				PhysicsControls(
+					world,
+					physicsTimeStep,
+					velocityIterations,
+					positionIterations,
+					physicsTimePoint
+				);
+				ImGui::Separator();
 
+				ImGui::Text("Time = %f", clock.totalElapsedTime.count());
 			}
 			ImGui::End();
 			ImGui::Render();
 
-			viewProjectionMatrix.obj = orthoCamera.matrix() * glm::inverse(cameraTransform.matrix());
+			viewProjectionMatrix.obj = orthoCamera.matrix() * glm::inverse(cameraWorldTransform.matrix());
 		}
 
 		{// Render scene
@@ -288,6 +306,9 @@ bool playground(App& app) {
 				glfwMakeContextCurrent(backup_current_context);
 			}
 		}
+
+		debugDraw.viewTransform = viewProjectionMatrix.obj;
+		world.DebugDraw();
 	}
 	return app.focusPath.size() > 0;
 }

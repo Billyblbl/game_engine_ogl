@@ -45,10 +45,12 @@ CFLAGS = -g3 -std=c++20
 APP_NAME=test_app
 
 APP=$(BUILD_DIR)/test_app
+EDITOR=$(BUILD_DIR)/test_editor
 IMGUI_MODULE=$(BUILD_DIR)/imgui.o
 APP_MODULE=$(APP:%=%.o)
+EDITOR_MODULE=$(EDITOR:%=%.o)
 
-all : $(APP)
+all : app editor
 
 $(BUILD_DIR):
 	mkdir -p $@
@@ -66,9 +68,19 @@ $(APP_MODULE): $(SRC) $(BUILD_DIR)
 $(APP): $(APP_MODULE) $(IMGUI_MODULE)
 	$(CXX) $(CFLAGS) $(APP_MODULE) $(IMGUI_MODULE) $(INC:%=-I%) $(LIB:%=-L%) $(LDFLAGS) -o $@
 
+$(EDITOR_MODULE): rect_editor.cpp $(BUILD_DIR)
+	$(CXX) -c rect_editor.cpp $(CFLAGS) $(INC:%=-I%) -o $@
+
+$(EDITOR): $(EDITOR_MODULE) $(IMGUI_MODULE)
+	$(CXX) $(CFLAGS) $(EDITOR_MODULE) $(IMGUI_MODULE) $(INC:%=-I%) $(LIB:%=-L%) $(LDFLAGS) -o $@
+
+app: $(APP)
+
+editor: $(EDITOR)
+
 clean:
 	rm -rf $(BUILD_DIR)/*
 
 re: clean all
 
-.PHONY: all clean re $(APP_MODULE)
+.PHONY: all clean re $(APP_MODULE) editor

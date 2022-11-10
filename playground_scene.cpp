@@ -22,70 +22,10 @@
 #define MAX_DRAW_BATCH MAX_ENTITIES
 #define AVERAGE_CACHE_LINE_ACCORDING_TO_THE_INTERNET 64
 
-const char* getVersion() {
-#if defined(IMGUI_IMPL_OPENGL_ES2)
-	// GL ES 2.0 + GLSL 100
-	const char* glsl_version = "#version 100";
-	glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 2);
-	glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 0);
-	glfwWindowHint(GLFW_CLIENT_API, GLFW_OPENGL_ES_API);
-#elif defined(__APPLE__)
-	// GL 3.2 + GLSL 150
-	const char* glsl_version = "#version 150";
-	glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 3);
-	glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 2);
-	glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);  // 3.2+ only
-	glfwWindowHint(GLFW_OPENGL_FORWARD_COMPAT, GL_TRUE);            // Required on Mac
-#else
-	// GL 4.6 + GLSL 130
-	//TODO check if we can use more up to date glsl version
-	const char* glsl_version = "#version 130";
-	glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 4);
-	glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 6);
-	//glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);  // 3.2+ only
-	//glfwWindowHint(GLFW_OPENGL_FORWARD_COMPAT, GL_TRUE);            // 3.0+ only
-#endif
-	return glsl_version;
-}
-
-
 bool playground(App& app) {
 
-	{// Init DearImgui
-		printf("Initializing DearImgui\n");
-		const char* glsl_version = getVersion();
-		// Setup Dear ImGui context
-		IMGUI_CHECKVERSION();
-		ImGui::CreateContext();
-		ImGuiIO& io = ImGui::GetIO();
-		io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;       // Enable Keyboard Controls
-		//io.ConfigFlags |= ImGuiConfigFlags_NavEnableGamepad;      // Enable Gamepad Controls
-		io.ConfigFlags |= ImGuiConfigFlags_DockingEnable;           // Enable Docking
-		io.ConfigFlags |= ImGuiConfigFlags_ViewportsEnable;         // Enable Multi-Viewport / Platform Windows
-		//io.ConfigViewportsNoAutoMerge = true;
-		//io.ConfigViewportsNoTaskBarIcon = true;
-
-		// Setup Dear ImGui style
-		ImGui::StyleColorsDark();
-		//ImGui::StyleColorsLight();
-
-		// When viewports are enabled we tweak WindowRounding/WindowBg so platform windows can look identical to regular ones.
-		ImGuiStyle& style = ImGui::GetStyle();
-		if (io.ConfigFlags & ImGuiConfigFlags_ViewportsEnable) {
-			style.WindowRounding = 0.0f;
-			style.Colors[ImGuiCol_WindowBg].w = 1.0f;
-		}
-
-		// Setup Platform/Renderer backends
-		ImGui_ImplGlfw_InitForOpenGL(app.window, true);
-		ImGui_ImplOpenGL3_Init(glsl_version);
-	}
-	deferDo{
-		ImGui_ImplOpenGL3_Shutdown();
-		ImGui_ImplGlfw_Shutdown();
-		ImGui::DestroyContext();
-	};
-	auto& imguiIO = ImGui::GetIO();
+	ImGui::Init_OGL_GLFW(app.window);
+	deferDo { ImGui::Shutdown(); };
 
 	//Render data
 	auto drawPipeline = createRenderPipeline(
@@ -131,7 +71,6 @@ bool playground(App& app) {
 	auto orthoCamera = OrthoCamera{ glm::vec3(app.pixelDimensions, -1) };
 	auto viewProjectionMatrix = mapObject(glm::inverse(cameraWorldTransform.matrix()));
 	auto drawBatchMatricesBuffer = mapBuffer<glm::mat4>(MAX_DRAW_BATCH);
-	auto drawBatchMatrices = Pool<glm::mat4>{ drawBatchMatricesBuffer.obj };
 	deferDo{
 		GL_GUARD(glUnmapNamedBuffer(viewProjectionMatrix.id));
 		GL_GUARD(glUnmapNamedBuffer(drawBatchMatricesBuffer.id));
@@ -270,17 +209,12 @@ bool playground(App& app) {
 
 		{// Render scene
 
-			{ // Update viewport
-				int display_w, display_h;
-				glfwGetFramebufferSize(app.window, &display_w, &display_h);
-				orthoCamera.dimensions.x = display_w;
-				orthoCamera.dimensions.y = display_h;
-				GL_GUARD(glViewport(0, 0, display_w, display_h));
-			}
-
+			orthoCamera.dimensions.x = app.pixelDimensions.x;
+			orthoCamera.dimensions.y = app.pixelDimensions.y;
 			GL_GUARD(glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT));
 
 			{ // Draw entities
+				auto drawBatchMatrices = Pool<glm::mat4>{ drawBatchMatricesBuffer.obj };
 				auto ubos = std::array{ bind(viewProjectionMatrix, 0) }; // Scene global data
 				auto ssbos = std::array{ bind(drawBatchMatricesBuffer, 0) }; // Entities unique data
 				auto textures = std::array{ bind(texture, 0) }; // Entities shared data
@@ -293,19 +227,11 @@ bool playground(App& app) {
 					drawBatchMatrices.add(transform->matrix());
 				}
 				draw(drawPipeline, rect, drawBatchMatrices.count, textures, ssbos, ubos);
-				drawBatchMatrices.count = 0;
+				// drawBatchMatrices.count = 0;
 			}
 		}
 
-		{// Draw overlay
-			ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
-			if (imguiIO.ConfigFlags & ImGuiConfigFlags_ViewportsEnable) {
-				GLFWwindow* backup_current_context = glfwGetCurrentContext();
-				ImGui::UpdatePlatformWindows();
-				ImGui::RenderPlatformWindowsDefault();
-				glfwMakeContextCurrent(backup_current_context);
-			}
-		}
+		ImGui::Draw();
 
 		debugDraw.viewTransform = viewProjectionMatrix.obj;
 		world.DebugDraw();

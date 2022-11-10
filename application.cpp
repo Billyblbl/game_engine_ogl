@@ -104,6 +104,14 @@ bool update(App& app, std::string_view focusPath) {
 		return false;
 	}
 	glfwSwapBuffers(app.window);
+
+	{ // Update viewport
+		int display_w, display_h;
+		glfwGetFramebufferSize(app.window, &display_w, &display_h);
+		app.pixelDimensions.x = display_w;
+		app.pixelDimensions.y = display_h;
+		GL_GUARD(glViewport(0, 0, display_w, display_h));
+	}
 	return true;
 }
 
@@ -112,6 +120,7 @@ void destroyApp(App& app) {
 	glfwTerminate();
 }
 
+//TODO this is disguting, change it
 bool exitApp(App&) { return false; }
 
 #endif

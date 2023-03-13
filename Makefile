@@ -29,6 +29,7 @@ INC += $(IMGUI)/backends
 INC += $(GLFW)/include
 INC += $(GLEW)/include
 INC += $(BOX2D)/include
+INC += $(BLBLSTD)/src
 
 LIB = .
 LIB += $(GLFW)/lib
@@ -44,11 +45,12 @@ CFLAGS = -g3 -std=c++20
 
 APP_NAME=test_app
 
-APP=$(BUILD_DIR)/test_app
+APP=$(BUILD_DIR)/$(APP_NAME)
 EDITOR=$(BUILD_DIR)/test_editor
 IMGUI_MODULE=$(BUILD_DIR)/imgui.o
 APP_MODULE=$(APP:%=%.o)
 EDITOR_MODULE=$(EDITOR:%=%.o)
+BLBLSTD_MODULE = $(BLBLSTD)/build/blblstd.o
 
 all : app editor
 
@@ -61,18 +63,22 @@ $(IMGUI_MODULE): $(IMGUI_SRC) $(BUILD_DIR)
 # $(APP_MODULE): $(SRC) $(BUILD_DIR)
 # 	cat $(SRC) | $(CXX) -c -x c++ $(CFLAGS) $(INC:%=-I%) -o $@ -
 
+
+$(BLBLSTD_MODULE):
+	cd blblstd && source ./env.sh && $(MAKE) re
+
 $(APP_MODULE): $(SRC) $(BUILD_DIR)
 	$(CXX) -c $(SRC) $(CFLAGS) $(INC:%=-I%) -o $@
 
 
-$(APP): $(APP_MODULE) $(IMGUI_MODULE)
-	$(CXX) $(CFLAGS) $(APP_MODULE) $(IMGUI_MODULE) $(INC:%=-I%) $(LIB:%=-L%) $(LDFLAGS) -o $@
+$(APP): $(APP_MODULE) $(IMGUI_MODULE) $(BLBLSTD_MODULE)
+	$(CXX) $(CFLAGS) $^ $(INC:%=-I%) $(LIB:%=-L%) $(LDFLAGS) -o $@
 
-$(EDITOR_MODULE): rect_editor.cpp $(BUILD_DIR)
-	$(CXX) -c rect_editor.cpp $(CFLAGS) $(INC:%=-I%) -o $@
+$(EDITOR_MODULE): editor.cpp $(BUILD_DIR)
+	$(CXX) -c editor.cpp $(CFLAGS) $(INC:%=-I%) -o $@
 
-$(EDITOR): $(EDITOR_MODULE) $(IMGUI_MODULE)
-	$(CXX) $(CFLAGS) $(EDITOR_MODULE) $(IMGUI_MODULE) $(INC:%=-I%) $(LIB:%=-L%) $(LDFLAGS) -o $@
+$(EDITOR): $(EDITOR_MODULE) $(IMGUI_MODULE) $(BLBLSTD_MODULE)
+	$(CXX) $(CFLAGS) $^ $(INC:%=-I%) $(LIB:%=-L%) $(LDFLAGS) -o $@
 
 app: $(APP)
 
@@ -83,4 +89,4 @@ clean:
 
 re: clean all
 
-.PHONY: all clean re $(APP_MODULE) editor
+.PHONY: all app editor clean re $(APP_MODULE) $(EDITOR_MODULE)

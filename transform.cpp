@@ -1,31 +1,29 @@
 #ifndef GTRANSFORM
 # define GTRANSFORM
 
-#include <glm/glm.hpp>
-#include <glm/gtc/matrix_transform.hpp>
+#include <math.cpp>
 #include <imgui_extension.cpp>
 
 struct Transform2D {
-	glm::vec2 translation = glm::vec2(0);
-	glm::vec2 scale = glm::vec2(1);
-	float rotation = .0f;
+	v2f32 translation = v2f32(0);
+	v2f32 scale = v2f32(1);
+	f32 rotation = .0f;
 
-	glm::mat4 matrix() const {
+	m4x4f32 matrix() const {
 		return (
-			glm::translate(glm::mat4(1), glm::vec3(translation, 0)) * // Translation
-			glm::rotate(glm::mat4(1), glm::radians(rotation), glm::vec3(0, 0, -1)) * // Rotation
-			glm::scale(glm::mat4(1), glm::vec3(scale, 1)) // Scale;
+			glm::translate(m4x4f32(1), v3f32(translation, 0)) * // Translation
+			glm::rotate(m4x4f32(1), glm::radians(rotation), v3f32(0, 0, -1)) * // Rotation
+			glm::scale(m4x4f32(1), v3f32(scale, 1)) // Scale;
 		);
 	}
 
 };
 
-
 struct OrthoCamera {
-	glm::vec3	dimensions = glm::vec3(600, 400, 1);
-	glm::vec3 center = glm::vec3(0);
+	v3f32	dimensions = v3f32(600, 400, 1);
+	v3f32 center = v3f32(0);
 
-	glm::mat4 matrix() const {
+	m4x4f32 matrix() const {
 		auto min = -dimensions / 2.f - center;
 		auto max = dimensions / 2.f - center;
 		return glm::ortho(min.x, max.x, min.y, max.y, min.z, max.z);

@@ -11,9 +11,6 @@
 #include <stb_image.h>
 // #include <GL/glext.h>
 #include <glutils.cpp>
-#include <span>
-#include <vector>
-
 #include <string>
 
 namespace Textures {
@@ -24,7 +21,7 @@ namespace Textures {
 		GLenum elements;
 	};
 
-	template<typename T> constexpr ImageFormat ImageFormatFromElement(int channels) {
+	template<typename T> constexpr ImageFormat image_format_from_element(int channels) {
 		return {
 			Format<T>.vec[channels],
 			Format<T>.pixel[channels],
@@ -34,18 +31,18 @@ namespace Textures {
 
 	template<typename T> constexpr ImageFormat ImageFormatFromPixelType = { 0, 0, 0 };
 	template<typename T, int I, glm::qualifier Q>
-	constexpr ImageFormat ImageFormatFromPixelType<glm::vec<I, T, Q>> = ImageFormatFromElement<T>(I);
+	constexpr ImageFormat ImageFormatFromPixelType<glm::vec<I, T, Q>> = image_format_from_element<T>(I);
 
-	template<> constexpr ImageFormat ImageFormatFromPixelType<glm::f32> = ImageFormatFromPixelType<glm::f32vec1>;
-	template<> constexpr ImageFormat ImageFormatFromPixelType<glm::i32> = ImageFormatFromPixelType<glm::i32vec1>;
-	template<> constexpr ImageFormat ImageFormatFromPixelType<glm::u32> = ImageFormatFromPixelType<glm::u32vec1>;
-	template<> constexpr ImageFormat ImageFormatFromPixelType<glm::i16> = ImageFormatFromPixelType<glm::i16vec1>;
-	template<> constexpr ImageFormat ImageFormatFromPixelType<glm::u16> = ImageFormatFromPixelType<glm::u16vec1>;
-	template<> constexpr ImageFormat ImageFormatFromPixelType<glm::i8> = ImageFormatFromPixelType<glm::i8vec1>;
-	template<> constexpr ImageFormat ImageFormatFromPixelType<glm::u8> = ImageFormatFromPixelType<glm::u8vec1>;
+	template<> constexpr ImageFormat ImageFormatFromPixelType<f32> = ImageFormatFromPixelType<v1f32>;
+	template<> constexpr ImageFormat ImageFormatFromPixelType<i32> = ImageFormatFromPixelType<v1i32>;
+	template<> constexpr ImageFormat ImageFormatFromPixelType<u32> = ImageFormatFromPixelType<v1u32>;
+	template<> constexpr ImageFormat ImageFormatFromPixelType<i16> = ImageFormatFromPixelType<v1i16>;
+	template<> constexpr ImageFormat ImageFormatFromPixelType<u16> = ImageFormatFromPixelType<v1u16>;
+	template<> constexpr ImageFormat ImageFormatFromPixelType<i8> = ImageFormatFromPixelType<v1i8>;
+	template<> constexpr ImageFormat ImageFormatFromPixelType<u8> = ImageFormatFromPixelType<v1u8>;
 
 
-	template<typename T> constexpr ImageFormat ImageFormatOf(std::span<T> source) {
+	template<typename T> constexpr ImageFormat image_format_of(std::span<T> source) {
 		return ImageFormatFromPixelType<std::remove_const_t<T>>;
 	}
 
@@ -66,45 +63,41 @@ namespace Textures {
 		int					channels;
 	};
 
-	Texture createFromSource(std::span<std::byte> source, const ImageFormat& format, glm::uvec2 dimensions, SamplingFilter filter = Linear, WrapMode wrap = Repeat) {
+	Texture allocate(const ImageFormat& format, glm::uvec2 dimensions, SamplingFilter filter = Linear, WrapMode wrap = Repeat) {
 		GLuint id;
-
-		// GL_GUARD(glPixelStorei(GL_UNPACK_ALIGNMENT, 1));
-
 		GL_GUARD(glBindTexture(GL_TEXTURE_2D, 0));
-
 		GL_GUARD(glCreateTextures(GL_TEXTURE_2D, 1, &id));
-
 		printf("Creating Texture %u\n", id);
 		fflush(stdout);
-
 		GL_GUARD(glTextureStorage2D(id, 1, format.internal, dimensions.x, dimensions.y));
 		GL_GUARD(glTextureParameteri(id, GL_TEXTURE_MIN_FILTER, filter));
 		GL_GUARD(glTextureParameteri(id, GL_TEXTURE_MAG_FILTER, filter));
 		GL_GUARD(glTextureParameteri(id, GL_TEXTURE_WRAP_R, wrap));
 		GL_GUARD(glTextureParameteri(id, GL_TEXTURE_WRAP_S, wrap));
 		GL_GUARD(glTextureParameteri(id, GL_TEXTURE_WRAP_T, wrap));
-
-		// GL_GUARD(glBindTexture(GL_TEXTURE_2D, id));
-		// GL_GUARD(glTexImage2D(GL_TEXTURE_2D, 0, format.internal, dimensions.x, dimensions.y, 0, format.pixel, format.elements, source.data()));
-
-		//TODO find why that fails with an GL_INVALID_OPERATION when using the image loaded with stbi
-		GL_GUARD(glTextureSubImage2D(id, 0, 0, 0, dimensions.x, dimensions.y, format.pixel, format.elements, source.data()));
-		GL_GUARD(glBindTexture(GL_TEXTURE_2D, 0));
-
-		int channels = source.size_bytes() > 0 ? source.size_bytes() / (dimensions.x * dimensions.y) : 0;
-		return { id, dimensions, channels };
+		return { id, dimensions, 0 };
 	}
 
-	template<typename T, size_t E>
-	Texture createFromSource(std::span<T, E> source, glm::uvec2 dimensions, SamplingFilter filter = Linear, WrapMode wrap = Repeat) {
+	Texture create_from_source(Array<byte> source, const ImageFormat& format, v2u32 dimensions, SamplingFilter filter = Linear, WrapMode wrap = Repeat) {
+
+		auto texture = allocate(format, dimensions, filter, wrap);
+
+		//TODO find why that fails with an GL_INVALID_OPERATION when using the image loaded with stbi
+		GL_GUARD(glTextureSubImage2D(texture.id, 0, 0, 0, dimensions.x, dimensions.y, format.pixel, format.elements, source.data()));
+		GL_GUARD(glBindTexture(GL_TEXTURE_2D, 0));
+
+		texture.channels = source.size_bytes() > 0 ? source.size_bytes() / (dimensions.x * dimensions.y) : 0;
+		return texture;
+	}
+
+	template<typename T> Texture create_from_source(Array<T> source, v2u32 dimensions, SamplingFilter filter = Linear, WrapMode wrap = Repeat) {
 		GLuint id;
 		auto format = ImageFormatFromPixelType<T>;
 		assert(dimensions.x * dimensions.y <= source.size());
-		return createFromSource(std::span((std::byte*)source.data(), source.size_bytes()), format, dimensions, filter, wrap);
+		return create_from_source(Array((byte*)source.data(), source.size_bytes()), format, dimensions, filter, wrap);
 	}
 
-	int GLtoSTBChannels(GLenum GLChannels) {
+	int GL_to_STB_channels(GLenum GLChannels) {
 		switch (GLChannels) {
 		case GL_RED: return STBI_grey;
 		case GL_RG: return STBI_grey_alpha;
@@ -118,24 +111,26 @@ namespace Textures {
 		}
 	}
 
-	constexpr Texture NullTexture = { 0, glm::uvec2(0) };
+	constexpr Texture NullTexture = { 0, v2u32(0) };
 
-	Texture loadFromFile(const char* path, SamplingFilter filter = Linear, WrapMode wrap = Repeat) {
+	Texture load_from_file(const cstr path, SamplingFilter filter = Linear, WrapMode wrap = Repeat) {
 		int width, height, channels = 0;
-		void* img = stbi_load(path, &width, &height, &channels, 0);
-		if (img == NULL) {
+		auto* img = stbi_load(path, &width, &height, &channels, 0);
+		if (img == null) {
 			fprintf(stderr, "Failed to load texture %s : %s\n", path, stbi_failure_reason());
 			return NullTexture;
 		}
 		printf("Loading texture %s:%dx%d-%d\n", path, width, height, channels);
 
-		auto format = ImageFormatFromElement<glm::f32>(channels);
-		auto dimensions = glm::uvec2(width, height);
+		auto format = image_format_from_element<f32>(channels);
+		auto dimensions = v2u32(width, height);
+		auto data = Array<u8>((u8*)img, width * height * channels);
 
-		auto data = std::span((glm::u8*)img, width * height * channels);
-		std::vector<glm::f32> converted(width * height * channels);
-		for (size_t i = 0; i < data.size(); i++) converted[i] = (float)data[i] / 256.f;
-		auto texture = createFromSource(std::span((std::byte*)converted.data(), converted.size() / channels), format, dimensions, filter, wrap);
+		//TODO might be problematic since its the size of the texture, could easily be too big
+		f32 converted[width * height * channels];
+		for (u64 i = 0; i < data.size(); i++)
+			converted[i] = (f32)data[i] / 256.f;
+		auto texture = create_from_source(Array<byte>((byte*)&converted[0], width * height * channels * sizeof(f32)), format, dimensions, filter, wrap);
 
 		stbi_image_free(img);
 		return texture;

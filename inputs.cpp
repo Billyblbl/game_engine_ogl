@@ -2,18 +2,12 @@
 # define GINPUTS
 
 #include <GLFW/glfw3.h> // Will drag system OpenGL headers
-#include <unordered_map>
-#include <vector>
-#include <functional>
-#include <glm/glm.hpp>
-#include <cstring>
-#include <span>
+#include <math.cpp>
+#include <blblstd.hpp>
 
-//TODO check if use of unordered_map is overkill here
-
-namespace GLFW {
+namespace Input {
 	namespace Action {
-		enum Type : int {
+		enum Type: u32 {
 			Release = GLFW_RELEASE,
 			Press = GLFW_PRESS,
 			Repeat = GLFW_REPEAT
@@ -21,7 +15,7 @@ namespace GLFW {
 	}
 
 	namespace Keys {
-		enum Type : int {
+		enum Type: i32 {
 			UNKNOWN = GLFW_KEY_UNKNOWN,
 			SPACE = GLFW_KEY_SPACE,
 			FIRST = SPACE,
@@ -148,7 +142,8 @@ namespace GLFW {
 			COUNT = LAST - FIRST
 		};
 
-		int indexOf(Type key) { return key - FIRST; }
+		//TODO fix this, this is wrong
+		int index_of(Type key) { return key - FIRST; }
 
 		const Type List[] = {
 			SPACE,
@@ -275,7 +270,7 @@ namespace GLFW {
 	}
 
 	namespace Mouse {
-		enum Type : int {
+		enum Button: u32 {
 			LAST = GLFW_MOUSE_BUTTON_LAST,
 			LEFT = GLFW_MOUSE_BUTTON_LEFT,
 			RIGHT = GLFW_MOUSE_BUTTON_RIGHT,
@@ -285,7 +280,7 @@ namespace GLFW {
 	}
 
 	namespace Gamepad {
-		enum Type : int {
+		enum Button: u32 {
 			A = GLFW_GAMEPAD_BUTTON_A,
 			B = GLFW_GAMEPAD_BUTTON_B,
 			X = GLFW_GAMEPAD_BUTTON_X,
@@ -311,7 +306,7 @@ namespace GLFW {
 			TRIANGLE = GLFW_GAMEPAD_BUTTON_TRIANGLE
 		};
 
-		enum Axis : int {
+		enum Axis: u32 {
 			LEFT_X = GLFW_GAMEPAD_AXIS_LEFT_X,
 			LEFT_Y = GLFW_GAMEPAD_AXIS_LEFT_Y,
 			RIGHT_X = GLFW_GAMEPAD_AXIS_RIGHT_X,
@@ -321,7 +316,7 @@ namespace GLFW {
 			A_COUNT = GLFW_GAMEPAD_AXIS_LAST
 		};
 
-		const Type List[] = {
+		const Button List[] = {
 			A,
 			B,
 			X,
@@ -339,219 +334,171 @@ namespace GLFW {
 			DPAD_LEFT
 		};
 
-		const int MaxGamepadCount = GLFW_JOYSTICK_LAST;
-	}
-}
-
-namespace Input {
-	namespace Button {
-		enum Type : uint8_t {
-			None = 0,
-			Pressed = 1,
-			Down = 2,
-			Up = 4
-		};
-
-		Type operator|=(Type& a, Type b) {
-			return a = (Type)(a | b);
-		}
-
-		Type manualUpdate(Type current, Type polled) {
-			Type newState = polled;
-			if ((current & Pressed) != polled) {
-				if (polled == Pressed)
-					newState |= Down;
-				else
-					newState |= Up;
-			}
-			return newState;
-		}
+		constexpr u8 MaxGamepadCount = GLFW_JOYSTICK_LAST;
 	}
 
-	template<int d>
-	using AxisD = glm::vec<d, float>;
-	using Axis = float;
+	enum ButtonState: u8 {
+		None = 0,
+		Pressed = 1,
+		Down = 2,
+		Up = 4
+	};
 
-	Axis composite(Button::Type negative, Button::Type positive) {
-		Axis value = 0.f;
-		if (negative & Button::Pressed)
+	ButtonState operator|=(ButtonState& a, ButtonState b) {
+		return a = (ButtonState)(a | b);
+	}
+
+	inline ButtonState manual_update(ButtonState current, ButtonState polled) {
+		ButtonState pressed = polled;
+		auto down = ((polled & ButtonState::Pressed) & (current ^ ButtonState::Pressed)) << 1;
+		auto up = ((polled ^ ButtonState::Pressed) & (current & ButtonState::Pressed)) << 2;
+		return static_cast<ButtonState>(pressed | down | up);
+	}
+
+	inline f32 composite(ButtonState negative, ButtonState positive) {
+		f32 value = 0.f;
+		if (negative & ButtonState::Pressed)
 			value -= 1.f;
-		if (positive & Button::Pressed)
+		if (positive & ButtonState::Pressed)
 			value += 1.f;
 		return value;
 	}
 
-	AxisD<2> composite(Button::Type negativeH, Button::Type positiveH, Button::Type negativeV, Button::Type positiveV) {
-		return AxisD<2>(composite(negativeH, positiveH), composite(negativeV, positiveV));
+	inline v2f32 composite(ButtonState negH, ButtonState posH, ButtonState negV, ButtonState posV) {
+		return v2f32(composite(negH, posH), composite(negV, posV));
 	}
 
-	AxisD<3> composite(Button::Type negativeH, Button::Type positiveH, Button::Type negativeV, Button::Type positiveV, Button::Type negativeD, Button::Type positiveD) {
-		return AxisD<3>(composite(negativeH, positiveH), composite(negativeV, positiveV), composite(negativeD, positiveD));
+	inline v3f32 composite(ButtonState negH, ButtonState posH, ButtonState negV, ButtonState posV, ButtonState negD, ButtonState posD) {
+		return v3f32(composite(negH, posH), composite(negV, posV), composite(negD, posD));
 	}
 
-}
-
-namespace GLFW {
 	namespace Gamepad {
 
 		struct State {
-			Input::Button::Type buttons[std::size(GLFWgamepadstate{}.buttons)];
-			Input::Axis axes[std::size(GLFWgamepadstate{}.axes)];
-
-			operator GLFWgamepadstate* () {
-				return (GLFWgamepadstate*)this;
-			}
-
-			operator const GLFWgamepadstate* () const {
-				return (const GLFWgamepadstate*)this;
-			}
-
+			ButtonState buttons[array_size(GLFWgamepadstate{}.buttons)];
+			f32 axises[array_size(GLFWgamepadstate{}.axes)];
 		};
 
-		void poll(uint8_t id, State& state) {
-			GLFW::Gamepad::State newState;
-			glfwGetGamepadState(id, newState);
-			for (auto i = 0; i < std::size(state.buttons); i++) {
-				newState.buttons[i] = Input::Button::manualUpdate(state.buttons[i], newState.buttons[i]);
-			}
-			state = newState;
+		void poll(u8 id, State& state) {
+			State new_state;
+			glfwGetGamepadState(id, (GLFWgamepadstate*)&new_state);
+			for (auto i : u16range{ 0, array_size(new_state.buttons) })
+				new_state.buttons[i] = manual_update(state.buttons[i], new_state.buttons[i]);
+			state = new_state;
 		}
 
 		static_assert(sizeof(State) == sizeof(GLFWgamepadstate));
 	}
-}
-
-namespace Input {
 
 	struct Context {
 		GLFWwindow* window = nullptr;
-		Button::Type keyStates[GLFW::Keys::COUNT];
-		Button::Type mouseButtonStates[GLFW::Mouse::COUNT];
-		glm::dvec2 mousePos = glm::dvec2(0);
-		glm::dvec2 mouseDelta = glm::dvec2(0);
-		glm::dvec2 scrollDelta = glm::dvec2(0);
-		std::vector<std::pair<uint8_t, GLFW::Gamepad::State>> gamepads;
+		ButtonState keyStates[Keys::COUNT];
+		ButtonState mouseButtonStates[Mouse::COUNT];
+		v2f64 mousePos = v2f64(0);
+		v2f64 mouseDelta = v2f64(0);
+		v2f64 scrollDelta = v2f64(0);
+		struct {
+			Array<u8> indices;
+			Gamepad::State states[Gamepad::MaxGamepadCount];
+		} gamepads;
 	};
 
 	void poll(Context& context) {
 
 		{ //Reset states
-			for (auto key : GLFW::Keys::List)
-				context.keyStates[key - GLFW::Keys::FIRST] = Button::None;
-			for (int i = 0; i < GLFW::Mouse::COUNT; i++)
-				context.keyStates[i] = Button::None;
-			context.mouseDelta = glm::dvec2(0);
-			context.scrollDelta = glm::dvec2(0);
+			for (auto key : Keys::List)
+				context.keyStates[Keys::index_of(key)] = ButtonState::None;
+			for (auto i : u32range { 0, Mouse::COUNT })
+				context.keyStates[i] = ButtonState::None;
+			context.mouseDelta = v2f64(0);
+			context.scrollDelta = v2f64(0);
 		}
 
 		glfwPollEvents();
 
 		{ // Read pressed button states
-			for (auto key : GLFW::Keys::List) if (glfwGetKey(context.window, key) == GLFW::Action::Press) {
-				context.keyStates[key - GLFW::Keys::FIRST] |= Button::Pressed;
-			}
-
-			for (int i = 0; i < GLFW::Mouse::COUNT; i++) if (glfwGetMouseButton(context.window, i)) {
-				context.mouseButtonStates[i] |= Button::Pressed;
-			}
-
-			for (auto&& [id, state] : context.gamepads) {
-				GLFW::Gamepad::poll(id, state);
-			}
-
+			for (auto key : Keys::List) if (glfwGetKey(context.window, key) == Action::Press)
+				context.keyStates[Keys::index_of(key)] |= ButtonState::Pressed;
+			for (auto i : u32range { 0, Mouse::COUNT }) if (glfwGetMouseButton(context.window, i))
+				context.mouseButtonStates[i] |= ButtonState::Pressed;
+			for (auto id : context.gamepads.indices)
+				Gamepad::poll(id, context.gamepads.states[id]);
 		}
 	}
 
-}
-
-static std::unordered_map<GLFWwindow*, Input::Context> GInputContexts;
-
-Input::Context* getInputContext(GLFWwindow* window) {
-	auto contextSearch = GInputContexts.find(window);
-	if (contextSearch == GInputContexts.end())
-		return nullptr;
-	else
-		return &contextSearch->second;
-}
-
-void contextKeyCallback(
-	GLFWwindow* window,
-	GLFW::Keys::Type key,
-	int scancode,
-	GLFW::Action::Type action,
-	int mods
-) {
-	if (action != GLFW::Action::Press && action != GLFW::Action::Release) return;
-	auto context = getInputContext(window);
-	if (context == nullptr)
-		return;
-	else if (action != GLFW::Action::Press)
-		context->keyStates[key - GLFW::Keys::FIRST] |= Input::Button::Down;
-	else if (action != GLFW::Action::Release)
-		context->keyStates[key - GLFW::Keys::FIRST] |= Input::Button::Up;
-}
-
-void contextMouseButtonCallback(
-	GLFWwindow* window,
-	GLFW::Mouse::Type button,
-	GLFW::Action::Type action,
-	int mods
-) {
-	if (action != GLFW::Action::Press && action != GLFW::Action::Release) return;
-	auto context = getInputContext(window);
-	if (context == nullptr)
-		return;
-	else if (action != GLFW::Action::Press)
-		context->mouseButtonStates[button] |= Input::Button::Down;
-	else if (action != GLFW::Action::Release)
-		context->mouseButtonStates[button] |= Input::Button::Up;
-}
-
-void contextMousePosCallback(GLFWwindow* window, double x, double y) {
-	auto context = getInputContext(window);
-	if (context != nullptr) {
-		auto newPos = glm::dvec2(x, y);
-		context->mouseDelta += newPos - context->mousePos;
-		context->mousePos = newPos;
+	inline auto& get_context() {
+		static Context context;
+		return context;
 	}
-}
 
-void contextScrollCallback(GLFWwindow* window, double x, double y) {
-	auto context = getInputContext(window);
-	if (context != nullptr) {
-		context->scrollDelta += glm::dvec2(x, y);
+	void context_key_callback(
+		GLFWwindow* window,
+		Keys::Type key,
+		int scancode,
+		Action::Type action,
+		int mods
+	) {
+		if (action != Action::Press && action != Action::Release) return;
+		auto context = get_context();
+		if (action != Action::Press)
+			context.keyStates[Keys::index_of(key)] |= ButtonState::Down;
+		else if (action != Action::Release)
+			context.keyStates[Keys::index_of(key)] |= ButtonState::Up;
 	}
-}
 
-std::span<uint8_t>	getGamepads() {
-	static uint8_t dest[16];
-	int count = 0;
-	for (int i = 0; i < GLFW::Gamepad::MaxGamepadCount; i++) {
-		if (glfwJoystickIsGamepad(i)) {
-			dest[count++] = i;
+	void context_mouse_button_callback(
+		GLFWwindow* window,
+		Mouse::Button button,
+		Action::Type action,
+		int mods
+	) {
+		if (action != Action::Press && action != Action::Release) return;
+		auto context = get_context();
+		if (action != Action::Press)
+			context.mouseButtonStates[button] |= ButtonState::Down;
+		else if (action != Action::Release)
+			context.mouseButtonStates[button] |= ButtonState::Up;
+	}
+
+	void context_mouse_pos_callback(GLFWwindow* window, double x, double y) {
+		auto context = get_context();
+		auto newPos = v2f64(x, y);
+		context.mouseDelta += newPos - context.mousePos;
+		context.mousePos = newPos;
+	}
+
+	void context_scroll_callback(GLFWwindow* window, double x, double y) {
+		get_context().scrollDelta += glm::dvec2(x, y);
+	}
+
+	Array<u8>	get_gamepads() {
+		static u8 dest[Gamepad::MaxGamepadCount];
+		auto list = List{ larray(dest), 0 };
+		for (u8 i : u8range{ 0, Gamepad::MaxGamepadCount }) {
+			if (glfwJoystickIsGamepad(i)) {
+				list.push(i);
+			}
 		}
-	}
-	return std::span(dest, count);
-}
-
-Input::Context& allocateInputContext(GLFWwindow* window, std::span<uint8_t> gamepads = {}) {
-	auto& newContext = GInputContexts[window];
-	newContext.window = window;
-	memset(newContext.keyStates, 0, sizeof(newContext.keyStates));
-	memset(newContext.mouseButtonStates, 0, sizeof(newContext.mouseButtonStates));
-	// memset(newContext.gamepadButtonStates, 0, sizeof(newContext.gamepadButtonStates));
-	glfwSetKeyCallback(window, (GLFWkeyfun)&contextKeyCallback);
-	glfwSetMouseButtonCallback(window, (GLFWmousebuttonfun)&contextMouseButtonCallback);
-	glfwGetCursorPos(window, &newContext.mousePos.x, &newContext.mousePos.y);
-	glfwSetCursorPosCallback(window, (GLFWcursorposfun)&contextMousePosCallback);
-	glfwSetScrollCallback(window, (GLFWscrollfun)&contextScrollCallback);
-	newContext.gamepads.reserve(gamepads.size());
-	for (auto gamepadID : gamepads) {
-		auto& [id, state] = newContext.gamepads.emplace_back(std::make_pair(gamepadID, GLFW::Gamepad::State{}));
-		glfwGetGamepadState(id, state);
+		return list.allocated();
 	}
 
-	return newContext;
+	Context& init_context(GLFWwindow* window) {
+		auto& newContext = get_context();
+		newContext.window = window;
+		memset(newContext.keyStates, 0, sizeof(newContext.keyStates));
+		memset(newContext.mouseButtonStates, 0, sizeof(newContext.mouseButtonStates));
+
+		glfwSetKeyCallback(window, (GLFWkeyfun)&context_key_callback);
+		glfwSetMouseButtonCallback(window, (GLFWmousebuttonfun)&context_mouse_button_callback);
+		glfwGetCursorPos(window, &newContext.mousePos.x, &newContext.mousePos.y);
+		glfwSetCursorPosCallback(window, (GLFWcursorposfun)&context_mouse_pos_callback);
+		glfwSetScrollCallback(window, (GLFWscrollfun)&context_scroll_callback);
+
+		newContext.gamepads.indices = get_gamepads();
+		for (auto id : newContext.gamepads.indices)
+			glfwGetGamepadState(id, (GLFWgamepadstate*)&newContext.gamepads.states[id]);
+		return newContext;
+	}
 }
 
 #endif

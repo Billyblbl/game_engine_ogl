@@ -1,41 +1,47 @@
 #ifndef GVERTEX
 # define GVERTEX
 
-#include <span>
 #include <GL/glew.h>
 #include <glutils.cpp>
-#include <glm/glm.hpp>
+#include <math.cpp>
+#include <blblstd.hpp>
 
 struct VertexAttributeSpecs {
 	GLint memberCount = 0;
 	GLenum memberType = 0;
 	size_t offset = 0;
+	GLsizei stride = 0;
 };
 
-template<typename T> constexpr auto MakeVertexAttributeSpec(size_t offset) { return VertexAttributeSpecs{ 0, 0, offset }; };
-template<> constexpr auto MakeVertexAttributeSpec<float>(size_t offset) { return VertexAttributeSpecs{ 1, GL_FLOAT, offset }; };
-template<> constexpr auto MakeVertexAttributeSpec<glm::vec1>(size_t offset) { return VertexAttributeSpecs{ 1, GL_FLOAT, offset }; };
-template<> constexpr auto MakeVertexAttributeSpec<glm::vec2>(size_t offset) { return VertexAttributeSpecs{ 2, GL_FLOAT, offset }; };
-template<> constexpr auto MakeVertexAttributeSpec<glm::vec3>(size_t offset) { return VertexAttributeSpecs{ 3, GL_FLOAT, offset }; };
-template<> constexpr auto MakeVertexAttributeSpec<glm::vec4>(size_t offset) { return VertexAttributeSpecs{ 4, GL_FLOAT, offset }; };
-template<> constexpr auto MakeVertexAttributeSpec<int32_t>(size_t offset) { return VertexAttributeSpecs{ 1, GL_INT, offset }; };
-template<> constexpr auto MakeVertexAttributeSpec<glm::ivec1>(size_t offset) { return VertexAttributeSpecs{ 1, GL_INT, offset }; };
-template<> constexpr auto MakeVertexAttributeSpec<glm::ivec2>(size_t offset) { return VertexAttributeSpecs{ 2, GL_INT, offset }; };
-template<> constexpr auto MakeVertexAttributeSpec<glm::ivec3>(size_t offset) { return VertexAttributeSpecs{ 3, GL_INT, offset }; };
-template<> constexpr auto MakeVertexAttributeSpec<glm::ivec4>(size_t offset) { return VertexAttributeSpecs{ 4, GL_INT, offset }; };
+template<typename T> constexpr auto make_vertex_attribute_spec(usize offset, GLsizei stride) { return VertexAttributeSpecs{ 0, 0, offset, stride }; };
+template<> constexpr auto make_vertex_attribute_spec<float>(usize offset, GLsizei stride) { return VertexAttributeSpecs{ 1, GL_FLOAT, offset, stride }; };
+template<> constexpr auto make_vertex_attribute_spec<glm::vec1>(usize offset, GLsizei stride) { return VertexAttributeSpecs{ 1, GL_FLOAT, offset, stride }; };
+template<> constexpr auto make_vertex_attribute_spec<glm::vec2>(usize offset, GLsizei stride) { return VertexAttributeSpecs{ 2, GL_FLOAT, offset, stride }; };
+template<> constexpr auto make_vertex_attribute_spec<glm::vec3>(usize offset, GLsizei stride) { return VertexAttributeSpecs{ 3, GL_FLOAT, offset, stride }; };
+template<> constexpr auto make_vertex_attribute_spec<glm::vec4>(usize offset, GLsizei stride) { return VertexAttributeSpecs{ 4, GL_FLOAT, offset, stride }; };
+template<> constexpr auto make_vertex_attribute_spec<int32_t>(usize offset, GLsizei stride) { return VertexAttributeSpecs{ 1, GL_INT, offset, stride }; };
+template<> constexpr auto make_vertex_attribute_spec<glm::ivec1>(usize offset, GLsizei stride) { return VertexAttributeSpecs{ 1, GL_INT, offset, stride }; };
+template<> constexpr auto make_vertex_attribute_spec<glm::ivec2>(usize offset, GLsizei stride) { return VertexAttributeSpecs{ 2, GL_INT, offset, stride }; };
+template<> constexpr auto make_vertex_attribute_spec<glm::ivec3>(usize offset, GLsizei stride) { return VertexAttributeSpecs{ 3, GL_INT, offset, stride }; };
+template<> constexpr auto make_vertex_attribute_spec<glm::ivec4>(usize offset, GLsizei stride) { return VertexAttributeSpecs{ 4, GL_INT, offset, stride }; };
 
-#define SpecsOf(vertex, attribute) MakeVertexAttributeSpec<decltype(vertex::attribute)>(offsetof(vertex, attribute))
+#define SpecsOf(vertex, attribute) make_vertex_attribute_spec<decltype(vertex::attribute)>(offsetof(vertex, attribute), sizeof(vertex))
 
-template<typename T> constexpr VertexAttributeSpecs vertexAttributesOf[] = {};
+// template<typename T> constexpr VertexAttributeSpecs vertexAttributesArray[] = {};
+template<typename T> const Array<const VertexAttributeSpecs> vertexAttributesOf;
 
-template<typename T> GLuint recordVAO(GLuint vbo, GLuint ibo) {
-	static_assert(std::size(vertexAttributesOf<T>) > 0, "No Attributes defined");
-	return recordVAO(vertexAttributesOf<T>, sizeof(T), vbo, ibo);
-}
+// TODO find why "assert(vertexAttributesOf<T>.size() > 0); // No Attributes defined" always fails even with DefaultVertex2D
+// template<typename T> GLuint recordVAO(GLuint vbo, GLuint ibo) {
+// 	fprintf(stdout, "vertex attributes %u\n", vertexAttributesOf<T>.size());
+// 	fprintf(stdout, "vertex type %s\n", typeid(T).name() );
+// 	fflush(stdout);
+// 	assert(vertexAttributesOf<T>.size() > 0); // No Attributes defined
+// 	// assert(vertexAttributesOf<T> == vertexAttributesOf<DefaultVertex2D>); // Type is DefaultVertex2d
+// 	return recordVAO(vertexAttributesOf<T>, sizeof(T), vbo, ibo);
+// }
 
-GLuint recordVAO(
-	std::span<const VertexAttributeSpecs>	attributes,
-	GLsizei stride,
+GLuint record_VAO(
+	Array<const VertexAttributeSpecs>	attributes,
 	GLuint vbo,
 	GLuint ibo
 ) {
@@ -49,7 +55,7 @@ GLuint recordVAO(
 	for (GLuint i = 0; i < attributes.size(); i++) {
 		auto& attribute = attributes[i];
 		GL_GUARD(glEnableVertexAttribArray(i));
-		GL_GUARD(glVertexAttribPointer(i, attribute.memberCount, attribute.memberType, GL_FALSE, stride, reinterpret_cast<GLvoid*>(attribute.offset)));
+		GL_GUARD(glVertexAttribPointer(i, attribute.memberCount, attribute.memberType, GL_FALSE, attribute.stride, reinterpret_cast<GLvoid*>(attribute.offset)));
 	}
 
 	GL_GUARD(glBindVertexArray(0));
@@ -61,14 +67,20 @@ GLuint recordVAO(
 	return id;
 }
 
+#pragma region defaults
+
 struct DefaultVertex2D {
 	glm::vec2 position;
 	glm::vec2 uv;
 };
 
-template<> constexpr VertexAttributeSpecs vertexAttributesOf<DefaultVertex2D>[2] = {
+const VertexAttributeSpecs defaultVertex2DAttributes[] = {
 	SpecsOf(DefaultVertex2D, position),
 	SpecsOf(DefaultVertex2D, uv)
 };
+
+template<> const auto vertexAttributesOf<DefaultVertex2D> = larray(defaultVertex2DAttributes);
+
+# pragma endregion defaults
 
 #endif

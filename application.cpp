@@ -1,12 +1,13 @@
 #ifndef GAPPLICATION
 # define GAPPLICATION
 
-#include <string_view>
 #include <cstdio>
 #include <GL/glew.h>
 #include <GLFW/glfw3.h> // Will drag system OpenGL headers
 #include <inputs.cpp>
 #include <glutils.cpp>
+#include <blblstd.hpp>
+#include <math.cpp>
 
 const static GLenum OGLLogSeverity[] = {
 	GL_DEBUG_SEVERITY_HIGH,
@@ -21,49 +22,50 @@ static void ogl_debug_callback(GLenum source,
 	GLenum severity,
 	GLsizei length,
 	const GLchar* message,
-	const void* userParam
+	const void* user_param
 ) {
 	for (auto&& i : OGLLogSeverity) if (i == severity) {
 		fprintf(stderr, "OpenGL Debug %d: %s on %u, %s\n", type, GLtoString(type), id, message);
+		fprintf(stdout, "OpenGL Debug %d: %s on %u, %s\n", type, GLtoString(type), id, message);
 	}
 }
 
-static void glfw_error_callback(int error, const char* description) {
+static void glfw_error_callback(int error, const cstr description) {
 	fprintf(stderr, "GLFW Error %d: %s\n", error, description);
 }
+
+struct App;
+
+using Scene = bool(*)(App&);
 
 struct App {
 	GLFWwindow* window;
 	Input::Context& inputs;
-	glm::uvec2 pixelDimensions;
-	std::string_view focusPath = "";
+	v2u32 pixel_dimensions;
+	Scene scene;
 };
 
-auto createApp(const char* windowTitle, glm::uvec2 windowDimensions, uint8_t gamepadCount = 0) {
+auto create_app(const cstr window_title, v2u32 window_dimensions, Scene start_scene = null) {
 	//TODO Proper error handling
 	glfwSetErrorCallback(glfw_error_callback);
 	if (!glfwInit())
 		abort();
-	// auto dimensions = glm::ivec2(1920 / 2, 1080 / 2);
-	glfwWindowHint(GLFW_OPENGL_DEBUG_CONTEXT, GL_TRUE);
-
 	// Create window with graphics context
-	auto window = glfwCreateWindow(windowDimensions.x, windowDimensions.y, windowTitle, NULL, NULL);
+	glfwWindowHint(GLFW_OPENGL_DEBUG_CONTEXT, GL_TRUE);
+	glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 4);
+	glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 6);
+	glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
+	glfwWindowHint(GLFW_OPENGL_FORWARD_COMPAT, GL_TRUE);
+	auto window = glfwCreateWindow(window_dimensions.x, window_dimensions.y, window_title, NULL, NULL);
 	if (window == NULL)
 		abort();
-
-	auto availableGamepads = getGamepads();
-	printf("Detected %lu gamepads\n", availableGamepads.size());
-	auto trackedGamepads = (gamepadCount < availableGamepads.size()) ? gamepadCount : availableGamepads.size();
-	auto& inputContext = allocateInputContext(window, availableGamepads.subspan(0, trackedGamepads));
+	auto& input_context = Input::init_context(window);
 	glfwMakeContextCurrent(window);
 	glfwSwapInterval(1); // Enable vsync
-
-	return App{ window, inputContext, windowDimensions, "" };
+	return App{ window, input_context, window_dimensions, start_scene };
 }
 
-bool initOpenGL(App& app) {
-	//TODO error handling
+bool init_ogl(App& app) {
 	printf("Initializing OpenGL\n");
 	GLenum err = glewInit();
 	if (GLEW_OK != err) {
@@ -72,15 +74,15 @@ bool initOpenGL(App& app) {
 	}
 	fprintf(stdout, "Status: Using GLEW %s\n", glewGetString(GLEW_VERSION));
 
-	auto clear_color = glm::vec4(0.45f, 0.55f, 0.60f, 1.00f);
+	auto clear_color = v4f32(0.45f, 0.55f, 0.60f, 1.00f);
 
 	int display_w, display_h;
 	glfwGetFramebufferSize(app.window, &display_w, &display_h);
 
 	glEnable(GL_DEBUG_OUTPUT);
 	glEnable(GL_DEBUG_OUTPUT_SYNCHRONOUS);
-	glDebugMessageCallback(ogl_debug_callback, NULL);
-	glDebugMessageControl(GL_DONT_CARE, GL_DONT_CARE, GL_DONT_CARE, 0, NULL, GL_TRUE);
+	glDebugMessageCallback(ogl_debug_callback, null);
+	glDebugMessageControl(GL_DONT_CARE, GL_DONT_CARE, GL_DONT_CARE, 0, null, GL_TRUE);
 
 	GL_GUARD(glViewport(0, 0, display_w, display_h));
 	GL_GUARD(glEnable(GL_CULL_FACE));
@@ -89,38 +91,36 @@ bool initOpenGL(App& app) {
 	// GL_GUARD(glCullFace(GL_FRONT));
 	GL_GUARD(glEnable(GL_DEPTH_TEST));
 	GL_GUARD(glDepthFunc(GL_LEQUAL));
-	GL_GUARD(glClearColor(clear_color.x * clear_color.w, clear_color.y * clear_color.w, clear_color.z * clear_color.w, clear_color.w));
+	GL_GUARD(glClearColor(clear_color.r * clear_color.w, clear_color.g * clear_color.w, clear_color.b * clear_color.w, clear_color.w));
 	GL_GUARD(glEnable(GL_BLEND));
 	GL_GUARD(glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA));
 	return true;
 }
 
-bool update(App& app, std::string_view focusPath) {
-	if (glfwWindowShouldClose(app.window)) {
-		app.focusPath = "";
-		return false;
-	}
-	if (!app.focusPath.starts_with(focusPath)) {
-		return false;
-	}
-	glfwSwapBuffers(app.window);
+bool update(App& app, Scene target_scene) {
+	int display_w, display_h;
+	glfwGetFramebufferSize(app.window, &display_w, &display_h);
+	app.pixel_dimensions.x = display_w;
+	app.pixel_dimensions.y = display_h;
 
-	{ // Update viewport
-		int display_w, display_h;
-		glfwGetFramebufferSize(app.window, &display_w, &display_h);
-		app.pixelDimensions.x = display_w;
-		app.pixelDimensions.y = display_h;
-		GL_GUARD(glViewport(0, 0, display_w, display_h));
+	defer{ glfwSwapBuffers(app.window); };
+
+	if (glfwWindowShouldClose(app.window)) {
+		app.scene = null;
+		return false;
 	}
-	return true;
+
+	return app.scene == target_scene;
 }
 
-void destroyApp(App& app) {
+void destroy(App& app) {
 	glfwDestroyWindow(app.window);
 	glfwTerminate();
 }
 
-//TODO this is disguting, change it
-bool exitApp(App&) { return false; }
+bool change_scene(App& app, Scene new_scene) {
+	app.scene = new_scene;
+	return true;
+}
 
 #endif

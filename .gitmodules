@@ -11,3 +11,6 @@
 [submodule "stb"]
 	path = stb
 	url = https://github.com/nothings/stb.git
+[submodule "blblstd"]
+	path = blblstd
+	url = https://github.com/Billyblbl/blblstd.git

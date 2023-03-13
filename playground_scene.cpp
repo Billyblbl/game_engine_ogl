@@ -10,10 +10,8 @@
 
 #include <application.cpp>
 #include <glutils.cpp>
-#include <utils.cpp>
 #include <rendering.cpp>
 #include <time.cpp>
-#include <pool.cpp>
 #include <transform.cpp>
 
 #include <physics2d.cpp>
@@ -24,219 +22,136 @@
 
 bool playground(App& app) {
 
-	ImGui::Init_OGL_GLFW(app.window);
-	deferDo { ImGui::Shutdown(); };
+	struct Entity {
+		enum FlagIndex: u64 {
+			None = 0,
+			Dynbody,
+			Collision,
+			Sprite,
+			Player
+		};
+		u64 flags = None;
+		b2Body* body;
+		//TODO add shape for physics
+		Transform2D transform;
+		RenderMesh* mesh;
+		Textures::Texture* texture;
+	} entities[MAX_ENTITIES];
+
+	ImGui::init_OGL_GLFW(app.window);
+	defer{ ImGui::Shutdown_OGL_GLFW(); };
 
 	//Render data
-	auto drawPipeline = createRenderPipeline(
-		loadShader("./shaders/camera2DRenderTexturedBatched.vert", GL_VERTEX_SHADER),
-		loadShader("./shaders/camera2DRenderTexturedBatched.frag", GL_FRAGMENT_SHADER)
+	auto draw_pipeline = create_render_pipeline(
+		load_shader("./shaders/camera2DRenderTexturedBatched.vert", GL_VERTEX_SHADER),
+		load_shader("./shaders/camera2DRenderTexturedBatched.frag", GL_FRAGMENT_SHADER)
 	);
-	deferDo{ GL_GUARD(glDeleteProgram(drawPipeline)); };
-	auto texture = Textures::loadFromFile(
+	defer{ GL_GUARD(glDeleteProgram(draw_pipeline)); };
+	auto texture = Textures::load_from_file(
 		"C:/Users/billy/Documents/assets/boss-spaceship-2d-sprites-pixel-art/PNG_Parts&Spriter_Animation/Boss_ship1/Boss_ship7.png",
 		Textures::Linear, Textures::Clamp
 	);
-	deferDo{ GL_GUARD(glDeleteTextures(1, &texture.id)); };
+	defer{ GL_GUARD(glDeleteTextures(1, &texture.id)); };
 
 	//simple rect
-	auto rect = createRectMesh(texture.dimensions);
-	deferDo{ deleteMesh(rect); };
+	auto rect = create_rect_mesh(texture.dimensions);
+	defer{ delete_mesh(rect); };
 
 	// State
-	auto clock = Time::Start();
-	auto rotationSpeed = 1.f;
-	auto camSpeed = 10.f;
+	struct {
+		Time::Clock clock = Time::start();
+		f32 rotationSpeed = 1.f;
+		f32 camSpeed = 10.f;
+	} scene;
 
-	std::byte memory[MAX_ENTITIES * AVERAGE_CACHE_LINE_ACCORDING_TO_THE_INTERNET * 3];
-	Arena allocator = { { memory, 0 } };
+	struct {
+		OrthoCamera camera;
+		MappedObject<m4x4f32> view_projection_matrix = map_object(glm::inverse(Transform2D{}.matrix()));
+		MappedBuffer<m4x4f32> draw_batch_matrices_buffer = map_buffer<m4x4f32>(MAX_DRAW_BATCH);
+	} rendering;
+	rendering.camera = { v3f32(app.pixel_dimensions, -1) };
 
-	auto entities = EntityRegistry::create(allocator, MAX_ENTITIES, 1);
-	auto transforms = LinearDatabase<Transform2D>::create(allocator, MAX_ENTITIES);
-	//TODO find better way to group entities for render stage
-	auto toRender = LinearDatabase<Transform2D*>::create(allocator, MAX_ENTITIES);
-
-	auto cameraEntity = entities.allocate();
-	auto rect1Entity = entities.allocate();
-	auto rect2Entity = entities.allocate();
-
-	// Note(202210052223) : Those references are invalid when removing from the pool
-	auto& cameraWorldTransform = transforms.add(cameraEntity);
-	{
-		auto& rect1Transform = transforms.add(rect1Entity);
-		auto& rect2Transform = transforms.add(rect2Entity);
-		toRender.add(rect1Entity, &rect1Transform);
-		toRender.add(rect2Entity, &rect2Transform);
-	}
-	auto orthoCamera = OrthoCamera{ glm::vec3(app.pixelDimensions, -1) };
-	auto viewProjectionMatrix = mapObject(glm::inverse(cameraWorldTransform.matrix()));
-	auto drawBatchMatricesBuffer = mapBuffer<glm::mat4>(MAX_DRAW_BATCH);
-	deferDo{
-		GL_GUARD(glUnmapNamedBuffer(viewProjectionMatrix.id));
-		GL_GUARD(glUnmapNamedBuffer(drawBatchMatricesBuffer.id));
+	defer{
+		GL_GUARD(glUnmapNamedBuffer(rendering.view_projection_matrix.id));
+		GL_GUARD(glUnmapNamedBuffer(rendering.draw_batch_matrices_buffer.id));
 	};
 
+	struct {
+		PhysicsConfig config;
+		b2World world = b2World(b2Vec2(0.f, -9.f));
+		B2dDebugDraw debug_draw;
+		f32 time_point = 0.f;
+	} physics;
+	physics.world.SetDebugDraw(&physics.debug_draw);
+	physics.debug_draw.SetFlags(b2Draw::e_shapeBit);
 
-#pragma region physics
-
-	auto toSimulate = LinearDatabase<b2Body*>::create(allocator, MAX_ENTITIES);
-
-	auto gravity = b2Vec2(0.f, -9.f);
-	auto world = b2World(gravity);
-
-	{
-		b2BodyDef bodyDef;
-		b2PolygonShape box;
-		b2FixtureDef fixtureDef;
-
-		// Static body
-		bodyDef.position.Set(0, -10);
-		auto* staticBody = toSimulate.add(rect1Entity, world.CreateBody(&bodyDef));
-		box.SetAsBox(100, 10);
-		staticBody->CreateFixture(&box, 0);
-
-		// dynamic body
-		auto tr = transforms.find(rect2Entity);
-		tr->translation += glm::vec2(0, 200);
-		bodyDef.position.Set(tr->translation.x, tr->translation.y);
-		bodyDef.type = b2_dynamicBody;
-		auto* dynamicBody = toSimulate.add(rect2Entity, world.CreateBody(&bodyDef));
-		box.SetAsBox(20, 20);
-		fixtureDef.shape = &box;
-		fixtureDef.density = 1;
-		fixtureDef.friction = .3f;
-		dynamicBody->CreateFixture(&fixtureDef);
-	}
-
-	auto physicsTimeStep = 1.f / 60.f;
-	auto velocityIterations = 8;
-	auto positionIterations = 3;
-	auto physicsTimePoint = clock.totalElapsedTime.count();
-	auto debugDraw = B2dDebugDraw();
-
-	world.SetDebugDraw(&debugDraw);
-	debugDraw.SetFlags(b2Draw::e_shapeBit);
-
-#pragma endregion physics
-
-	// Main loop
 	fflush(stdout);
-	while (update(app, __func__)) {
-		auto camVelocity = glm::vec2(0);
+	while (update(app, playground)) {
 		{// General Update
-			clock.Update();
-
+			auto cam_velocity = v2f32(0);
+			scene.clock.update();
 			Input::poll(app.inputs);
-			camVelocity = Input::composite(
-				app.inputs.keyStates[indexOf(GLFW::Keys::A)],
-				app.inputs.keyStates[indexOf(GLFW::Keys::D)],
-				app.inputs.keyStates[indexOf(GLFW::Keys::S)],
-				app.inputs.keyStates[indexOf(GLFW::Keys::W)]
+			cam_velocity = Input::composite(
+				app.inputs.keyStates[Input::Keys::index_of(Input::Keys::A)],
+				app.inputs.keyStates[Input::Keys::index_of(Input::Keys::D)],
+				app.inputs.keyStates[Input::Keys::index_of(Input::Keys::S)],
+				app.inputs.keyStates[Input::Keys::index_of(Input::Keys::W)]
 			);
-
-			// Test movements
-			cameraWorldTransform.translation += camVelocity * clock.dt.count() * camSpeed;
-
-			entities.reclaim();
+			// cameraWorldTransform.translation += cam_velocity * clock.dt.count() * camSpeed;
 		}
 
-		if (clock.totalElapsedTime.count() - physicsTimePoint >= 0.f) {// Physics Update
-			for (auto i = 0; i < toSimulate.pool.allocated().size(); i++) {
-				auto body = toSimulate.pool[i];
-				auto id = toSimulate.ids[i];
-
-				auto transform = transforms.find(id);
-				if (!transform)
-					fprintf(stderr, "transform-less physics body %u", id);
-
-				auto pos = b2Vec2(transform->translation.x, transform->translation.y);
-				body->SetTransform(pos, -glm::radians(transform->rotation));
-
-				//TODO proper awake on tranform change
-				body->SetAwake(true);
-			}
-
-			world.Step(physicsTimeStep, velocityIterations, positionIterations);
-			physicsTimePoint += physicsTimeStep;
-
-
-			for (auto i = 0; i < toSimulate.pool.allocated().size(); i++) {
-				auto body = toSimulate.pool[i];
-				auto id = toSimulate.ids[i];
-
-				auto transform = transforms.find(id);
-				if (!transform)
-					fprintf(stderr, "transform-less physics body %u", id);
-				auto pos = body->GetPosition();
-				transform->translation = glm::vec2(pos.x, pos.y);
-				transform->rotation = -glm::degrees(body->GetAngle());
-			}
+		// Using a 'while' here instead of an 'if' makes sure that if a frame was slow the physics simulation can catch up
+		// by doing multiple steps in 1 frame
+		// otherwise slowness in the rendering would also slow down the physics
+		// althout not sure how pertinent this is since slow rendering would probably be a bigger problem
+		while (Time::metronome(scene.clock.total, physics.config.time_step, physics.time_point)) { // Physics tick
+			tuple<Transform2D*, b2Body*> pbuff[MAX_ENTITIES];
+			auto to_sim = List{ larray(pbuff), 0 };
+			for (auto& ent : entities) if (has_all(ent.flags, mask(Entity::Dynbody)))
+				to_sim.push({&ent.transform, ent.body});
+			update_physics(physics.world, physics.config, to_sim.allocated());
 		}
 
 		{// Build Imgui overlay
 			ImGui_ImplOpenGL3_NewFrame();
 			ImGui_ImplGlfw_NewFrame();
-
 			ImGui::NewFrame();
-			ImGui::Begin("Controls (0:camera, 1:rect1, 2:rec2)");
-			{
-
-				EditorWidget("Transforms", transforms.pool.allocated());
-				EditorWidget("Rigidbodies 2D", toSimulate.pool.allocated());
-				EditorWidget("Ortho Camera", orthoCamera);
-				ImGui::Text("Movement");
-				EditorWidget("Camera Speed", camSpeed);
-				EditorWidget("Velocity", camVelocity);
-
-				ImGui::Separator();
-				ImGui::Text("Physics");
-				PhysicsControls(
-					world,
-					physicsTimeStep,
-					velocityIterations,
-					positionIterations,
-					physicsTimePoint
-				);
-				ImGui::Separator();
-
-				ImGui::Text("Time = %f", clock.totalElapsedTime.count());
-			}
+			ImGui::Begin("Controls");
+			physics_controls(physics.world, physics.config, physics.time_point);
+			ImGui::Text("Time = %f", scene.clock.total.count());
 			ImGui::End();
 			ImGui::Render();
-
-			viewProjectionMatrix.obj = orthoCamera.matrix() * glm::inverse(cameraWorldTransform.matrix());
 		}
 
-		{// Render scene
+		{// Rendering
+			//TODO instanciate camera entity somewhere
+			// rendering.view_projection_matrix.obj = rendering.camera.matrix() * glm::inverse(cameraWorldTransform.matrix());
+			rendering.camera.dimensions.x = app.pixel_dimensions.x;
+			rendering.camera.dimensions.y = app.pixel_dimensions.y;
+			render(0, { v2u32(0), app.pixel_dimensions }, GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT,
+				[&]() {
 
-			orthoCamera.dimensions.x = app.pixelDimensions.x;
-			orthoCamera.dimensions.y = app.pixelDimensions.y;
-			GL_GUARD(glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT));
-
-			{ // Draw entities
-				auto drawBatchMatrices = Pool<glm::mat4>{ drawBatchMatricesBuffer.obj };
-				auto ubos = std::array{ bind(viewProjectionMatrix, 0) }; // Scene global data
-				auto ssbos = std::array{ bind(drawBatchMatricesBuffer, 0) }; // Entities unique data
-				auto textures = std::array{ bind(texture, 0) }; // Entities shared data
-				for (auto&& transform : toRender.pool.allocated()) {
-					//!Should only keep things with the same render data in the same batch
-					if (drawBatchMatrices.count >= drawBatchMatrices.buffer.size()) {
-						draw(drawPipeline, rect, drawBatchMatrices.count, textures, ssbos, ubos);
-						drawBatchMatrices.count = 0;
+					//Draw entities
+					for (auto&& ent : entities) if (has_all(ent.flags, mask(Entity::Sprite))) {
+						auto draw_batch_matrices = List{ rendering.draw_batch_matrices_buffer.obj, 0 };
+						draw_batch_matrices.push(ent.transform.matrix());
+						GPUBinding textures[] = { bind(*ent.texture, 0) };
+						GPUBinding ssbos[] = { bind(rendering.draw_batch_matrices_buffer, 0) };
+						GPUBinding ubos[] = { bind(rendering.view_projection_matrix, 0) };
+						draw(draw_pipeline, *ent.mesh, draw_batch_matrices.current, larray(textures), larray(ssbos), larray(ubos));
 					}
-					drawBatchMatrices.add(transform->matrix());
+
+					//Draw overlay
+					ImGui::Draw();
+
+					//Draw physics debug
+					physics.debug_draw.view_transform.obj = rendering.view_projection_matrix.obj;
+					physics.world.DebugDraw();
 				}
-				draw(drawPipeline, rect, drawBatchMatrices.count, textures, ssbos, ubos);
-				// drawBatchMatrices.count = 0;
-			}
+			);
 		}
-
-		ImGui::Draw();
-
-		debugDraw.viewTransform = viewProjectionMatrix.obj;
-		world.DebugDraw();
 	}
-	return app.focusPath.size() > 0;
+	return true;
 }
 
 #endif

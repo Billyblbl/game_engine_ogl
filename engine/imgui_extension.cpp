@@ -1,14 +1,16 @@
 #ifndef GIMGUI_EXTENSION
 # define GIMGUI_EXTENSION
 
-#include <span>
 #include <cstring>
+
+#include <GLFW/glfw3.h> // Will drag system OpenGL headers
 
 #include <imgui/imgui.h>
 #include <imgui/backends/imgui_impl_glfw.h>
 #include <imgui/backends/imgui_impl_opengl3.h>
 
 #include <math.cpp>
+#include <blblstd.hpp>
 
 ImGuiConfigFlags DefaultImguiFlags = (
 	ImGuiConfigFlags_NavEnableKeyboard |
@@ -19,7 +21,6 @@ ImGuiConfigFlags DefaultImguiFlags = (
 namespace ImGui {
 
 	void init_OGL_GLFW(GLFWwindow* window, ImGuiConfigFlags flags = DefaultImguiFlags) {
-		printf("Initializing DearImgui\n");
 		// Setup Dear ImGui context
 		IMGUI_CHECKVERSION();
 		ImGui::CreateContext();

@@ -224,11 +224,11 @@ void CheckGLError(utf8 expression, utf8 fileName, u32 lineNumber) {
 #define CGL_BUFFER_MAPPED (GL_MAP_WRITE_BIT | GL_MAP_PERSISTENT_BIT)
 
 //TODO chose what to do about optional types
-static GLuint create_buffer(GLsizeiptr size, Array<byte>* mapping = null, std::optional<Array<byte>> initialValues = std::nullopt) {
+static GLuint create_buffer(GLsizeiptr size, Array<byte>* mapping = null, std::optional<Array<byte>> initial_values = std::nullopt) {
 	GLuint id;
 	GL_GUARD(glCreateBuffers(1, &id));
-	auto initialPtr = initialValues ? initialValues.value().data() : null;
-	GL_GUARD(glNamedBufferStorage(id, size, initialPtr, (mapping == null) ? 0 : CGL_BUFFER_MAPPED));
+	auto initial_ptr = initial_values ? initial_values.value().data() : null;
+	GL_GUARD(glNamedBufferStorage(id, size, initial_ptr, (mapping == null) ? 0 : CGL_BUFFER_MAPPED));
 	if (mapping != null) {
 		auto ptr = GL_GUARD(glMapNamedBufferRange(id, 0, size, CGL_BUFFER_MAPPED | GL_MAP_FLUSH_EXPLICIT_BIT));
 		*mapping = Buffer((byte*)ptr, size);
@@ -236,7 +236,7 @@ static GLuint create_buffer(GLsizeiptr size, Array<byte>* mapping = null, std::o
 	return id;
 }
 
-template <typename T> static GLuint create_buffer_array(Array<T> buffer, Array<T>* mapping = null) {
+template <typename T> inline static GLuint create_buffer_array(Array<T> buffer, Array<T>* mapping = null) {
 	Array<byte> data;
 	auto id =  create_buffer(buffer.size_bytes(), mapping == null ? null : &data, cast<byte>(buffer));
 	if (mapping != null) *mapping = cast<T>(data);
@@ -244,7 +244,7 @@ template <typename T> static GLuint create_buffer_array(Array<T> buffer, Array<T
 }
 
 
-template <typename T> static GLuint create_buffer_single(const T& buffer, T** mapping = null) {
+template <typename T> inline static GLuint create_buffer_single(const T& buffer, T** mapping = null) {
 	Array<byte> data;
 	auto id =  create_buffer(sizeof(T), mapping == null ? null : &data, cast<byte>(Array<const T>(&buffer, 1)));
 	if (mapping != null) *mapping = cast<T>(data).data();

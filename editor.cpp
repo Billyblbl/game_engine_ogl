@@ -16,8 +16,8 @@ i32 main(i32 ac, const cstrp av[]) {
 	if (!init_ogl(app))
 		return 1;
 
-	ImGui::init_OGL_GLFW(app.window);
-	defer{ ImGui::Shutdown_OGL_GLFW(); };
+	ImGui::init_ogl_glfw(app.window);
+	defer{ ImGui::shutdown_ogl_glfw(); };
 
 	struct {
 		OrthoCamera ortho = { v3f32(16, 9, 10) };

@@ -20,7 +20,7 @@ ImGuiConfigFlags DefaultImguiFlags = (
 
 namespace ImGui {
 
-	void init_OGL_GLFW(GLFWwindow* window, ImGuiConfigFlags flags = DefaultImguiFlags) {
+	void init_ogl_glfw(GLFWwindow* window, ImGuiConfigFlags flags = DefaultImguiFlags) {
 		// Setup Dear ImGui context
 		IMGUI_CHECKVERSION();
 		ImGui::CreateContext();
@@ -43,7 +43,7 @@ namespace ImGui {
 		ImGui_ImplOpenGL3_Init("#version 430");
 	}
 
-	void Shutdown_OGL_GLFW() {
+	void shutdown_ogl_glfw() {
 		ImGui_ImplOpenGL3_Shutdown();
 		ImGui_ImplGlfw_Shutdown();
 		ImGui::DestroyContext();
@@ -78,7 +78,7 @@ namespace ImGui {
 
 }
 
-bool EditorWidget(const cstr label, float& data) {
+bool EditorWidget(const cstr label, f32& data) {
 	return ImGui::DragFloat(label, &data, .1f, .0f, .0f, "%.4f");
 }
 

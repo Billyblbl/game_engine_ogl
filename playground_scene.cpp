@@ -18,19 +18,17 @@
 
 #define MAX_ENTITIES 10
 #define MAX_DRAW_BATCH MAX_ENTITIES
-#define AVERAGE_CACHE_LINE_ACCORDING_TO_THE_INTERNET 64
 
 bool playground(App& app) {
 
 	struct Entity {
 		enum FlagIndex: u64 {
-			None = 0,
 			Dynbody,
 			Collision,
 			Sprite,
 			Player
 		};
-		u64 flags = None;
+		u64 flags = 0;
 		b2Body* body;
 		//TODO add shape for physics
 		Transform2D transform;
@@ -38,8 +36,8 @@ bool playground(App& app) {
 		Textures::Texture* texture;
 	} entities[MAX_ENTITIES];
 
-	ImGui::init_OGL_GLFW(app.window);
-	defer{ ImGui::Shutdown_OGL_GLFW(); };
+	ImGui::init_ogl_glfw(app.window);
+	defer{ ImGui::shutdown_ogl_glfw(); };
 
 	//Render data
 	auto draw_pipeline = create_render_pipeline(
@@ -57,7 +55,7 @@ bool playground(App& app) {
 	auto rect = create_rect_mesh(texture.dimensions);
 	defer{ delete_mesh(rect); };
 
-	// State
+	// Scene state
 	struct {
 		Time::Clock clock = Time::start();
 		f32 rotationSpeed = 1.f;
@@ -89,7 +87,7 @@ bool playground(App& app) {
 	while (update(app, playground)) {
 		{// General Update
 			auto cam_velocity = v2f32(0);
-			scene.clock.update();
+			update(scene.clock);
 			Input::poll(app.inputs);
 			cam_velocity = Input::composite(
 				app.inputs.keyStates[Input::Keys::index_of(Input::Keys::A)],
@@ -104,7 +102,7 @@ bool playground(App& app) {
 		// by doing multiple steps in 1 frame
 		// otherwise slowness in the rendering would also slow down the physics
 		// althout not sure how pertinent this is since slow rendering would probably be a bigger problem
-		while (Time::metronome(scene.clock.total, physics.config.time_step, physics.time_point)) { // Physics tick
+		if (Time::metronome(scene.clock.current, physics.config.time_step, physics.time_point)) { // Physics tick
 			tuple<Transform2D*, b2Body*> pbuff[MAX_ENTITIES];
 			auto to_sim = List{ larray(pbuff), 0 };
 			for (auto& ent : entities) if (has_all(ent.flags, mask(Entity::Dynbody)))
@@ -118,7 +116,7 @@ bool playground(App& app) {
 			ImGui::NewFrame();
 			ImGui::Begin("Controls");
 			physics_controls(physics.world, physics.config, physics.time_point);
-			ImGui::Text("Time = %f", scene.clock.total.count());
+			ImGui::Text("Time = %f", scene.clock.current);
 			ImGui::End();
 			ImGui::Render();
 		}

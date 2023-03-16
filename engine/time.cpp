@@ -6,39 +6,40 @@
 
 namespace Time {
 
-	template<typename T> using time = std::chrono::duration<T>;
-	template<typename T> using moment = std::chrono::time_point<T>;
-	using precision = std::chrono::steady_clock;
+	using namespace std::chrono;
+	using moment = time_point<steady_clock>;
+	using time = duration<f32>;
 
 	struct Clock {
-		time<f32> dt;
-		time<f32> total;
-
-		moment<precision> start;
-		moment<precision> last_frame;
-
-		Clock& update() {
-			moment<precision> end = precision::now();
-			dt = end - last_frame;
-			total = end - start;
-			last_frame = end;
-			return *this;
-		}
-
+		f32 dt;
+		f32 current;
+		moment start;
+		moment this_frame;
 	};
 
-	Clock start() {
-		Clock clock;
-		clock.start = clock.last_frame = precision::now();
-		clock.total = time<f32>(0);
+	inline Clock& update(Clock& clock) {
+		moment new_frame = steady_clock::now();
+		clock.dt = duration_cast<time>(new_frame - clock.this_frame).count();
+		clock.current = duration_cast<time>(new_frame - clock.start).count();
+		clock.this_frame = new_frame;
 		return clock;
 	}
 
-	template<typename T> bool metronome(time<T> current, T tick_delay, T& next_tick) {
+	inline Clock start() {
+		Clock clock;
+		clock.start = clock.this_frame = steady_clock::now();
+		clock.current = 0;
+		clock.dt = 0;
+		return clock;
+	}
+
+	inline f32 timer(f32 start, f32 duration) { return start + duration; }
+
+	inline bool metronome(f32 current, f32 tick_delay, f32& next_tick) {
 		assert(tick_delay > 0.0000f);
-		bool should_tick = current.count() - next_tick >= 0.f;
+		bool should_tick = current > next_tick;
 		if (should_tick)
-			next_tick += tick_delay;
+			next_tick = timer(next_tick, tick_delay);
 		return should_tick;
 	}
 

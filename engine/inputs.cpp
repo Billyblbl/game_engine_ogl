@@ -383,26 +383,23 @@ namespace Input {
 	};
 
 	void poll(Context& context) {
-
-		{ //Reset states
-			for (auto key : Keys::List)
-				context.keyStates[Keys::index_of(key)] = ButtonState::None;
-			for (auto i : u32range { 0, Mouse::COUNT })
-				context.keyStates[i] = ButtonState::None;
-			context.mouseDelta = v2f64(0);
-			context.scrollDelta = v2f64(0);
-		}
+		//Reset states
+		for (auto key : Keys::List)
+			context.keyStates[Keys::index_of(key)] = ButtonState::None;
+		for (auto i : u32range{ 0, Mouse::COUNT })
+			context.keyStates[i] = ButtonState::None;
+		context.mouseDelta = v2f64(0);
+		context.scrollDelta = v2f64(0);
 
 		glfwPollEvents();
 
-		{ // Read pressed button states
-			for (auto key : Keys::List) if (glfwGetKey(context.window, key) == Action::Press)
-				context.keyStates[Keys::index_of(key)] |= ButtonState::Pressed;
-			for (auto i : u32range { 0, Mouse::COUNT }) if (glfwGetMouseButton(context.window, i))
-				context.mouseButtonStates[i] |= ButtonState::Pressed;
-			for (auto id : context.gamepads.indices)
-				Gamepad::poll(id, context.gamepads.states[id]);
-		}
+		// Read pressed button states
+		for (auto key : Keys::List) if (glfwGetKey(context.window, key) == Action::Press)
+			context.keyStates[Keys::index_of(key)] |= ButtonState::Pressed;
+		for (auto i : u32range{ 0, Mouse::COUNT }) if (glfwGetMouseButton(context.window, i))
+			context.mouseButtonStates[i] |= ButtonState::Pressed;
+		for (auto id : context.gamepads.indices)
+			Gamepad::poll(id, context.gamepads.states[id]);
 	}
 
 	inline auto& get_context() {
@@ -410,11 +407,11 @@ namespace Input {
 		return context;
 	}
 
-	inline f32 composite(ButtonState negative, ButtonState positive) {
+	inline f32 composite(ButtonState neg, ButtonState pos) {
 		f32 value = 0.f;
-		if (negative & ButtonState::Pressed)
+		if (neg & ButtonState::Pressed)
 			value -= 1.f;
-		if (positive & ButtonState::Pressed)
+		if (pos & ButtonState::Pressed)
 			value += 1.f;
 		return value;
 	}
@@ -428,22 +425,23 @@ namespace Input {
 	}
 
 	inline ButtonState get_key(Keys::Type key) { return get_context().keyStates[Keys::index_of(key)]; }
+
 	inline f32 key_axis(Keys::Type neg, Keys::Type pos) {
 		return composite(get_key(neg), get_key(pos));
 	}
 
 	inline v2f32 key_axis(Keys::Type negH, Keys::Type posH, Keys::Type negV, Keys::Type posV) {
 		return composite(
-			get_key(negH),get_key(posH),
-			get_key(negV),get_key(posV)
+			get_key(negH), get_key(posH),
+			get_key(negV), get_key(posV)
 		);
 	}
 
 	inline v3f32 key_axis(Keys::Type negH, Keys::Type posH, Keys::Type negV, Keys::Type posV, Keys::Type negD, Keys::Type posD) {
 		return composite(
-			get_key(negH),get_key(posH),
-			get_key(negV),get_key(posV),
-			get_key(negD),get_key(posD)
+			get_key(negH), get_key(posH),
+			get_key(negV), get_key(posV),
+			get_key(negD), get_key(posD)
 		);
 	}
 

@@ -139,10 +139,9 @@ namespace Input {
 			RIGHT_SUPER = GLFW_KEY_RIGHT_SUPER,
 			MENU = GLFW_KEY_MENU,
 			LAST = GLFW_KEY_LAST,
-			COUNT = LAST - FIRST
+			COUNT = LAST - FIRST + 1
 		};
 
-		//TODO fix this, this is wrong
 		int index_of(Type key) { return key - FIRST; }
 
 		const Type List[] = {
@@ -279,6 +278,24 @@ namespace Input {
 		};
 	}
 
+	enum ButtonState: u8 {
+		None = 0,
+		Pressed = 1,
+		Down = 2,
+		Up = 4
+	};
+
+	ButtonState operator|=(ButtonState& a, ButtonState b) {
+		return a = (ButtonState)(a | b);
+	}
+
+	inline ButtonState manual_update(ButtonState current, ButtonState polled) {
+		ButtonState pressed = polled;
+		auto down = ((polled & ButtonState::Pressed) & (current ^ ButtonState::Pressed)) << 1;
+		auto up = ((polled ^ ButtonState::Pressed) & (current & ButtonState::Pressed)) << 2;
+		return static_cast<ButtonState>(pressed | down | up);
+	}
+
 	namespace Gamepad {
 		enum Button: u32 {
 			A = GLFW_GAMEPAD_BUTTON_A,
@@ -335,44 +352,6 @@ namespace Input {
 		};
 
 		constexpr u8 MaxGamepadCount = GLFW_JOYSTICK_LAST;
-	}
-
-	enum ButtonState: u8 {
-		None = 0,
-		Pressed = 1,
-		Down = 2,
-		Up = 4
-	};
-
-	ButtonState operator|=(ButtonState& a, ButtonState b) {
-		return a = (ButtonState)(a | b);
-	}
-
-	inline ButtonState manual_update(ButtonState current, ButtonState polled) {
-		ButtonState pressed = polled;
-		auto down = ((polled & ButtonState::Pressed) & (current ^ ButtonState::Pressed)) << 1;
-		auto up = ((polled ^ ButtonState::Pressed) & (current & ButtonState::Pressed)) << 2;
-		return static_cast<ButtonState>(pressed | down | up);
-	}
-
-	inline f32 composite(ButtonState negative, ButtonState positive) {
-		f32 value = 0.f;
-		if (negative & ButtonState::Pressed)
-			value -= 1.f;
-		if (positive & ButtonState::Pressed)
-			value += 1.f;
-		return value;
-	}
-
-	inline v2f32 composite(ButtonState negH, ButtonState posH, ButtonState negV, ButtonState posV) {
-		return v2f32(composite(negH, posH), composite(negV, posV));
-	}
-
-	inline v3f32 composite(ButtonState negH, ButtonState posH, ButtonState negV, ButtonState posV, ButtonState negD, ButtonState posD) {
-		return v3f32(composite(negH, posH), composite(negV, posV), composite(negD, posD));
-	}
-
-	namespace Gamepad {
 
 		struct State {
 			ButtonState buttons[array_size(GLFWgamepadstate{}.buttons)];
@@ -429,6 +408,43 @@ namespace Input {
 	inline auto& get_context() {
 		static Context context;
 		return context;
+	}
+
+	inline f32 composite(ButtonState negative, ButtonState positive) {
+		f32 value = 0.f;
+		if (negative & ButtonState::Pressed)
+			value -= 1.f;
+		if (positive & ButtonState::Pressed)
+			value += 1.f;
+		return value;
+	}
+
+	inline v2f32 composite(ButtonState negH, ButtonState posH, ButtonState negV, ButtonState posV) {
+		return v2f32(composite(negH, posH), composite(negV, posV));
+	}
+
+	inline v3f32 composite(ButtonState negH, ButtonState posH, ButtonState negV, ButtonState posV, ButtonState negD, ButtonState posD) {
+		return v3f32(composite(negH, posH), composite(negV, posV), composite(negD, posD));
+	}
+
+	inline ButtonState get_key(Keys::Type key) { return get_context().keyStates[Keys::index_of(key)]; }
+	inline f32 key_axis(Keys::Type neg, Keys::Type pos) {
+		return composite(get_key(neg), get_key(pos));
+	}
+
+	inline v2f32 key_axis(Keys::Type negH, Keys::Type posH, Keys::Type negV, Keys::Type posV) {
+		return composite(
+			get_key(negH),get_key(posH),
+			get_key(negV),get_key(posV)
+		);
+	}
+
+	inline v3f32 key_axis(Keys::Type negH, Keys::Type posH, Keys::Type negV, Keys::Type posV, Keys::Type negD, Keys::Type posD) {
+		return composite(
+			get_key(negH),get_key(posH),
+			get_key(negV),get_key(posV),
+			get_key(negD),get_key(posD)
+		);
 	}
 
 	void context_key_callback(

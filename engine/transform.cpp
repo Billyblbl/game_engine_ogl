@@ -30,6 +30,8 @@ struct OrthoCamera {
 	}
 };
 
+m4x4f32 view_project(m4x4f32 camera, m4x4f32 transform) { return camera * glm::inverse(transform); }
+
 bool EditorWidget(const char* label, Transform2D& data) {
 	bool changed = false;
 	if (ImGui::TreeNode(label)) {

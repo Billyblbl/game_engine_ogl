@@ -58,9 +58,9 @@ namespace Textures {
 	};
 
 	struct Texture {
-		GLuint			id;
-		glm::uvec2	dimensions;
-		int					channels;
+		GLuint	id;
+		v2u32		dimensions;
+		i32			channels;
 	};
 
 	Texture allocate(const ImageFormat& format, glm::uvec2 dimensions, SamplingFilter filter = Linear, WrapMode wrap = Repeat) {

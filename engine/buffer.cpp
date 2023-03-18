@@ -32,4 +32,14 @@ template<typename T> MappedBuffer<T> map_buffer(GLsizeiptr size) {
 	return MappedBuffer { id, cast<T>(data) };
 }
 
+template<typename T> Array<T> sync(MappedBuffer<T> buffer) {
+	flush_mapped_buffer(buffer.id, {0, buffer.obj.size_bytes()});
+	return buffer.obj;
+}
+
+template<typename T> T& sync(MappedObject<T> obj) {
+	flush_mapped_buffer(obj.id, {0, sizeof(T)});
+	return obj.obj;
+}
+
 #endif

@@ -133,15 +133,25 @@ bool EditorWidget(const cstr label, v4u32& data) {
 	return EditorWidget(label, (v4i32&)data);
 }
 
+template <typename T, typename U = int> struct has_name: std::false_type {};
+template <typename T> struct has_name<T, decltype((void)T::name, 0)>: std::true_type {};
+
 template<typename T> bool EditorWidget(const cstr label, Array<T> data) {
 	bool changed = false;
 	if (ImGui::TreeNode(label)) {
 		for (u32 i = 0; i < data.size(); i++) {
-			char label_buff[32];
-			snprintf(label_buff, 32, "%u", i);
-			ImGui::PushID(i);
-			changed |= EditorWidget((const cstr)label_buff, data[i]);
-			ImGui::PopID();
+			if constexpr (has_name<T>::value) {
+				str name = data[i].name;
+				ImGui::PushID(i);
+				changed |= EditorWidget((const cstrp)name.data(), data[i]);
+				ImGui::PopID();
+			} else {
+				char label_buff[32];
+				snprintf(label_buff, 32, "%u", i);
+				ImGui::PushID(i);
+				changed |= EditorWidget((const cstrp)label_buff, data[i]);
+				ImGui::PopID();
+			}
 		}
 		ImGui::TreePop();
 	}

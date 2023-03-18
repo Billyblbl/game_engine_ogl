@@ -93,8 +93,6 @@ inline GPUBinding	bind(const Textures::Texture& mapping, GLuint target) { return
 template<typename T> inline GPUBinding	bind(const MappedObject<T>& mapping, GLuint target) { return GPUBinding{ mapping.id, target, sizeof(mapping.obj) }; }
 template<typename T> inline GPUBinding	bind(const MappedBuffer<T>& mapping, GLuint target) { return GPUBinding{ mapping.id, target, (GLsizeiptr)mapping.obj.size_bytes() }; }
 
-constexpr Array<GPUBinding> noBinds = {};
-
 struct Material {
 	GLuint renderProgram;
 	std::span<GPUBinding>	textures;
@@ -105,11 +103,11 @@ struct RenderData {
 	Material* material;
 };
 
-template<typename Func> void render(GLuint fbf, rtu32 viewport, GLbitfield clear_flag, Func command) {
+template<typename Func> void render(GLuint fbf, rtu32 viewport, GLbitfield clear_flags, Func commands) {
 	GL_GUARD(glBindFramebuffer(GL_FRAMEBUFFER, fbf));
 	GL_GUARD(glViewport(viewport.min.x, viewport.min.x, width(viewport), height(viewport)));
-	GL_GUARD(glClear(clear_flag));
-	command();
+	GL_GUARD(glClear(clear_flags));
+	commands();
 	GL_GUARD(glBindFramebuffer(GL_FRAMEBUFFER, 0));
 }
 
@@ -117,9 +115,9 @@ void draw(
 	GLuint pipeline,
 	const RenderMesh& mesh,
 	u32 instance_count = 1,
-	Array<GPUBinding> textures = noBinds,
-	Array<GPUBinding> ssbos = noBinds,
-	Array<GPUBinding> ubos = noBinds
+	Array<GPUBinding> textures = {},
+	Array<GPUBinding> ssbos = {},
+	Array<GPUBinding> ubos = {}
 ) {
 	GL_GUARD(glUseProgram(pipeline));
 	for (auto&& texture : textures) bind_texture(texture);
@@ -134,6 +132,10 @@ void draw(
 	for (auto&& ubo : ubos) unbind_UBO(ubo);
 	for (auto&& texture : textures) unbind_texture(texture);
 	GL_GUARD(glUseProgram(0));
+}
+
+void wait_gpu() {
+	GL_GUARD(glFinish());
 }
 
 #endif

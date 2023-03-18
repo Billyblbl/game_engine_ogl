@@ -21,7 +21,7 @@ void override_transform(const b2Body& body, v2f32& position, f32& rotation) {
 }
 
 struct PhysicsConfig {
-	f32 time_step = 1.f / 10.f;
+	f32 time_step = 1.f / 60.f;
 	u8 velocity_iterations = 8;
 	u8 position_iterations = 3;
 };
@@ -68,6 +68,7 @@ bool physics_controls(
 }
 
 bool EditorWidget(const cstr label, b2Body* body) {
+	if (body == null) return false;
 	bool body_changed = false;
 	if (ImGui::TreeNode(label)) {
 		{

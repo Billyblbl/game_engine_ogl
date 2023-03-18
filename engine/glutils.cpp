@@ -221,7 +221,11 @@ void CheckGLError(utf8 expression, utf8 fileName, u32 lineNumber) {
 #define GL_GUARD(x) x
 #endif
 
-#define CGL_BUFFER_MAPPED (GL_MAP_WRITE_BIT | GL_MAP_PERSISTENT_BIT)
+#define CGL_BUFFER_MAPPED (GL_MAP_WRITE_BIT | GL_MAP_PERSISTENT_BIT | GL_MAP_COHERENT_BIT)
+
+static void flush_mapped_buffer(GLuint buffer, i64range range) {
+	GL_GUARD(glFlushMappedNamedBufferRange(buffer, range.b.value, range.e.value));
+}
 
 //TODO chose what to do about optional types
 static GLuint create_buffer(GLsizeiptr size, Array<byte>* mapping = null, std::optional<Array<byte>> initial_values = std::nullopt) {
@@ -238,7 +242,7 @@ static GLuint create_buffer(GLsizeiptr size, Array<byte>* mapping = null, std::o
 
 template <typename T> inline static GLuint create_buffer_array(Array<T> buffer, Array<T>* mapping = null) {
 	Array<byte> data;
-	auto id =  create_buffer(buffer.size_bytes(), mapping == null ? null : &data, cast<byte>(buffer));
+	auto id = create_buffer(buffer.size_bytes(), mapping == null ? null : &data, cast<byte>(buffer));
 	if (mapping != null) *mapping = cast<T>(data);
 	return id;
 }
@@ -246,7 +250,7 @@ template <typename T> inline static GLuint create_buffer_array(Array<T> buffer, 
 
 template <typename T> inline static GLuint create_buffer_single(const T& buffer, T** mapping = null) {
 	Array<byte> data;
-	auto id =  create_buffer(sizeof(T), mapping == null ? null : &data, cast<byte>(Array<const T>(&buffer, 1)));
+	auto id = create_buffer(sizeof(T), mapping == null ? null : &data, cast<byte>(Array<const T>(&buffer, 1)));
 	if (mapping != null) *mapping = cast<T>(data).data();
 	return id;
 }
@@ -257,11 +261,11 @@ struct GLFormat {
 	Array<const GLenum> pixel;
 };
 
-constexpr GLenum ZeroedOut[] = {0,0,0,0,0};
+constexpr GLenum ZeroedOut[] = { 0,0,0,0,0 };
 constexpr GLenum FloatsPixelFormats[] = { 0, GL_RED, GL_RG, GL_RGB, GL_RGBA };
 constexpr GLenum IntegerPixelFormats[] = { 0, GL_RED_INTEGER, GL_RG_INTEGER, GL_RGB_INTEGER, GL_RGBA_INTEGER };
 
-template<typename T> constexpr GLFormat Format = {0,{0,0,0,0,0},ZeroedOut};
+template<typename T> constexpr GLFormat Format = { 0,{0,0,0,0,0},ZeroedOut };
 template<> constexpr GLFormat Format<glm::f32> = { GL_FLOAT, { 0, GL_R32F, GL_RG32F, GL_RGB32F, GL_RGBA32F }, FloatsPixelFormats };
 template<> constexpr GLFormat Format<glm::i32> = { GL_INT, { 0, GL_R32I, GL_RG32I, GL_RGB32I, GL_RGBA32I }, IntegerPixelFormats };
 template<> constexpr GLFormat Format<glm::u32> = { GL_UNSIGNED_INT, { 0, GL_R32UI, GL_RG32UI, GL_RGB32UI, GL_RGBA32UI }, IntegerPixelFormats };

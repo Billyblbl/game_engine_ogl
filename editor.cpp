@@ -33,8 +33,6 @@ i32 main(i32 ac, const cstrp av[]) {
 
 	while (update(app, null)) {
 		Input::poll(app.inputs);
-		GL_GUARD(glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT));
-		render(scene_panel.framebuffer.id, { v2u32(0), scene_panel.texture.dimensions }, GL_COLOR_BUFFER_BIT, []() {});
 
 		ImGui::BeginFrame_OGL_GLFW();
 
@@ -68,6 +66,7 @@ i32 main(i32 ac, const cstrp av[]) {
 
 		ImGui::EndFrame_OGL_GLFW();
 
+		render(scene_panel.framebuffer.id, { v2u32(0), scene_panel.texture.dimensions }, GL_COLOR_BUFFER_BIT, []() {});
 		render(0, { v2u32(0), app.pixel_dimensions }, GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT, ImGui::Draw);
 	}
 	return 0;

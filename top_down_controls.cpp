@@ -7,10 +7,10 @@
 namespace controls {
 
 	v2f32 keyboard_plane(
-		Input::Keys::Type up,
-		Input::Keys::Type left,
-		Input::Keys::Type down,
-		Input::Keys::Type right
+		Input::Keyboard::Key up,
+		Input::Keyboard::Key left,
+		Input::Keyboard::Key down,
+		Input::Keyboard::Key right
 	) {
 		return Input::key_axis(left, right, down, up);
 	}

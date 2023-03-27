@@ -7,10 +7,12 @@
 #include <optional>
 #include <GLFW/glfw3.h> // Will drag system OpenGL headers
 
-#define serialise_macro(d) lutf(#d)
+#define serialise_macro(d) lstr(#d)
 
-const utf8 GLtoString(GLenum value) {
+const str GLtoString(GLenum value) {
 	switch (value) {
+	case GL_FRAGMENT_SHADER: return serialise_macro(GL_FRAGMENT_SHADER);
+	case GL_VERTEX_SHADER: return serialise_macro(GL_VERTEX_SHADER);
 	case GL_DEPTH_BUFFER_BIT: return serialise_macro(GL_DEPTH_BUFFER_BIT);
 	case GL_STENCIL_BUFFER_BIT: return serialise_macro(GL_STENCIL_BUFFER_BIT);
 	case GL_COLOR_BUFFER_BIT: return serialise_macro(GL_COLOR_BUFFER_BIT);
@@ -202,7 +204,7 @@ const utf8 GLtoString(GLenum value) {
 	case GL_DEBUG_SEVERITY_LOW: return serialise_macro(GL_DEBUG_SEVERITY_LOW);
 	case GL_DEBUG_SEVERITY_NOTIFICATION: return serialise_macro(GL_DEBUG_SEVERITY_NOTIFICATION);
 
-	default: return lutf("Unknown OpenGL enum");
+	default: return lstr("Unknown OpenGL enum");
 	}
 }
 

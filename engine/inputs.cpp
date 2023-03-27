@@ -14,8 +14,8 @@ namespace Input {
 		};
 	}
 
-	namespace Keys {
-		enum Type: i32 {
+	namespace Keyboard {
+		enum Key: i32 {
 			UNKNOWN = GLFW_KEY_UNKNOWN,
 			SPACE = GLFW_KEY_SPACE,
 			FIRST = SPACE,
@@ -142,9 +142,9 @@ namespace Input {
 			COUNT = LAST - FIRST + 1
 		};
 
-		int index_of(Type key) { return key - FIRST; }
+		int index_of(Key key) { return key - FIRST; }
 
-		const Type List[] = {
+		const Key List[] = {
 			SPACE,
 			APOSTROPHE,
 			COMMA,
@@ -371,7 +371,7 @@ namespace Input {
 
 	struct Context {
 		GLFWwindow* window = nullptr;
-		ButtonState keyStates[Keys::COUNT];
+		ButtonState keyStates[Keyboard::COUNT];
 		ButtonState mouseButtonStates[Mouse::COUNT];
 		v2f64 mousePos = v2f64(0);
 		v2f64 mouseDelta = v2f64(0);
@@ -384,8 +384,8 @@ namespace Input {
 
 	void poll(Context& context) {
 		//Reset states
-		for (auto key : Keys::List)
-			context.keyStates[Keys::index_of(key)] = ButtonState::None;
+		for (auto key : Keyboard::List)
+			context.keyStates[Keyboard::index_of(key)] = ButtonState::None;
 		for (auto i : u32range{ 0, Mouse::COUNT })
 			context.keyStates[i] = ButtonState::None;
 		context.mouseDelta = v2f64(0);
@@ -394,8 +394,8 @@ namespace Input {
 		glfwPollEvents();
 
 		// Read pressed button states
-		for (auto key : Keys::List) if (glfwGetKey(context.window, key) == Action::Press)
-			context.keyStates[Keys::index_of(key)] |= ButtonState::Pressed;
+		for (auto key : Keyboard::List) if (glfwGetKey(context.window, key) == Action::Press)
+			context.keyStates[Keyboard::index_of(key)] |= ButtonState::Pressed;
 		for (auto i : u32range{ 0, Mouse::COUNT }) if (glfwGetMouseButton(context.window, i))
 			context.mouseButtonStates[i] |= ButtonState::Pressed;
 		for (auto id : context.gamepads.indices)
@@ -424,20 +424,20 @@ namespace Input {
 		return v3f32(composite(negH, posH), composite(negV, posV), composite(negD, posD));
 	}
 
-	inline ButtonState get_key(Keys::Type key) { return get_context().keyStates[Keys::index_of(key)]; }
+	inline ButtonState get_key(Keyboard::Key key) { return get_context().keyStates[Keyboard::index_of(key)]; }
 
-	inline f32 key_axis(Keys::Type neg, Keys::Type pos) {
+	inline f32 key_axis(Keyboard::Key neg, Keyboard::Key pos) {
 		return composite(get_key(neg), get_key(pos));
 	}
 
-	inline v2f32 key_axis(Keys::Type negH, Keys::Type posH, Keys::Type negV, Keys::Type posV) {
+	inline v2f32 key_axis(Keyboard::Key negH, Keyboard::Key posH, Keyboard::Key negV, Keyboard::Key posV) {
 		return composite(
 			get_key(negH), get_key(posH),
 			get_key(negV), get_key(posV)
 		);
 	}
 
-	inline v3f32 key_axis(Keys::Type negH, Keys::Type posH, Keys::Type negV, Keys::Type posV, Keys::Type negD, Keys::Type posD) {
+	inline v3f32 key_axis(Keyboard::Key negH, Keyboard::Key posH, Keyboard::Key negV, Keyboard::Key posV, Keyboard::Key negD, Keyboard::Key posD) {
 		return composite(
 			get_key(negH), get_key(posH),
 			get_key(negV), get_key(posV),
@@ -447,7 +447,7 @@ namespace Input {
 
 	void context_key_callback(
 		GLFWwindow* window,
-		Keys::Type key,
+		Keyboard::Key key,
 		int scancode,
 		Action::Type action,
 		int mods
@@ -455,9 +455,9 @@ namespace Input {
 		if (action != Action::Press && action != Action::Release) return;
 		auto context = get_context();
 		if (action != Action::Press)
-			context.keyStates[Keys::index_of(key)] |= ButtonState::Down;
+			context.keyStates[Keyboard::index_of(key)] |= ButtonState::Down;
 		else if (action != Action::Release)
-			context.keyStates[Keys::index_of(key)] |= ButtonState::Up;
+			context.keyStates[Keyboard::index_of(key)] |= ButtonState::Up;
 	}
 
 	void context_mouse_button_callback(

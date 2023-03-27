@@ -12,26 +12,18 @@ class B2dDebugDraw : public b2Draw {
 public:
 	void DrawSolidPolygon(const b2Vec2* vertices, int32 vertexCount, const b2Color& color) {
 		u32	indices[vertexCount];
-		for (u32 i = 0; i < vertexCount; i++) {
+		for (u32 i = 0; i < vertexCount; i++)
 			indices[i] = i;
-			// printf("v[%u] = (%f,%f)\n", i, vertices[i].x, vertices[i].y);
-			auto onscreen = view_transform.obj * v4f32(vertices[i].x, vertices[i].y, 0, 1);
-			// printf("s[%u] = (%f,%f)\n", i, onscreen.x, onscreen.y);
-		}
-
-
 		auto mesh = upload_mesh(
-			std::span(v2f32Attribute),
-			std::span(vertices, vertexCount),
-			std::span(indices, vertexCount),
+			larray(v2f32Attribute),
+			carray(vertices, vertexCount),
+			carray(indices, vertexCount),
 			GL_TRIANGLE_FAN
 		);
 		mesh.element_count = vertexCount;
-
-		GPUBinding ubos[] = { bind(view_transform, 0) };
-
-		draw(draw_pipeline, mesh, 1, {}, {}, std::span(ubos, 1));
-
+		sync(view_transform);
+		draw(draw_pipeline, mesh, 1, { bind_to(view_transform, 0) });
+		wait_gpu();
 		delete_mesh(mesh);
 	}
 

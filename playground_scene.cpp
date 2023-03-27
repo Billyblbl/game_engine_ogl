@@ -46,7 +46,7 @@ bool bit_flags(const cstr label, u64& flags, Array<const str> bit_names) {
 		bool checked = flags & mask<u64>(bit_idx);
 		if (ImGui::Checkbox(bit_names[bit_idx].cbegin(), &checked)) {
 			flags ^= mask<u64>(bit_idx);
-			changed |=  true;
+			changed |= true;
 		}
 		if (bit_idx < bit_names.size() - 1)
 			ImGui::SameLine();
@@ -89,10 +89,7 @@ bool playground(App& app) {
 	defer{ ImGui::shutdown_ogl_glfw(); };
 
 	//Render data
-	auto draw_pipeline = create_render_pipeline(
-		load_shader("./shaders/camera2DRenderTexturedBatched.vert", GL_VERTEX_SHADER),
-		load_shader("./shaders/camera2DRenderTexturedBatched.frag", GL_FRAGMENT_SHADER)
-	);
+	auto draw_pipeline = load_pipeline("./shaders/textured_instanced.glsl");
 	defer{ GL_GUARD(glDeleteProgram(draw_pipeline)); };
 	auto texture = Textures::load_from_file(
 		"C:/Users/billy/Documents/assets/boss-spaceship-2d-sprites-pixel-art/PNG_Parts&Spriter_Animation/Boss_ship1/Boss_ship7.png",
@@ -152,10 +149,10 @@ bool playground(App& app) {
 
 	auto& player = entities.push(create_player());
 
-	auto& greoihgior = entities.push({mask<u64>(Entity::Sprite)});
-	greoihgior.texture = &texture2;
-	greoihgior.mesh = &rect;
-	greoihgior.transform.translation += v2f32(100, 0);
+	auto& some_sprite = entities.push({ mask<u64>(Entity::Sprite) });
+	some_sprite.texture = &texture2;
+	some_sprite.mesh = &rect;
+	some_sprite.transform.translation += v2f32(100, 0);
 
 	fflush(stdout);
 	while (update(app, playground)) {
@@ -164,7 +161,7 @@ bool playground(App& app) {
 
 		for (auto& ent : entities.allocated()) if (has_all(ent.flags, mask<u64>(Entity::Player, Entity::Dynbody))) {
 			using namespace controls;
-			using namespace Input::Keys;
+			using namespace Input::Keyboard;
 			move_top_down(*ent.body, keyboard_plane(W, A, S, D), ent.speed, ent.accel * scene.clock.dt);
 		}
 
@@ -211,11 +208,14 @@ bool playground(App& app) {
 				for (auto&& ent : entities.allocated()) if (has_all(ent.flags, mask<u64>(Entity::Sprite))) {
 					auto draw_batch_matrices = List{ rendering.draw_batch_matrices_buffer.obj, 0 };
 					draw_batch_matrices.push(ent.transform.matrix());
-					GPUBinding textures[] = { bind(*ent.texture, 0) };
-					GPUBinding ssbos[] = { bind(rendering.draw_batch_matrices_buffer, 0) };
-					GPUBinding ubos[] = { bind(rendering.view_projection_matrix, 0) };
 					sync(rendering.draw_batch_matrices_buffer);
-					draw(draw_pipeline, *ent.mesh, draw_batch_matrices.current, larray(textures), larray(ssbos), larray(ubos));
+					draw(draw_pipeline, *ent.mesh, draw_batch_matrices.current,
+						{
+							bind_to(*ent.texture, 0), 												//texture
+							bind_to(rendering.draw_batch_matrices_buffer, 0), //ssbo
+							bind_to(rendering.view_projection_matrix, 0) 			//ubo
+						}
+					);
 					// Synchronisation avoids overwriting on mapped buffers before draw is executed
 					wait_gpu();
 				}

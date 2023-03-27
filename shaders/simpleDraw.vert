@@ -1,5 +1,3 @@
-#version 450 core
-
 layout(location = 0) in vec2 position;
 
 layout(std140, binding = 0) uniform Scene {

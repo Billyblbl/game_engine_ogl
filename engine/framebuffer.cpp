@@ -38,7 +38,7 @@ struct Framebuffer {
 
 };
 
-Framebuffer create_framebuffer(Array<std::pair<Framebuffer::Attachement, Textures::Texture*>> attachements) {
+Framebuffer create_framebuffer(Array<std::pair<Framebuffer::Attachement, Texture*>> attachements) {
 	Framebuffer buffer;
 	GL_GUARD(glCreateFramebuffers(1, &buffer.id));
 	for (auto&& attachement : attachements) {
@@ -50,12 +50,12 @@ Framebuffer create_framebuffer(Array<std::pair<Framebuffer::Attachement, Texture
 }
 
 Framebuffer create_framebuffer(
-	Array<Textures::Texture*> colors = {},
-	Textures::Texture* depth = nullptr,
-	Textures::Texture* stencil = nullptr,
-	Textures::Texture* depthStencil = nullptr
+	Array<Texture*> colors = {},
+	Texture* depth = nullptr,
+	Texture* stencil = nullptr,
+	Texture* depthStencil = nullptr
 ) {
-	std::pair<Framebuffer::Attachement, Textures::Texture*> buff[Framebuffer::MaxAttachements];
+	std::pair<Framebuffer::Attachement, Texture*> buff[Framebuffer::MaxAttachements];
 	auto attachements = List { larray(buff), 0 };
 
 	for (auto&& colorAtt : colors) {
@@ -71,8 +71,8 @@ Framebuffer create_framebuffer(
 	return create_framebuffer(attachements.allocated());
 }
 
-Framebuffer create_framebuffer(Textures::Texture& color) {
-	Textures::Texture* colorPtr = &color;
+Framebuffer create_framebuffer(Texture& color) {
+	Texture* colorPtr = &color;
 	return create_framebuffer(std::span(&colorPtr, 1));
 }
 

@@ -32,7 +32,7 @@ struct Entity {
 	b2Body* body;
 	//TODO add shape for physics
 	RenderMesh* mesh;
-	Textures::Texture* texture;
+	Texture* texture;
 	f32 speed = 10.f;
 	f32 accel = 5.f;
 	str name = "__entity__";
@@ -81,6 +81,11 @@ bool EditorWidget(const cstr label, Entity& entity) {
 	return changed;
 }
 
+const struct {
+	cstrp ship1 = "C:/Users/billy/Documents/assets/boss-spaceship-2d-sprites-pixel-art/PNG_Parts&Spriter_Animation/Boss_ship1/Boss_ship7.png";
+	cstrp ship2 = "C:/Users/billy/Documents/assets/boss-spaceship-2d-sprites-pixel-art/PNG_Parts&Spriter_Animation/Boss_ship2/Boss_ship7.png";
+} assets;
+
 bool playground(App& app) {
 	auto entities = List{ alloc_array<Entity>(std_allocator, MAX_ENTITIES), 0 };
 	defer{ dealloc_array(std_allocator, entities.capacity); };
@@ -91,16 +96,9 @@ bool playground(App& app) {
 	//Render data
 	auto draw_pipeline = load_pipeline("./shaders/textured_instanced.glsl");
 	defer{ GL_GUARD(glDeleteProgram(draw_pipeline)); };
-	auto texture = Textures::load_from_file(
-		"C:/Users/billy/Documents/assets/boss-spaceship-2d-sprites-pixel-art/PNG_Parts&Spriter_Animation/Boss_ship1/Boss_ship7.png",
-		Textures::Linear, Textures::Clamp
-	);
+	auto texture = load_texture(assets.ship1, Linear, Clamp);
 	defer{ GL_GUARD(glDeleteTextures(1, &texture.id)); };
-
-	auto texture2 = Textures::load_from_file(
-		"C:/Users/billy/Documents/assets/boss-spaceship-2d-sprites-pixel-art/PNG_Parts&Spriter_Animation/Boss_ship2/Boss_ship7.png",
-		Textures::Linear, Textures::Clamp
-	);
+	auto texture2 = load_texture(assets.ship2, Linear, Clamp);
 	defer{ GL_GUARD(glDeleteTextures(1, &texture2.id)); };
 
 	//simple rect

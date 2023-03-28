@@ -25,10 +25,10 @@ i32 main(i32 ac, const cstrp av[]) {
 	} camera;
 
 	struct {
-		Textures::Texture texture;
+		Texture texture;
 		Framebuffer framebuffer;
 	} scene_panel;
-	scene_panel.texture = Textures::allocate(Textures::ImageFormatFromPixelType<v4f32>, app.pixel_dimensions);
+	scene_panel.texture = create_texture(ImageFormatFromPixelType<v4f32>, app.pixel_dimensions);
 	scene_panel.framebuffer = create_framebuffer(scene_panel.texture);
 
 	while (update(app, null)) {

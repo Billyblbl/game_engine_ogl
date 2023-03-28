@@ -1,8 +1,7 @@
 #ifndef GGLUTILS
 # define GGLUTILS
 
-#include <string_view>
-#include <span>
+#include <blblstd.hpp>
 #include <cstdio>
 #include <optional>
 #include <GLFW/glfw3.h> // Will drag system OpenGL headers
@@ -208,9 +207,9 @@ const str GLtoString(GLenum value) {
 	}
 }
 
-void CheckGLError(utf8 expression, utf8 fileName, u32 lineNumber) {
+void CheckGLError(str expression, str file_name, u32 line_number) {
 	for (auto err = glGetError(); err != GL_NO_ERROR; err = glGetError()) {
-		std::printf("Error in file %s:%d, when executing %s : %x %s\n", fileName.data(), lineNumber, expression.data(), err, GLtoString(err));
+		std::printf("Error in file %s:%d, when executing %s : %x %s\n", file_name.data(), line_number, expression.data(), err, GLtoString(err));
 	}
 }
 
@@ -218,7 +217,7 @@ void CheckGLError(utf8 expression, utf8 fileName, u32 lineNumber) {
 // #define DEBUG_GL false
 
 #if DEBUG_GL
-#define GL_GUARD(x) x; CheckGLError(lutf(#x), lutf(__FILE__), __LINE__)
+#define GL_GUARD(x) [&]() -> auto { defer {CheckGLError(#x, __FILE__, __LINE__);}; return x;}()
 #else
 #define GL_GUARD(x) x
 #endif

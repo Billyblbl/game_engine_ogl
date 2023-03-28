@@ -10,6 +10,8 @@
 #include <math.cpp>
 #include <framebuffer.cpp>
 
+//TODO remove fstream dependency
+
 GLuint create_shader(str source, GLenum type) {
 	auto shader = GL_GUARD(glCreateShader(type));
 
@@ -18,8 +20,9 @@ GLuint create_shader(str source, GLenum type) {
 		"#define ", GLtoString(type).substr(3).data(),"\n\n", // shader type macro
 		source.data()
 	};
+	const auto size = array_size(content);
 
-	GL_GUARD(glShaderSource(shader, array_size(content), content, null));
+	GL_GUARD(glShaderSource(shader, size, content, null));
 	GL_GUARD(glCompileShader(shader));
 
 	GLint is_compiled = 0;
@@ -42,7 +45,7 @@ GLuint load_shader(const char* path, GLenum type) {
 	fflush(stdout);
 	if (std::ifstream file{ path, std::ios::binary | std::ios::ate }) {
 		usize size = file.tellg();
-		char buffer[size + 1] = {0};
+		char buffer[size + 1] = { 0 };
 		file.seekg(0);
 		file.read(buffer, size);
 		file.close();
@@ -88,7 +91,7 @@ GLuint load_pipeline(const char* path) {
 	fflush(stdout);
 	if (std::ifstream file{ path, std::ios::binary | std::ios::ate }) {
 		usize size = file.tellg();
-		char buffer[size + 1] = {0};
+		char buffer[size + 1] = { 0 };
 		file.seekg(0);
 		file.read(buffer, size);
 		file.close();
@@ -115,10 +118,9 @@ void inline bind(const GPUBinding& binding) {
 	case GPUBinding::Texture: GL_GUARD(glBindTextureUnit(binding.target, binding.id)); break;
 	case GPUBinding::UBO: GL_GUARD(glBindBufferRange(GL_UNIFORM_BUFFER, binding.target, binding.id, 0, binding.size)); break;
 	case GPUBinding::SSBO: GL_GUARD(glBindBufferRange(GL_SHADER_STORAGE_BUFFER, binding.target, binding.id, 0, binding.size)); break;
-	//TODO better error handling
+		//TODO better error handling
 	default: assert(false); break;
 	}
-	// GL_GUARD(glBindBufferBase(GL_SHADER_STORAGE_BUFFER, ssbo.binding, ssbo.id));
 }
 
 void inline unbind(const GPUBinding& binding) {
@@ -126,15 +128,15 @@ void inline unbind(const GPUBinding& binding) {
 	case GPUBinding::Texture: GL_GUARD(glBindTextureUnit(binding.target, 0)); break;
 	case GPUBinding::UBO: GL_GUARD(glBindBufferRange(GL_UNIFORM_BUFFER, binding.target, 0, 0, binding.size)); break;
 	case GPUBinding::SSBO: GL_GUARD(glBindBufferRange(GL_SHADER_STORAGE_BUFFER, binding.target, 0, 0, binding.size)); break;
-	//TODO better error handling
+		//TODO better error handling
 	default: assert(false); break;
 	}
 }
 
-inline GPUBinding	bind_to(GLuint id, GLuint target, size_t size) { return GPUBinding{ GPUBinding::None, id, target, (GLsizeiptr)size }; }
-inline GPUBinding	bind_to(const Textures::Texture& mapping, GLuint target) { return GPUBinding{ GPUBinding::Texture, mapping.id, target, mapping.dimensions.x * mapping.dimensions.y * mapping.channels }; }
-template<typename T> inline GPUBinding	bind_to(const MappedObject<T>& mapping, GLuint target) { return GPUBinding{ GPUBinding::UBO, mapping.id, target, sizeof(mapping.obj) }; }
-template<typename T> inline GPUBinding	bind_to(const MappedBuffer<T>& mapping, GLuint target) { return GPUBinding{ GPUBinding::SSBO, mapping.id, target, (GLsizeiptr)mapping.obj.size_bytes() }; }
+inline GPUBinding bind_to(GLuint id, GLuint target, size_t size) { return GPUBinding{ GPUBinding::None, id, target, (GLsizeiptr)size }; }
+inline GPUBinding bind_to(const Texture& mapping, GLuint target) { return GPUBinding{ GPUBinding::Texture, mapping.id, target, mapping.dimensions.x * mapping.dimensions.y * mapping.channels }; }
+template<typename T> inline GPUBinding bind_to(const MappedObject<T>& mapping, GLuint target) { return GPUBinding{ GPUBinding::UBO, mapping.id, target, sizeof(mapping.obj) }; }
+template<typename T> inline GPUBinding bind_to(const MappedBuffer<T>& mapping, GLuint target) { return GPUBinding{ GPUBinding::SSBO, mapping.id, target, (GLsizeiptr)mapping.obj.size_bytes() }; }
 
 template<typename Func> inline void render(GLuint fbf, rtu32 viewport, GLbitfield clear_flags, Func commands) {
 	GL_GUARD(glBindFramebuffer(GL_FRAMEBUFFER, fbf));

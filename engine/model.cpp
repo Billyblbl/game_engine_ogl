@@ -179,6 +179,10 @@ RenderMesh create_rect_mesh(v2f32 dimensions) {
 	return upload_mesh(vertexAttributesOf<DefaultVertex2D>, Array<DefaultVertex2D>(vertices.data(), vertices.size()), indices);
 }
 
+RenderMesh create_rect_mesh(v2u32 source_dimensions, f32 ppu) {
+	return create_rect_mesh(v2f32(source_dimensions) / ppu);
+}
+
 RenderMesh get_unit_rect_mesh() {
 	static auto mesh = create_rect_mesh(v2f32(1));
 	return mesh;

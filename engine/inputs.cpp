@@ -144,7 +144,7 @@ namespace Input {
 
 		int index_of(Key key) { return key - FIRST; }
 
-		const Key List[] = {
+		const Key All[] = {
 			SPACE,
 			APOSTROPHE,
 			COMMA,
@@ -333,7 +333,7 @@ namespace Input {
 			A_COUNT = GLFW_GAMEPAD_AXIS_LAST
 		};
 
-		const Button List[] = {
+		const Button All[] = {
 			A,
 			B,
 			X,
@@ -384,7 +384,7 @@ namespace Input {
 
 	void poll(Context& context) {
 		//Reset states
-		for (auto key : Keyboard::List)
+		for (auto key : Keyboard::All)
 			context.keyStates[Keyboard::index_of(key)] = ButtonState::None;
 		for (auto i : u32range{ 0, Mouse::COUNT })
 			context.keyStates[i] = ButtonState::None;
@@ -394,7 +394,7 @@ namespace Input {
 		glfwPollEvents();
 
 		// Read pressed button states
-		for (auto key : Keyboard::List) if (glfwGetKey(context.window, key) == Action::Press)
+		for (auto key : Keyboard::All) if (glfwGetKey(context.window, key) == Action::Press)
 			context.keyStates[Keyboard::index_of(key)] |= ButtonState::Pressed;
 		for (auto i : u32range{ 0, Mouse::COUNT }) if (glfwGetMouseButton(context.window, i))
 			context.mouseButtonStates[i] |= ButtonState::Pressed;

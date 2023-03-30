@@ -40,7 +40,7 @@ namespace ImGui {
 
 		// Setup Platform/Renderer backends
 		ImGui_ImplGlfw_InitForOpenGL(window, true);
-		ImGui_ImplOpenGL3_Init("#version 430");
+		ImGui_ImplOpenGL3_Init("#version 450");
 	}
 
 	void shutdown_ogl_glfw() {
@@ -75,6 +75,25 @@ namespace ImGui {
 		return ImVec2(max.x - min.x, max.y - min.y);
 	}
 
+	template<typename T> bool bit_flags(const cstr label, T& flags, Array<const string> bit_names) {
+		bool changed = false;
+		ImGui::Text(label);
+		ImGui::SameLine();
+		for (u64 bit_idx : u64range{ 0, bit_names.size() }) {
+			bool checked = flags & mask<T>(bit_idx);
+			if (ImGui::Checkbox(bit_names[bit_idx].cbegin(), &checked)) {
+				flags ^= mask<T>(bit_idx);
+				changed = true;
+			}
+			if (bit_idx < bit_names.size() - 1)
+				ImGui::SameLine();
+		}
+		return changed;
+	}
+
+	template<typename T> bool bit_flags(const cstr label, T& flags, LiteralArray<string> bit_names) {
+		return bit_flags(label, flags, larray(bit_names));
+	}
 
 }
 
@@ -141,7 +160,7 @@ template<typename T> bool EditorWidget(const cstr label, Array<T> data) {
 	if (ImGui::TreeNode(label)) {
 		for (u32 i = 0; i < data.size(); i++) {
 			if constexpr (has_name<T>::value) {
-				str name = data[i].name;
+				string name = data[i].name;
 				ImGui::PushID(i);
 				changed |= EditorWidget((const cstrp)name.data(), data[i]);
 				ImGui::PopID();

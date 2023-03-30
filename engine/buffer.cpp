@@ -17,7 +17,7 @@ template<typename T> MappedObject<T> map_object(const T& obj) {
 
 template<typename T> struct MappedBuffer {
 	GLuint id;
-	Array<T> obj;
+	Array<T> content;
 };
 
 template<typename T> MappedBuffer<T> map_buffer(Array<T> data) {
@@ -32,9 +32,22 @@ template<typename T> MappedBuffer<T> map_buffer(GLsizeiptr size) {
 	return MappedBuffer { id, cast<T>(data) };
 }
 
+template<typename T> void unmap(MappedBuffer<T>& buffer) {
+	unmap(buffer.id, buffer.content.size_bytes());
+	delete_buffer(buffer.id);
+	buffer.id = 0;
+	buffer.content = {};
+}
+
+template<typename T> void unmap(MappedObject<T>& obj) {
+	unmap(obj.id, sizeof(T));
+	delete_buffer(obj.id);
+	obj.id = 0;
+}
+
 template<typename T> Array<T> sync(MappedBuffer<T> buffer) {
-	flush_mapped_buffer(buffer.id, {0, buffer.obj.size_bytes()});
-	return buffer.obj;
+	flush_mapped_buffer(buffer.id, {0, buffer.content.size_bytes()});
+	return buffer.content;
 }
 
 template<typename T> T& sync(MappedObject<T> obj) {

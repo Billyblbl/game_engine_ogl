@@ -4,33 +4,41 @@
 #include <math.cpp>
 #include <imgui_extension.cpp>
 
+m4x4f32 trs_2d(v2f32 translation, f32 rotation, v2f32 scales) {
+	using namespace glm;
+	return translate(m4x4f32(1), v3f32(translation, 0)) *
+		rotate(m4x4f32(1), radians(rotation), v3f32(0, 0, -1)) *
+		scale(m4x4f32(1), v3f32(scales, 1));
+}
+
+m4x4f32 view_project(m4x4f32 projection, m4x4f32 view) {
+	return projection * glm::inverse(view);
+}
+
+m4x4f32 ortho_project(v3f32	dimensions, v3f32 center) {
+	auto min = -dimensions / 2.f - center;
+	auto max = dimensions / 2.f - center;
+	return glm::ortho(min.x, max.x, min.y, max.y, min.z, max.z);
+}
+
 struct Transform2D {
 	v2f32 translation = v2f32(0);
 	v2f32 scale = v2f32(1);
 	f32 rotation = .0f;
-
-	m4x4f32 matrix() const {
-		return (
-			glm::translate(m4x4f32(1), v3f32(translation, 0)) * // Translation
-			glm::rotate(m4x4f32(1), glm::radians(rotation), v3f32(0, 0, -1)) * // Rotation
-			glm::scale(m4x4f32(1), v3f32(scale, 1)) // Scale;
-		);
-	}
-
 };
 
 struct OrthoCamera {
-	v3f32	dimensions = v3f32(600, 400, 1);
+	v3f32	dimensions = v3f32(16, 9, 1);
 	v3f32 center = v3f32(0);
-
-	m4x4f32 matrix() const {
-		auto min = -dimensions / 2.f - center;
-		auto max = dimensions / 2.f - center;
-		return glm::ortho(min.x, max.x, min.y, max.y, min.z, max.z);
-	}
 };
 
-m4x4f32 view_project(m4x4f32 camera, m4x4f32 transform) { return camera * glm::inverse(transform); }
+m4x4f32 trs_2d(const Transform2D& transform) {
+	return trs_2d(transform.translation, transform.rotation, transform.scale);
+}
+
+m4x4f32 project(const OrthoCamera& camera) {
+	return ortho_project(camera.dimensions, camera.center);
+}
 
 bool EditorWidget(const char* label, Transform2D& data) {
 	bool changed = false;

@@ -10,7 +10,7 @@
 ##
 
 CXX=$(GXX_PATH)
-CFLAGS = -g3 -std=c++20
+CFLAGS = -g3 -std=c++20 -fno-exceptions
 INC = $(PWD)
 LIB = $(PWD)
 

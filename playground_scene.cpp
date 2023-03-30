@@ -14,6 +14,7 @@
 #include <time.cpp>
 #include <transform.cpp>
 #include <physics2d.cpp>
+#include <blblstd.hpp>
 
 #include <top_down_controls.cpp>
 
@@ -21,12 +22,7 @@
 #define MAX_DRAW_BATCH MAX_ENTITIES
 
 struct Entity {
-	enum FlagIndex: u64 {
-		Dynbody,
-		Collision,
-		Sprite,
-		Player
-	};
+	enum FlagIndex: u64 { Dynbody, Collision, Sprite, Player };
 	u64 flags = 0;
 	Transform2D transform;
 	b2Body* body;
@@ -34,36 +30,14 @@ struct Entity {
 	RenderMesh* mesh;
 	Texture* texture;
 	f32 speed = 10.f;
-	f32 accel = 5.f;
-	str name = "__entity__";
+	f32 accel = 100.f;
+	string name = "__entity__";
 };
 
-bool bit_flags(const cstr label, u64& flags, Array<const str> bit_names) {
-	bool changed = false;
-	ImGui::Text(label);
-	ImGui::SameLine();
-	for (u64 bit_idx : u64range{ 0, bit_names.size() }) {
-		bool checked = flags & mask<u64>(bit_idx);
-		if (ImGui::Checkbox(bit_names[bit_idx].cbegin(), &checked)) {
-			flags ^= mask<u64>(bit_idx);
-			changed |= true;
-		}
-		if (bit_idx < bit_names.size() - 1)
-			ImGui::SameLine();
-	}
-	return changed;
-}
-
 bool EditorWidget(const cstr label, Entity& entity) {
-	static const str bits[] = {
-		"Dynbody",
-		"Collision",
-		"Sprite",
-		"Player"
-	};
 	bool changed = false;
 	if (ImGui::TreeNode(label)) {
-		changed |= bit_flags("flags", entity.flags, bits);
+		changed |= ImGui::bit_flags("flags", entity.flags, { "Dynbody", "Collision", "Sprite", "Player" });
 		if (has_one(entity.flags, mask<u64>(Entity::Dynbody, Entity::Collision, Entity::Sprite, Entity::Player)))
 			changed |= EditorWidget("transform", entity.transform);
 		if (has_one(entity.flags, mask<u64>(Entity::Dynbody, Entity::Collision)))
@@ -84,44 +58,24 @@ bool EditorWidget(const cstr label, Entity& entity) {
 const struct {
 	cstrp ship1 = "C:/Users/billy/Documents/assets/boss-spaceship-2d-sprites-pixel-art/PNG_Parts&Spriter_Animation/Boss_ship1/Boss_ship7.png";
 	cstrp ship2 = "C:/Users/billy/Documents/assets/boss-spaceship-2d-sprites-pixel-art/PNG_Parts&Spriter_Animation/Boss_ship2/Boss_ship7.png";
+	cstrp draw_pipeline = "./shaders/textured_instanced.glsl";
 } assets;
 
+
 bool playground(App& app) {
-	auto entities = List{ alloc_array<Entity>(std_allocator, MAX_ENTITIES), 0 };
-	defer{ dealloc_array(std_allocator, entities.capacity); };
+	auto entities = List{ alloc_array<Entity>(std_allocator, MAX_ENTITIES), 0 }; defer{ dealloc_array(std_allocator, entities.capacity); };
 
-	ImGui::init_ogl_glfw(app.window);
-	defer{ ImGui::shutdown_ogl_glfw(); };
-
-	//Render data
-	auto draw_pipeline = load_pipeline("./shaders/textured_instanced.glsl");
-	defer{ GL_GUARD(glDeleteProgram(draw_pipeline)); };
-	auto texture = load_texture(assets.ship1, Linear, Clamp);
-	defer{ GL_GUARD(glDeleteTextures(1, &texture.id)); };
-	auto texture2 = load_texture(assets.ship2, Linear, Clamp);
-	defer{ GL_GUARD(glDeleteTextures(1, &texture2.id)); };
-
-	//simple rect
-	auto rect = create_rect_mesh(texture.dimensions);
-	defer{ delete_mesh(rect); };
-
-	// Scene state
-	struct {
-		Time::Clock clock = Time::start();
-		f32 rotationSpeed = 1.f;
-		f32 camSpeed = 10.f;
-	} scene;
+	ImGui::init_ogl_glfw(app.window); defer{ ImGui::shutdown_ogl_glfw(); };
 
 	struct {
-		OrthoCamera camera;
-		MappedObject<m4x4f32> view_projection_matrix = map_object(glm::inverse(Transform2D{}.matrix()));
+		OrthoCamera camera = { v3f32(16, 9, -2) / 2.f, v3f32(0) };
+		MappedObject<m4x4f32> view_projection_matrix = map_object(m4x4f32(1));
 		MappedBuffer<m4x4f32> draw_batch_matrices_buffer = map_buffer<m4x4f32>(MAX_DRAW_BATCH);
 	} rendering;
-	rendering.camera = { v3f32(app.pixel_dimensions, -1) };
 
 	defer{
-		GL_GUARD(glUnmapNamedBuffer(rendering.view_projection_matrix.id));
-		GL_GUARD(glUnmapNamedBuffer(rendering.draw_batch_matrices_buffer.id));
+		unmap(rendering.view_projection_matrix);
+		unmap(rendering.draw_batch_matrices_buffer);
 	};
 
 	struct {
@@ -132,6 +86,12 @@ bool playground(App& app) {
 	} physics;
 	physics.world.SetDebugDraw(&physics.debug_draw);
 	physics.debug_draw.SetFlags(b2Draw::e_shapeBit);
+
+	auto clock = Time::start();
+	auto draw_pipeline = load_pipeline(assets.draw_pipeline); defer{ destroy_pipeline(draw_pipeline); };
+	auto texture = load_texture(assets.ship1, Linear, Clamp); defer{ unload(texture); };
+	auto texture2 = load_texture(assets.ship2, Linear, Clamp); defer{ unload(texture2); };
+	auto rect = create_rect_mesh(texture.dimensions, min(texture.dimensions.x, texture.dimensions.y)); defer{ delete_mesh(rect); };
 
 	auto create_player = [&]() {
 		Entity ent = { mask<u64>(Entity::Player, Entity::Sprite, Entity::Dynbody) };
@@ -150,34 +110,31 @@ bool playground(App& app) {
 	auto& some_sprite = entities.push({ mask<u64>(Entity::Sprite) });
 	some_sprite.texture = &texture2;
 	some_sprite.mesh = &rect;
-	some_sprite.transform.translation += v2f32(100, 0);
 
 	fflush(stdout);
 	while (update(app, playground)) {
-		update(scene.clock);
+		update(clock);
 		Input::poll(app.inputs);
-
-		for (auto& ent : entities.allocated()) if (has_all(ent.flags, mask<u64>(Entity::Player, Entity::Dynbody))) {
-			using namespace controls;
-			using namespace Input::Keyboard;
-			move_top_down(*ent.body, keyboard_plane(W, A, S, D), ent.speed, ent.accel * scene.clock.dt);
-		}
 
 		// Using a 'while' here instead of an 'if' makes sure that if a frame was slow the physics simulation can catch up
 		// by doing multiple steps in 1 frame
 		// otherwise slowness in the rendering would also slow down the physics
-		// althout not sure how pertinent this is since slow rendering would probably be a bigger problem
-		while (Time::metronome(scene.clock.current, physics.config.time_step, physics.time_point)) { // Physics tick
-			tuple<Transform2D*, b2Body*> pbuff[MAX_ENTITIES];
-			auto to_sim = List{ larray(pbuff), 0 };
-			for (auto& ent : entities.allocated()) if (has_all(ent.flags, mask<u64>(Entity::Dynbody))) {
-				//TODO replace pointers in entity with resource handles to automate error handling
-				if (ent.body == null)
-					fprintf(stderr, "Entity %s marked as dynamic body has no body\n", ent.name.data());
-				else
-					to_sim.push({ &ent.transform, ent.body });
-			}
-			update_physics(physics.world, physics.config, to_sim.allocated());
+		// although not sure how pertinent this is since slow rendering would probably be a bigger problem
+		while (Time::metronome(clock.current, physics.config.time_step, physics.time_point)) { // Physics tick
+
+			using namespace Input::Keyboard;
+			if (has_all(player.flags, mask<u64>(Entity::Player, Entity::Dynbody)))
+				controls::move_top_down(player.body, controls::keyboard_plane(W, A, S, D), player.speed, player.accel * physics.config.time_step);
+
+			Entity* pbuff[entities.allocated().size()];
+			auto to_sim = List{ carray(pbuff, entities.allocated().size()), 0 };
+			for (auto& ent : entities.allocated()) if (has_all(ent.flags, mask<u64>(Entity::Dynbody)) && ent.body != null)
+				to_sim.push(&ent);
+			for (auto ent : to_sim.allocated())
+				override_body(ent->body, ent->transform.translation, ent->transform.rotation);
+			update_sim(physics.world, physics.config);
+			for (auto ent : to_sim.allocated())
+				override_transform(ent->body, ent->transform.translation, ent->transform.rotation);
 		}
 
 		{// Build Imgui overlay
@@ -188,30 +145,28 @@ bool playground(App& app) {
 			physics_controls(physics.world, physics.config, physics.time_point);
 			EditorWidget("Camera", rendering.camera);
 			EditorWidget("Entities", entities.allocated());
-			ImGui::Text("Time = %f", scene.clock.current);
+			ImGui::Text("Time = %f", clock.current);
 			ImGui::End();
 			ImGui::Render();
 		}
 
 		// Rendering
-		//TODO instanciate camera entity somewhere
-		rendering.camera.dimensions.x = app.pixel_dimensions.x;
-		rendering.camera.dimensions.y = app.pixel_dimensions.y;
-		rendering.view_projection_matrix.obj = view_project(rendering.camera.matrix(), player.transform.matrix());
+		//TODO instantiate camera entity somewhere
+		rendering.view_projection_matrix.obj = view_project(project(rendering.camera), trs_2d(player.transform));
 		sync(rendering.view_projection_matrix);
 		render(0, { v2u32(0), app.pixel_dimensions }, GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT,
 			[&]() {
 				//Draw entities
 				//TODO batching
 				for (auto&& ent : entities.allocated()) if (has_all(ent.flags, mask<u64>(Entity::Sprite))) {
-					auto draw_batch_matrices = List{ rendering.draw_batch_matrices_buffer.obj, 0 };
-					draw_batch_matrices.push(ent.transform.matrix());
+					auto draw_batch_matrices = List{ rendering.draw_batch_matrices_buffer.content, 0 };
+					draw_batch_matrices.push(trs_2d(ent.transform));
 					sync(rendering.draw_batch_matrices_buffer);
 					draw(draw_pipeline, *ent.mesh, draw_batch_matrices.current,
 						{
 							bind_to(*ent.texture, 0), 												//texture
-							bind_to(rendering.draw_batch_matrices_buffer, 0), //ssbo
-							bind_to(rendering.view_projection_matrix, 0) 			//ubo
+							bind_to(rendering.draw_batch_matrices_buffer, 0), //ssbo -> entities
+							bind_to(rendering.view_projection_matrix, 0) 			//ubo -> scene
 						}
 					);
 					// Synchronisation avoids overwriting on mapped buffers before draw is executed

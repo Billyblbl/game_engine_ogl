@@ -12,7 +12,7 @@
 
 //TODO remove fstream dependency
 
-GLuint create_shader(str source, GLenum type) {
+GLuint create_shader(string source, GLenum type) {
 	auto shader = GL_GUARD(glCreateShader(type));
 
 	const cstrp content[] = {
@@ -49,7 +49,7 @@ GLuint load_shader(const char* path, GLenum type) {
 		file.seekg(0);
 		file.read(buffer, size);
 		file.close();
-		return create_shader(str(buffer, size), type);
+		return create_shader(string(buffer, size), type);
 	} else {
 		fprintf(stderr, "failed to open file %s\n", path);
 		return 0;
@@ -96,14 +96,19 @@ GLuint load_pipeline(const char* path) {
 		file.read(buffer, size);
 		file.close();
 		return create_render_pipeline(
-			create_shader(str(buffer, size), GL_VERTEX_SHADER),
-			create_shader(str(buffer, size), GL_FRAGMENT_SHADER)
+			create_shader(string(buffer, size), GL_VERTEX_SHADER),
+			create_shader(string(buffer, size), GL_FRAGMENT_SHADER)
 		);
 	} else {
 		fprintf(stderr, "failed to open file %s\n", path);
 		return 0;
 	}
 
+}
+
+void destroy_pipeline(GLuint& pipeline) {
+	GL_GUARD(glDeleteProgram(pipeline));
+	pipeline = 0;
 }
 
 struct GPUBinding {
@@ -136,7 +141,7 @@ void inline unbind(const GPUBinding& binding) {
 inline GPUBinding bind_to(GLuint id, GLuint target, size_t size) { return GPUBinding{ GPUBinding::None, id, target, (GLsizeiptr)size }; }
 inline GPUBinding bind_to(const Texture& mapping, GLuint target) { return GPUBinding{ GPUBinding::Texture, mapping.id, target, mapping.dimensions.x * mapping.dimensions.y * mapping.channels }; }
 template<typename T> inline GPUBinding bind_to(const MappedObject<T>& mapping, GLuint target) { return GPUBinding{ GPUBinding::UBO, mapping.id, target, sizeof(mapping.obj) }; }
-template<typename T> inline GPUBinding bind_to(const MappedBuffer<T>& mapping, GLuint target) { return GPUBinding{ GPUBinding::SSBO, mapping.id, target, (GLsizeiptr)mapping.obj.size_bytes() }; }
+template<typename T> inline GPUBinding bind_to(const MappedBuffer<T>& mapping, GLuint target) { return GPUBinding{ GPUBinding::SSBO, mapping.id, target, (GLsizeiptr)mapping.content.size_bytes() }; }
 
 template<typename Func> inline void render(GLuint fbf, rtu32 viewport, GLbitfield clear_flags, Func commands) {
 	GL_GUARD(glBindFramebuffer(GL_FRAMEBUFFER, fbf));

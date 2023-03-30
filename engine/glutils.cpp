@@ -8,7 +8,7 @@
 
 #define serialise_macro(d) lstr(#d)
 
-const str GLtoString(GLenum value) {
+const string GLtoString(GLenum value) {
 	switch (value) {
 	case GL_FRAGMENT_SHADER: return serialise_macro(GL_FRAGMENT_SHADER);
 	case GL_VERTEX_SHADER: return serialise_macro(GL_VERTEX_SHADER);
@@ -207,7 +207,7 @@ const str GLtoString(GLenum value) {
 	}
 }
 
-void CheckGLError(str expression, str file_name, u32 line_number) {
+void CheckGLError(string expression, string file_name, u32 line_number) {
 	for (auto err = glGetError(); err != GL_NO_ERROR; err = glGetError()) {
 		std::printf("Error in file %s:%d, when executing %s : %x %s\n", file_name.data(), line_number, expression.data(), err, GLtoString(err));
 	}
@@ -254,6 +254,15 @@ template <typename T> inline static GLuint create_buffer_single(const T& buffer,
 	auto id = create_buffer(sizeof(T), mapping == null ? null : &data, cast<byte>(Array<const T>(&buffer, 1)));
 	if (mapping != null) *mapping = cast<T>(data).data();
 	return id;
+}
+
+void unmap(GLuint buffer, GLsizeiptr size) {
+	flush_mapped_buffer(buffer, {0, size});
+	GL_GUARD(glUnmapNamedBuffer(buffer));
+}
+
+void delete_buffer(GLuint buffer) {
+	GL_GUARD(glDeleteBuffers(1, &buffer));
 }
 
 struct GLFormat {

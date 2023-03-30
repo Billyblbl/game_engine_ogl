@@ -71,6 +71,7 @@ Texture create_texture(const ImageFormat& format, v2u32 dimensions, SamplingFilt
 	GL_GUARD(glTextureStorage2D(id, 1, format.internal, dimensions.x, dimensions.y));
 	GL_GUARD(glTextureParameteri(id, GL_TEXTURE_MIN_FILTER, filter));
 	GL_GUARD(glTextureParameteri(id, GL_TEXTURE_MAG_FILTER, filter));
+	//TODO give better control of these instead of using the same mode for all 3
 	GL_GUARD(glTextureParameteri(id, GL_TEXTURE_WRAP_R, wrap));
 	GL_GUARD(glTextureParameteri(id, GL_TEXTURE_WRAP_S, wrap));
 	GL_GUARD(glTextureParameteri(id, GL_TEXTURE_WRAP_T, wrap));
@@ -133,6 +134,11 @@ Texture load_texture(const cstr path, SamplingFilter filter = Linear, WrapMode w
 
 	stbi_image_free(img);
 	return texture;
+}
+
+void unload(Texture& texture) {
+	GL_GUARD(glDeleteTextures(1, &texture.id));
+	texture = {0, v2u32(0), 0};
 }
 
 

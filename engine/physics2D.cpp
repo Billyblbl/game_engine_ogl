@@ -9,15 +9,16 @@
 b2Vec2 glm_to_b2d(v2f32 vec) { return { vec.x, vec.y }; }
 v2f32 b2d_to_glm(b2Vec2 vec) { return { vec.x, vec.y }; }
 
-void override_body(b2Body& body, v2f32 position, f32 rotation) {
+void override_body(b2Body* body, v2f32 position, f32 rotation) {
 	auto pos = b2Vec2(position.x, position.y);
-	body.SetTransform(pos, -glm::radians(rotation));
+	body->SetTransform(pos, -glm::radians(rotation));
+	//TODO awake only when needed
+	body->SetAwake(true);
 }
 
-void override_transform(const b2Body& body, v2f32& position, f32& rotation) {
-	auto pos = body.GetPosition();
-	position = glm::vec2(pos.x, pos.y);
-	rotation = -glm::degrees(body.GetAngle());
+void override_transform(const b2Body* body, v2f32& position, f32& rotation) {
+	position = b2d_to_glm(body->GetPosition());
+	rotation = -glm::degrees(body->GetAngle());
 }
 
 struct PhysicsConfig {
@@ -26,17 +27,8 @@ struct PhysicsConfig {
 	u8 position_iterations = 3;
 };
 
-void update_physics(b2World& world, PhysicsConfig config, Array<tuple<Transform2D*, b2Body*>> entities) {
-	for (auto [transform, body] : entities) {
-		override_body(*body, transform->translation, transform->rotation);
-		//TODO awake only when needed
-		body->SetAwake(true);
-	}
-
+void update_sim(b2World& world, PhysicsConfig config) {
 	world.Step(config.time_step, config.velocity_iterations, config.position_iterations);
-
-	for (auto [transform, body] : entities)
-		override_transform(*body, transform->translation, transform->rotation);
 }
 
 bool EditorWidget(const cstr label, PhysicsConfig& config) {
@@ -47,6 +39,8 @@ bool EditorWidget(const cstr label, PhysicsConfig& config) {
 		changed |= EditorWidget("Position iterations", config.position_iterations);
 		ImGui::TreePop();
 	}
+	if (config.time_step <= 0.0000f)
+		config.time_step = 0.0001f;
 	return changed;
 }
 

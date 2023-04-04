@@ -55,4 +55,10 @@ template<typename T> T& sync(MappedObject<T> obj) {
 	return obj.obj;
 }
 
+template<typename T> T& sync(MappedObject<T> obj, const T& new_value) {
+	obj.obj = new_value;
+	flush_mapped_buffer(obj.id, {0, sizeof(T)});
+	return obj.obj;
+}
+
 #endif

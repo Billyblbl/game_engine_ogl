@@ -71,12 +71,31 @@ using qf64 = glm::dquat;
 template<typename P> struct polytope {
 	P min;
 	P max;
+	template<typename OP> operator polytope<OP>() { return { OP(min), OP(max) }; }
 };
 
 template<typename P> auto width(polytope<P> p) { return p.max.x - p.min.x; }
 template<typename P> auto height(polytope<P> p) { return p.max.y - p.min.y; }
 template<typename P> auto depth(polytope<P> p) { return p.max.z - p.min.z; }
 template<typename P> auto dim_4(polytope<P> p) { return p.max.w - p.min.w; }
+
+template<typename P> P dims_p1(polytope<P> p) { return P(width(p)); }
+template<typename P> P dims_p2(polytope<P> p) { return P(width(p), height(p)); }
+template<typename P> P dims_p3(polytope<P> p) { return P(width(p), height(p), depth(p)); }
+template<typename P> P dims_p4(polytope<P> p) { return P(width(p), height(p), depth(p), dim_4(p));  }
+
+using sgf32 = polytope<v1f32>;
+using sgf64 = polytope<v1f64>;
+
+using sgu8 = polytope<v1u8>;
+using sgu16 = polytope<v1u16>;
+using sgu32 = polytope<v1u32>;
+using sgu64 = polytope<v1u64>;
+
+using sgi8 = polytope<v1i8>;
+using sgi16 = polytope<v1i16>;
+using sgi32 = polytope<v1i32>;
+using sgi64 = polytope<v1i64>;
 
 using rtf32 = polytope<v2f32>;
 using rtf64 = polytope<v2f64>;

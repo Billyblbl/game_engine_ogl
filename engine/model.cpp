@@ -150,7 +150,7 @@ RenderMesh upload_mesh(Array<const VertexAttributeSpecs> vertex_attributes, Arra
 	return {
 		vbo, ibo, vao,
 		(u32)indices.size(),
-		Format<Index>.element,
+		gl_type_table<Index>.upload_type,
 		draw_mode
 	};
 }
@@ -163,7 +163,7 @@ RenderMesh map_mesh(Array<const VertexAttributeSpecs> vertex_attributes, u32 ver
 	return {
 		vbo.id, ibo.id, vao.id,
 		index_count,
-		Format<Index>.element,
+		gl_type_table<Index>.type,
 		draw_mode
 	};
 }

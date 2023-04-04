@@ -25,7 +25,7 @@ i32 main(i32 ac, const cstrp av[]) {
 	} camera;
 
 	struct {
-		Texture texture;
+		TexBuffer texture;
 		Framebuffer framebuffer;
 	} scene_panel;
 	scene_panel.texture = create_texture(ImageFormatFromPixelType<v4f32>, app.pixel_dimensions);

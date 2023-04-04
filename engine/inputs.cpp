@@ -361,7 +361,7 @@ namespace Input {
 		void poll(u8 id, State& state) {
 			State new_state;
 			glfwGetGamepadState(id, (GLFWgamepadstate*)&new_state);
-			for (auto i : u16range{ 0, array_size(new_state.buttons) })
+			for (auto i : u16xrange{ 0, array_size(new_state.buttons) })
 				new_state.buttons[i] = manual_update(state.buttons[i], new_state.buttons[i]);
 			state = new_state;
 		}
@@ -386,7 +386,7 @@ namespace Input {
 		//Reset states
 		for (auto key : Keyboard::All)
 			context.keyStates[Keyboard::index_of(key)] = ButtonState::None;
-		for (auto i : u32range{ 0, Mouse::COUNT })
+		for (auto i : u32xrange{ 0, Mouse::COUNT })
 			context.keyStates[i] = ButtonState::None;
 		context.mouseDelta = v2f64(0);
 		context.scrollDelta = v2f64(0);
@@ -396,7 +396,7 @@ namespace Input {
 		// Read pressed button states
 		for (auto key : Keyboard::All) if (glfwGetKey(context.window, key) == Action::Press)
 			context.keyStates[Keyboard::index_of(key)] |= ButtonState::Pressed;
-		for (auto i : u32range{ 0, Mouse::COUNT }) if (glfwGetMouseButton(context.window, i))
+		for (auto i : u32xrange{ 0, Mouse::COUNT }) if (glfwGetMouseButton(context.window, i))
 			context.mouseButtonStates[i] |= ButtonState::Pressed;
 		for (auto id : context.gamepads.indices)
 			Gamepad::poll(id, context.gamepads.states[id]);
@@ -488,7 +488,7 @@ namespace Input {
 	Array<u8>	get_gamepads() {
 		static u8 dest[Gamepad::MaxGamepadCount];
 		auto list = List{ larray(dest), 0 };
-		for (u8 i : u8range{ 0, Gamepad::MaxGamepadCount }) {
+		for (u8 i : u8xrange{ 0, Gamepad::MaxGamepadCount }) {
 			if (glfwJoystickIsGamepad(i)) {
 				list.push(i);
 			}

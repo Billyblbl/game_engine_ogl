@@ -32,6 +32,8 @@ APP_SRC += engine/transform.cpp
 APP_SRC += engine/vertex.cpp
 APP_SRC += playground_scene.cpp
 APP_SRC += top_down_controls.cpp
+APP_SRC += entity.cpp
+APP_SRC += sprite.cpp
 
 INC += $(IMGUI)
 INC += $(GLM)

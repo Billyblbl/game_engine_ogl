@@ -10,6 +10,17 @@
 
 const string GLtoString(GLenum value) {
 	switch (value) {
+	case GL_TEXTURE_1D: return serialise_macro(GL_TEXTURE_1D);
+	case GL_TEXTURE_2D: return serialise_macro(GL_TEXTURE_2D);
+	case GL_TEXTURE_3D: return serialise_macro(GL_TEXTURE_3D);
+	case GL_TEXTURE_1D_ARRAY: return serialise_macro(GL_TEXTURE_1D_ARRAY);
+	case GL_TEXTURE_2D_ARRAY: return serialise_macro(GL_TEXTURE_2D_ARRAY);
+	case GL_TEXTURE_RECTANGLE: return serialise_macro(GL_TEXTURE_RECTANGLE);
+	case GL_TEXTURE_CUBE_MAP: return serialise_macro(GL_TEXTURE_CUBE_MAP);
+	case GL_TEXTURE_CUBE_MAP_ARRAY: return serialise_macro(GL_TEXTURE_CUBE_MAP_ARRAY);
+	case GL_TEXTURE_BUFFER: return serialise_macro(GL_TEXTURE_BUFFER);
+	case GL_TEXTURE_2D_MULTISAMPLE: return serialise_macro(GL_TEXTURE_2D_MULTISAMPLE);
+	case GL_TEXTURE_2D_MULTISAMPLE_ARRAY: return serialise_macro(GL_TEXTURE_2D_MULTISAMPLE_ARRAY);
 	case GL_FRAGMENT_SHADER: return serialise_macro(GL_FRAGMENT_SHADER);
 	case GL_VERTEX_SHADER: return serialise_macro(GL_VERTEX_SHADER);
 	case GL_DEPTH_BUFFER_BIT: return serialise_macro(GL_DEPTH_BUFFER_BIT);
@@ -114,8 +125,6 @@ const string GLtoString(GLenum value) {
 	case GL_MAX_TEXTURE_SIZE: return serialise_macro(GL_MAX_TEXTURE_SIZE);
 	case GL_MAX_VIEWPORT_DIMS: return serialise_macro(GL_MAX_VIEWPORT_DIMS);
 	case GL_SUBPIXEL_BITS: return serialise_macro(GL_SUBPIXEL_BITS);
-	case GL_TEXTURE_1D: return serialise_macro(GL_TEXTURE_1D);
-	case GL_TEXTURE_2D: return serialise_macro(GL_TEXTURE_2D);
 	case GL_TEXTURE_WIDTH: return serialise_macro(GL_TEXTURE_WIDTH);
 	case GL_TEXTURE_HEIGHT: return serialise_macro(GL_TEXTURE_HEIGHT);
 	case GL_TEXTURE_BORDER_COLOR: return serialise_macro(GL_TEXTURE_BORDER_COLOR);
@@ -209,7 +218,7 @@ const string GLtoString(GLenum value) {
 
 void CheckGLError(string expression, string file_name, u32 line_number) {
 	for (auto err = glGetError(); err != GL_NO_ERROR; err = glGetError()) {
-		std::printf("Error in file %s:%d, when executing %s : %x %s\n", file_name.data(), line_number, expression.data(), err, GLtoString(err));
+		fprintf(stderr, "Error in file %s:%d, when executing %s : %x %s\n", file_name.data(), line_number, expression.data(), err, GLtoString(err).data());
 	}
 }
 
@@ -222,10 +231,10 @@ void CheckGLError(string expression, string file_name, u32 line_number) {
 #define GL_GUARD(x) x
 #endif
 
-#define CGL_BUFFER_MAPPED (GL_MAP_WRITE_BIT | GL_MAP_PERSISTENT_BIT | GL_MAP_COHERENT_BIT)
+#define CGL_BUFFER_MAPPED (GL_MAP_WRITE_BIT | GL_MAP_PERSISTENT_BIT)
 
-static void flush_mapped_buffer(GLuint buffer, i64range range) {
-	GL_GUARD(glFlushMappedNamedBufferRange(buffer, range.b.value, range.e.value));
+static void flush_mapped_buffer(GLuint buffer, u64range range) {
+	GL_GUARD(glFlushMappedNamedBufferRange(buffer, range.min , range.max));
 }
 
 //TODO chose what to do about optional types
@@ -257,7 +266,7 @@ template <typename T> inline static GLuint create_buffer_single(const T& buffer,
 }
 
 void unmap(GLuint buffer, GLsizeiptr size) {
-	flush_mapped_buffer(buffer, {0, size});
+	flush_mapped_buffer(buffer, { 0, (u64)size });
 	GL_GUARD(glUnmapNamedBuffer(buffer));
 }
 
@@ -265,24 +274,146 @@ void delete_buffer(GLuint buffer) {
 	GL_GUARD(glDeleteBuffers(1, &buffer));
 }
 
-struct GLFormat {
-	GLenum element;
-	GLenum vec[5];
-	Array<const GLenum> pixel;
+
+enum GPUFormat: GLenum {
+	NONE = 0,
+	DEPTH_COMPONENT = GL_DEPTH_COMPONENT,
+	DEPTH_STENCIL = GL_DEPTH_STENCIL,
+	RED = GL_RED,
+	RG = GL_RG,
+	RGB = GL_RGB,
+	RGBA = GL_RGBA,
+
+	//Sized
+
+	R8 = GL_R8,
+	R8_SNORM = GL_R8_SNORM,
+	R16 = GL_R16,
+	R16_SNORM = GL_R16_SNORM,
+	RG8 = GL_RG8,
+	RG8_SNORM = GL_RG8_SNORM,
+	RG16 = GL_RG16,
+	RG16_SNORM = GL_RG16_SNORM,
+	R3_G3_B2 = GL_R3_G3_B2,
+	RGB4 = GL_RGB4,
+	RGB5 = GL_RGB5,
+	RGB8 = GL_RGB8,
+	RGB8_SNORM = GL_RGB8_SNORM,
+	RGB10 = GL_RGB10,
+	RGB12 = GL_RGB12,
+	RGB16_SNORM = GL_RGB16_SNORM,
+	RGBA2 = GL_RGBA2,
+	RGBA4 = GL_RGBA4,
+	RGB5_A1 = GL_RGB5_A1,
+	RGBA8 = GL_RGBA8,
+	RGBA8_SNORM = GL_RGBA8_SNORM,
+	RGB10_A2 = GL_RGB10_A2,
+	RGB10_A2UI = GL_RGB10_A2UI,
+	RGBA12 = GL_RGBA12,
+	RGBA16 = GL_RGBA16,
+	SRGB8 = GL_SRGB8,
+	SRGB8_ALPHA8 = GL_SRGB8_ALPHA8,
+	R16F = GL_R16F,
+	RG16F = GL_RG16F,
+	RGB16F = GL_RGB16F,
+	RGBA16F = GL_RGBA16F,
+	R32F = GL_R32F,
+	RG32F = GL_RG32F,
+	RGB32F = GL_RGB32F,
+	RGBA32F = GL_RGBA32F,
+	R11F_G11F_B10F = GL_R11F_G11F_B10F,
+	RGB9_E5 = GL_RGB9_E5,
+	R8I = GL_R8I,
+	R8UI = GL_R8UI,
+	R16I = GL_R16I,
+	R16UI = GL_R16UI,
+	R32I = GL_R32I,
+	R32UI = GL_R32UI,
+	RG8I = GL_RG8I,
+	RG8UI = GL_RG8UI,
+	RG16I = GL_RG16I,
+	RG16UI = GL_RG16UI,
+	RG32I = GL_RG32I,
+	RG32UI = GL_RG32UI,
+	RGB8I = GL_RGB8I,
+	RGB8UI = GL_RGB8UI,
+	RGB16I = GL_RGB16I,
+	RGB16UI = GL_RGB16UI,
+	RGB32I = GL_RGB32I,
+	RGB32UI = GL_RGB32UI,
+	RGBA8I = GL_RGBA8I,
+	RGBA8UI = GL_RGBA8UI,
+	RGBA16I = GL_RGBA16I,
+	RGBA16UI = GL_RGBA16UI,
+	RGBA32I = GL_RGBA32I,
+	RGBA32UI = GL_RGBA32UI,
+
+	//compressed
+
+	COMPRESSED_RED = GL_COMPRESSED_RED,
+	COMPRESSED_RG = GL_COMPRESSED_RG,
+	COMPRESSED_RGB = GL_COMPRESSED_RGB,
+	COMPRESSED_RGBA = GL_COMPRESSED_RGBA,
+	COMPRESSED_SRGB = GL_COMPRESSED_SRGB,
+	COMPRESSED_SRGB_ALPHA = GL_COMPRESSED_SRGB_ALPHA,
+	COMPRESSED_RED_RGTC1 = GL_COMPRESSED_RED_RGTC1,
+	COMPRESSED_SIGNED_RED_RGTC1 = GL_COMPRESSED_SIGNED_RED_RGTC1,
+	COMPRESSED_RG_RGTC2 = GL_COMPRESSED_RG_RGTC2,
+	COMPRESSED_SIGNED_RG_RGTC2 = GL_COMPRESSED_SIGNED_RG_RGTC2,
+	COMPRESSED_RGBA_BPTC_UNORM = GL_COMPRESSED_RGBA_BPTC_UNORM,
+	COMPRESSED_SRGB_ALPHA_BPTC_UNORM = GL_COMPRESSED_SRGB_ALPHA_BPTC_UNORM,
+	COMPRESSED_RGB_BPTC_SIGNED_FLOAT = GL_COMPRESSED_RGB_BPTC_SIGNED_FLOAT,
+	COMPRESSED_RGB_BPTC_UNSIGNED_FLOAT = GL_COMPRESSED_RGB_BPTC_UNSIGNED_FLOAT
 };
 
-constexpr GLenum ZeroedOut[] = { 0,0,0,0,0 };
-constexpr GLenum FloatsPixelFormats[] = { 0, GL_RED, GL_RG, GL_RGB, GL_RGBA };
-constexpr GLenum IntegerPixelFormats[] = { 0, GL_RED_INTEGER, GL_RG_INTEGER, GL_RGB_INTEGER, GL_RGBA_INTEGER };
+struct GLTypeTable {
+	GLenum upload_type;
+	GPUFormat gpu_format[5];
+	GLenum upload_format[5];
+};
 
-template<typename T> constexpr GLFormat Format = { 0,{0,0,0,0,0},ZeroedOut };
-template<> constexpr GLFormat Format<glm::f32> = { GL_FLOAT, { 0, GL_R32F, GL_RG32F, GL_RGB32F, GL_RGBA32F }, FloatsPixelFormats };
-template<> constexpr GLFormat Format<glm::i32> = { GL_INT, { 0, GL_R32I, GL_RG32I, GL_RGB32I, GL_RGBA32I }, IntegerPixelFormats };
-template<> constexpr GLFormat Format<glm::u32> = { GL_UNSIGNED_INT, { 0, GL_R32UI, GL_RG32UI, GL_RGB32UI, GL_RGBA32UI }, IntegerPixelFormats };
-template<> constexpr GLFormat Format<glm::i16> = { GL_SHORT, { 0, GL_R16I, GL_RG16I, GL_RGB16I, GL_RGBA16I }, IntegerPixelFormats };
-template<> constexpr GLFormat Format<glm::u16> = { GL_UNSIGNED_SHORT, { 0, GL_R16UI, GL_RG16UI, GL_RGB16UI, GL_RGBA16UI }, IntegerPixelFormats };
-template<> constexpr GLFormat Format<glm::i8> = { GL_BYTE, { 0, GL_R8I, GL_RG8I, GL_RGB8I, GL_RGBA8I }, IntegerPixelFormats };
-template<> constexpr GLFormat Format<glm::u8> = { GL_UNSIGNED_BYTE, { 0, GL_R8UI, GL_RG8UI, GL_RGB8UI, GL_RGBA8UI }, IntegerPixelFormats };
+template<typename T> constexpr GLTypeTable gl_type_table = { 0,{ NONE, NONE, NONE, NONE, NONE }, { 0,0,0,0,0 } };
+template<> constexpr GLTypeTable gl_type_table<f32> = { GL_FLOAT,						{ NONE, R32F	, RG32F	, RGB32F	, RGBA32F	}, { 0, GL_RED, GL_RG, GL_RGB, GL_RGBA } };
+template<> constexpr GLTypeTable gl_type_table<i32> = { GL_INT,							{ NONE, R32I	, RG32I	, RGB32I	, RGBA32I	}, { 0, GL_RED, GL_RG, GL_RGB, GL_RGBA } };
+template<> constexpr GLTypeTable gl_type_table<i16> = { GL_SHORT,						{ NONE, R16I	, RG16I	, RGB16I	, RGBA16I	}, { 0, GL_RED, GL_RG, GL_RGB, GL_RGBA } };
+template<> constexpr GLTypeTable gl_type_table<i8 > = { GL_BYTE,						{ NONE, R8I		, RG8I	, RGB8I		, RGBA8I	}, { 0, GL_RED, GL_RG, GL_RGB, GL_RGBA } };
+template<> constexpr GLTypeTable gl_type_table<u32> = { GL_UNSIGNED_INT,		{ NONE, R32UI	, RG32UI, RGB32UI	, RGBA32UI}, { 0, GL_RED, GL_RG, GL_RGB, GL_RGBA } };
+template<> constexpr GLTypeTable gl_type_table<u16> = { GL_UNSIGNED_SHORT,	{ NONE, R16UI	, RG16UI, RGB16UI	, RGBA16UI}, { 0, GL_RED, GL_RG, GL_RGB, GL_RGBA } };
+template<> constexpr GLTypeTable gl_type_table<u8 > = { GL_UNSIGNED_BYTE,		{ NONE, R8UI	, RG8UI	, RGB8UI	, RGBA8UI	}, { 0, GL_RED, GL_RG, GL_RGB, GL_RGBA } };
 
-// constexpr GLFormat FormatUntyped = Format<void>;
+struct SrcFormat {
+	GLenum type;
+	GLenum channels;
+	u32 channel_count;
+	u32 channel_size;
+};
+
+template<typename P> constexpr SrcFormat Format = { 0, 0, 0, 0 };
+template<typename T, i32 I> constexpr SrcFormat Format<glm::vec<I, T>> = {
+	gl_type_table<T>.upload_type,
+	gl_type_table<T>.upload_format[I],
+	I,
+	sizeof(T)
+};
+
+template<> constexpr SrcFormat Format<f32> = Format<v1f32>;
+template<> constexpr SrcFormat Format<i32> = Format<v1i32>;
+template<> constexpr SrcFormat Format<u32> = Format<v1u32>;
+template<> constexpr SrcFormat Format<i16> = Format<v1i16>;
+template<> constexpr SrcFormat Format<u16> = Format<v1u16>;
+template<> constexpr SrcFormat Format<i8> = Format<v1i8>;
+template<> constexpr SrcFormat Format<u8> = Format<v1u8>;
+
+template<typename T> constexpr SrcFormat Formats[] = {
+	{},
+	Format<glm::vec<1, T>>,
+	Format<glm::vec<2, T>>,
+	Format<glm::vec<3, T>>,
+	Format<glm::vec<4, T>>
+};
+
+template<typename T> constexpr SrcFormat image_format_of(Array<T> source) {
+	return Format<std::remove_const_t<T>>;
+}
+
 #endif

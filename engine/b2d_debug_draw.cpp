@@ -11,6 +11,7 @@ const VertexAttributeSpecs v2f32Attribute[1] = { make_vertex_attribute_spec<v2f3
 class B2dDebugDraw : public b2Draw {
 public:
 	void DrawSolidPolygon(const b2Vec2* vertices, int32 vertexCount, const b2Color& color) {
+		if (view_transform == null) return;
 		u32	indices[vertexCount];
 		for (u32 i = 0; i < vertexCount; i++)
 			indices[i] = i;
@@ -21,8 +22,8 @@ public:
 			GL_TRIANGLE_FAN
 		);
 		mesh.element_count = vertexCount;
-		sync(view_transform);
-		draw(draw_pipeline, mesh, 1, { bind_to(view_transform, 0) });
+		sync(*view_transform);
+		draw_pipeline(mesh, 1, { bind_to(*view_transform, 0) });
 		wait_gpu();
 		delete_mesh(mesh);
 	}
@@ -34,8 +35,8 @@ public:
 	void DrawTransform(const b2Transform& xf) {}
 	void DrawPoint(const b2Vec2& p, f32 size, const b2Color& color) {};
 
-	MappedObject<m4x4f32> view_transform = map_object(m4x4f32(1));
-	GLuint draw_pipeline = create_render_pipeline(
+	MappedObject<m4x4f32>* view_transform = null;
+	Pipeline draw_pipeline = create_render_pipeline(
 		load_shader("./shaders/simpleDraw.vert", GL_VERTEX_SHADER),
 		load_shader("./shaders/simpleDraw.frag", GL_FRAGMENT_SHADER)
 	);

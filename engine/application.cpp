@@ -25,8 +25,7 @@ static void ogl_debug_callback(GLenum source,
 	const void* user_param
 ) {
 	for (auto&& i : OGLLogSeverity) if (i == severity) {
-		fprintf(stderr, "OpenGL Debug %d: %s on %u, %s\n", type, GLtoString(type), id, message);
-		fprintf(stdout, "OpenGL Debug %d: %s on %u, %s\n", type, GLtoString(type), id, message);
+		fprintf(stderr, "OpenGL Debug %u: %s on %u, %s\n", type, GLtoString(type).data(), id, message);
 	}
 }
 

@@ -79,7 +79,7 @@ namespace ImGui {
 		bool changed = false;
 		ImGui::Text(label);
 		ImGui::SameLine();
-		for (u64 bit_idx : u64range{ 0, bit_names.size() }) {
+		for (u64 bit_idx : u64xrange{ 0, bit_names.size() }) {
 			bool checked = flags & mask<T>(bit_idx);
 			if (ImGui::Checkbox(bit_names[bit_idx].cbegin(), &checked)) {
 				flags ^= mask<T>(bit_idx);

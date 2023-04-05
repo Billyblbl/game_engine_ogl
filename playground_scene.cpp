@@ -25,7 +25,7 @@
 const struct {
 	cstrp ship1 = "C:/Users/billy/Documents/assets/boss-spaceship-2d-sprites-pixel-art/PNG_Parts&Spriter_Animation/Boss_ship1/Boss_ship7.png";
 	cstrp ship2 = "C:/Users/billy/Documents/assets/boss-spaceship-2d-sprites-pixel-art/PNG_Parts&Spriter_Animation/Boss_ship2/Boss_ship7.png";
-	cstrp draw_pipeline = "./shaders/textured_instanced.glsl";
+	cstrp draw_pipeline = "./shaders/sprite.glsl";
 } assets;
 
 bool playground(App& app) {
@@ -35,20 +35,14 @@ bool playground(App& app) {
 
 	struct {
 		OrthoCamera camera = { v3f32(16.f, 9.f, -2.f) / 2.f, v3f32(0) };
-		struct InstanceData {
-			m4x4f32 matrix;
-			v2u64 atlas_index;
-		};
 		MappedObject<m4x4f32> view_projection_matrix = map_object(m4x4f32(1));
-		MappedBuffer<InstanceData> instances_data_buffer = map_buffer<InstanceData>(MAX_DRAW_BATCH);
-		Pipeline draw;
-		Atlas atlas;
+		SpriteRenderer draw = load_sprite_renderer(assets.draw_pipeline, MAX_DRAW_BATCH);
+		TexBuffer atlas = create_texture(TX2DARR, v4u32(256 * 2, 256 * 2, MAX_SPRITES, 1));
 	} rendering;
-	rendering.draw = load_pipeline(assets.draw_pipeline); defer{ destroy_pipeline(rendering.draw); };
-	rendering.atlas = allocate_atlas(v4u32(256 * 2, 256 * 2, MAX_SPRITES, 1)); defer{ dealloc_atlas(rendering.atlas); };
 	defer{
+		unload(rendering.atlas);
+		unload(rendering.draw);
 		unmap(rendering.view_projection_matrix);
-		unmap(rendering.instances_data_buffer);
 	};
 
 	struct {
@@ -62,20 +56,20 @@ bool playground(App& app) {
 	physics.debug_draw.view_transform = &rendering.view_projection_matrix;
 
 	auto clock = Time::start();
-	auto ship1_index = rendering.atlas.load(assets.ship1);
-	auto ship2_index = rendering.atlas.load(assets.ship2);
-	auto rect = create_rect_mesh(v2f32(1)); defer{ delete_mesh(rect); };
-	auto sprites = BatchTarget{ &rect, &rendering.atlas.textures };
 
-	auto& player = entities.push(create_player(rendering.atlas.textures, ship1_index, rect, physics.world));
+	auto ship1_sprite = load_into(assets.ship1, rendering.atlas, v2u32(0), 0);
+	auto ship2_sprite = load_into(assets.ship2, rendering.atlas, v2u32(0), 1);
+
+	auto rect = create_rect_mesh(v2f32(1)); defer{ delete_mesh(rect); };
+
+	auto& player = entities.push(create_player(ship1_sprite, rect, physics.world));
 	auto& some_sprite = entities.push({});
-	add_sprite(some_sprite, rendering.atlas.textures, ship2_index, rect);
+	add_sprite(some_sprite, ship2_sprite, rect);
 
 	printf("Finished loading scene with %lu entities\n", entities.allocated().size());
 	fflush(stdout);
-	sync(rendering.atlas.used_buffer);
 	sync(rendering.view_projection_matrix);
-	sync(rendering.instances_data_buffer);
+	sync(rendering.draw.instances_buffer);
 	wait_gpu();
 	while (update(app, playground)) {
 		update(clock);
@@ -120,19 +114,11 @@ bool playground(App& app) {
 			[&]() {
 
 				//Draw entities
-				sync(rendering.view_projection_matrix, view_project(project(rendering.camera), m4x4f32(1)));
-				auto batch = List{ rendering.instances_data_buffer.content, 0 };
+				rendering.view_projection_matrix.obj = view_project(project(rendering.camera), m4x4f32(1));
+				auto batch = rendering.draw.start_batch();
 				for (auto&& ent : entities.allocated()) if (has_all(ent.flags, mask<u64>(Entity::Sprite)))
-					batch.push({ trs_2d(ent.transform), v2u64(ent.atlas_index, 0) });
-				sync(rendering.instances_data_buffer);
-				rendering.draw(rect, batch.current,
-					{
-						bind_to(rendering.atlas.textures, 0), 				//texture -> atlas
-						bind_to(rendering.atlas.used_buffer, 0),			//ssbo -> atlas metadata
-						bind_to(rendering.instances_data_buffer, 1),	//ssbo -> entities
-						bind_to(rendering.view_projection_matrix, 0)	//ubo -> scene
-					}
-				);
+					batch.push({ trs_2d(ent.transform), ent.sprite.uv_rect, v2u64(ent.sprite.atlas_index, 0) });
+				rendering.draw(rect, rendering.atlas, rendering.view_projection_matrix, batch.current);
 
 				//Draw overlay
 				ImGui::Draw();

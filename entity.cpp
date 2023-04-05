@@ -8,6 +8,7 @@
 #include <transform.cpp>
 #include <rendering.cpp>
 #include <physics2d.cpp>
+#include <sprite.cpp>
 
 #define MAX_ENTITIES 10
 #define MAX_DRAW_BATCH MAX_ENTITIES
@@ -19,8 +20,7 @@ struct Entity {
 	b2Body* body;
 	//TODO add shape for physics
 	RenderMesh* mesh;
-	TexBuffer* atlas;
-	u32 atlas_index;
+	SpriteIndex sprite;
 	f32 speed;
 	f32 accel;
 	string name = "__entity__";
@@ -47,10 +47,9 @@ bool EditorWidget(const cstr label, Entity& entity) {
 	return changed;
 }
 
-auto& add_sprite(Entity& ent, TexBuffer& texture, u32 index, RenderMesh& mesh) {
+auto& add_sprite(Entity& ent, SpriteIndex sprite, RenderMesh& mesh) {
 	ent.flags |= mask<u64>(Entity::Sprite);
-	ent.atlas = &texture;
-	ent.atlas_index = index;
+	ent.sprite = sprite;
 	ent.mesh = &mesh;
 	return ent;
 }
@@ -64,9 +63,9 @@ auto& add_dynbody(Entity& ent, b2World& world) {
 	return ent;
 }
 
-auto create_player(TexBuffer& texture, u32 index, RenderMesh& rect, b2World& world, f32 speed= 10.f, f32 accel = 100.f) {
+auto create_player(SpriteIndex sprite, RenderMesh& mesh, b2World& world, f32 speed= 10.f, f32 accel = 100.f) {
 	Entity ent = { mask<u64>(Entity::Player) };
-	add_sprite(ent, texture, index, rect);
+	add_sprite(ent, sprite, mesh);
 	add_dynbody(ent, world);
 	ent.name = "Player";
 	ent.speed = speed;

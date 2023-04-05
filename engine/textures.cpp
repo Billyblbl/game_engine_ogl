@@ -7,8 +7,6 @@
 #include <GLFW/glfw3.h> // Will drag system OpenGL headers
 #include <GL/glext.h>
 
-#define STB_IMAGE_IMPLEMENTATION
-#include <stb_image.h>
 // #include <GL/glext.h>
 #include <glutils.cpp>
 #include <string>
@@ -165,9 +163,10 @@ TexBuffer create_texture(TexType type, v4u32 dimensions, GPUFormat format = RGBA
 	return { id, dimensions, type, format };
 }
 
-void unload(TexBuffer& texture) {
+TexBuffer& unload(TexBuffer& texture) {
 	GL_GUARD(glDeleteTextures(1, &texture.id));
 	texture = null_tex;
+	return texture;
 }
 
 bool upload_texture_data(TexBuffer& texture, Array<byte> source, SrcFormat format, Area<3> box) {
@@ -182,6 +181,8 @@ bool upload_texture_data(TexBuffer& texture, Array<byte> source, SrcFormat forma
 	return true;
 }
 
+template<u32 D> Area<D + 1> slice_to_area(Area<D> slice, u32 index) { return { { slice.min, index }, { slice.max, index + 1 } }; }
+
 template<typename T, u32 D> bool upload_texture_data(TexBuffer& texture, Array<T> source, Area<D> area) {
 	//TODO proper area fit check
 	// expect(glm::length2(area.max - area.min) <= source.size());
@@ -189,36 +190,20 @@ template<typename T, u32 D> bool upload_texture_data(TexBuffer& texture, Array<T
 }
 
 template<typename T, u32 D> bool upload_texture_data(TexBuffer& texture, Array<T> source, Area<D> area, u32 index) {
-	return upload_texture_data(texture, source, Area<D + 1> { { area.min, index }, { area.max, index + 1 } });
+	return upload_texture_data(texture, source, slice_to_area(area, index));
 }
 
 TexBuffer create_texture(Array<byte> source, SrcFormat source_format, TexType type, v4u32 dimensions, GPUFormat internal_format = RGBA32F) {
 	auto texture = create_texture(type, dimensions, internal_format);
 	if (upload_texture_data(texture, source, source_format, bxu32{ v3u32(0), dimensions }))
 		return texture;
-	else {
-		unload(texture);
-		return fail_ret("texture creation failed", null_tex);
-	}
+	else
+		return fail_ret("texture creation failed", unload(texture));
 }
 
 template<typename T> TexBuffer create_texture(Array<T> source, TexType type, v4u32 dimensions, GPUFormat internal_format = RGBA32F) {
 	expect(dimensions.x * dimensions.y * dimensions.z <= source.size());
 	return create_texture(cast<byte>(source), Format<T>, type, dimensions, internal_format);
-}
-
-int gl_to_stb_channels(GLenum GLChannels) {
-	switch (GLChannels) {
-	case GL_RED: return STBI_grey;
-	case GL_RG: return STBI_grey_alpha;
-	case GL_RGB: return STBI_rgb;
-	case GL_RGBA: return STBI_rgb_alpha;
-	case GL_RED_INTEGER: return STBI_grey;
-	case GL_RG_INTEGER: return STBI_grey_alpha;
-	case GL_RGB_INTEGER: return STBI_rgb;
-	case GL_RGBA_INTEGER: return STBI_rgb_alpha;
-	default: return 0;
-	}
 }
 
 #endif

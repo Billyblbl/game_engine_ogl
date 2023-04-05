@@ -50,6 +50,7 @@ bool playground(App& app) {
 		b2World world = b2World(b2Vec2(0.f, -9.f));
 		B2dDebugDraw debug_draw;
 		f32 time_point = 0.f;
+		bool draw_debug = false;
 	} physics;
 	physics.world.SetDebugDraw(&physics.debug_draw);
 	physics.debug_draw.SetFlags(b2Draw::e_shapeBit);
@@ -86,13 +87,11 @@ bool playground(App& app) {
 				controls::move_top_down(player.body, controls::keyboard_plane(W, A, S, D), player.speed, player.accel * physics.config.time_step);
 
 			Entity* pbuff[entities.current];
-			auto to_sim = List{ carray(pbuff, entities.current), 0 };
-			for (auto& ent : entities.allocated()) if (has_all(ent.flags, mask<u64>(Entity::Dynbody)) && ent.body != null)
-				to_sim.push(&ent);
-			for (auto ent : to_sim.allocated())
+			auto to_sim = gather(mask<u64>(Entity::Dynbody), entities.allocated(), carray(pbuff, entities.current));
+			for (auto ent : to_sim)
 				override_body(ent->body, ent->transform.translation, ent->transform.rotation);
 			update_sim(physics.world, physics.config);
-			for (auto ent : to_sim.allocated())
+			for (auto ent : to_sim)
 				override_transform(ent->body, ent->transform.translation, ent->transform.rotation);
 		}
 
@@ -101,7 +100,7 @@ bool playground(App& app) {
 			ImGui_ImplGlfw_NewFrame();
 			ImGui::NewFrame();
 			ImGui::Begin("Controls");
-			physics_controls(physics.world, physics.config, physics.time_point);
+			physics_controls(physics.world, physics.config, physics.time_point, physics.draw_debug);
 			EditorWidget("Camera", rendering.camera);
 			EditorWidget("Entities", entities.allocated());
 			ImGui::Text("Time = %f", clock.current);
@@ -124,7 +123,8 @@ bool playground(App& app) {
 				ImGui::Draw();
 
 				//Draw physics debug
-				physics.world.DebugDraw();
+				if (physics.draw_debug)
+					physics.world.DebugDraw();
 			}
 		);
 	}

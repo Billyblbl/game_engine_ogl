@@ -9,16 +9,22 @@
 b2Vec2 glm_to_b2d(v2f32 vec) { return { vec.x, vec.y }; }
 v2f32 b2d_to_glm(b2Vec2 vec) { return { vec.x, vec.y }; }
 
-void override_body(b2Body* body, v2f32 position, f32 rotation) {
+bool override_body(b2Body* body, v2f32 position, f32 rotation) {
+	if (body == null)
+		return fail_ret("Physics entity has no body", false);
 	auto pos = b2Vec2(position.x, position.y);
 	body->SetTransform(pos, -glm::radians(rotation));
 	//TODO awake only when needed
 	body->SetAwake(true);
+	return true;
 }
 
-void override_transform(const b2Body* body, v2f32& position, f32& rotation) {
+bool override_transform(const b2Body* body, v2f32& position, f32& rotation) {
+	if (body == null)
+		return fail_ret("Physics entity has no body", false);
 	position = b2d_to_glm(body->GetPosition());
 	rotation = -glm::degrees(body->GetAngle());
+	return true;
 }
 
 struct PhysicsConfig {
@@ -47,7 +53,8 @@ bool EditorWidget(const cstr label, PhysicsConfig& config) {
 bool physics_controls(
 	b2World& world,
 	PhysicsConfig& config,
-	f32 time_point
+	f32 time_point,
+	bool& draw_debug
 ) {
 	auto changed = false;
 	if (ImGui::TreeNode("Physics")) {
@@ -55,6 +62,7 @@ bool physics_controls(
 		if (changed |= EditorWidget("Gravity", gravity))
 			world.SetGravity(glm_to_b2d(gravity));
 		changed |= EditorWidget("Config", config);
+		EditorWidget("Debug draw", draw_debug);
 		ImGui::Text("time point = %f", time_point);
 		ImGui::TreePop();
 	}

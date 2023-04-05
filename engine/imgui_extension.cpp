@@ -152,6 +152,10 @@ bool EditorWidget(const cstr label, v4u32& data) {
 	return EditorWidget(label, (v4i32&)data);
 }
 
+bool EditorWidget(const cstr label, bool& data) {
+	return ImGui::Checkbox(label, &data);
+}
+
 template <typename T, typename U = int> struct has_name: std::false_type {};
 template <typename T> struct has_name<T, decltype((void)T::name, 0)>: std::true_type {};
 

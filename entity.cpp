@@ -73,4 +73,12 @@ auto create_player(SpriteIndex sprite, RenderMesh& mesh, b2World& world, f32 spe
 	return ent;
 }
 
+Array<Entity*> gather(u64 flags, Array<Entity> entities, Array<Entity*> buffer) {
+	auto list = List { buffer, 0 };
+	for (auto&& ent : entities) if (has_all(ent.flags, flags)) {
+		list.push(&ent);
+	}
+	return list.allocated();
+}
+
 #endif

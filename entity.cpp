@@ -21,6 +21,7 @@ struct Entity {
 	//TODO add shape for physics
 	RenderMesh* mesh;
 	SpriteCursor sprite;
+	f32 draw_layer;
 	f32 speed;
 	f32 accel;
 	string name = "__entity__";
@@ -36,8 +37,10 @@ bool EditorWidget(const cstr label, Entity& entity) {
 			changed |= EditorWidget("body", entity.body);
 		if (has_one(entity.flags, mask<u64>(Entity::Sprite, Entity::Collision)))
 			ImGui::Text("TODO : Widget for mesh reference");
-		if (has_one(entity.flags, mask<u64>(Entity::Sprite)))
+		if (has_one(entity.flags, mask<u64>(Entity::Sprite))) {
 			changed |= EditorWidget("sprite", entity.sprite);
+			changed |= EditorWidget("draw layer", entity.draw_layer);
+		}
 		if (has_one(entity.flags, mask<u64>(Entity::Player))) {
 			changed |= EditorWidget("speed", entity.speed);
 			changed |= EditorWidget("accel", entity.accel);

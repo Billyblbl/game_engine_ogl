@@ -3,11 +3,10 @@
 
 #include <rendering.cpp>
 #include <textures.cpp>
+#include <imgui_extension.cpp>
 
 #define STB_IMAGE_IMPLEMENTATION
 #include <stb_image.h>
-
-//TODO depth, non batched simple rendering, animation
 
 int gl_to_stb_channels(GLenum GLChannels) {
 	switch (GLChannels) {
@@ -97,8 +96,12 @@ void dealloc_atlas(Alloc allocator, TexBuffer& texture, Array<rtu32> rects, Atla
 struct SpriteInstance {
 	m4x4f32 matrix;
 	rtf32 uv_rect;
-	v2u64 atlas_index;
+	v4u32 depths; //x -> altas page, y -> sprite depths, z & w -> padding
 };
+
+auto sprite_data(m4x4f32 matrix, rtf32 uv_rect, u32 atlas_page, f32 depth) {
+	return SpriteInstance { matrix, uv_rect, v4u32(atlas_page, depth, 0, 0) };
+}
 
 struct SpriteRenderer {
 	Pipeline pipeline;

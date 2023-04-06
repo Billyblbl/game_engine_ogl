@@ -16,7 +16,7 @@ ImGuiConfigFlags DefaultImguiFlags = (
 	ImGuiConfigFlags_NavEnableKeyboard |
 	ImGuiConfigFlags_DockingEnable |
 	ImGuiConfigFlags_ViewportsEnable
-);
+	);
 
 namespace ImGui {
 
@@ -49,8 +49,8 @@ namespace ImGui {
 		ImGui::DestroyContext();
 	}
 
-	void Draw() {
-		ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
+	void Draw(ImDrawData* data = null) {
+		ImGui_ImplOpenGL3_RenderDrawData(data == null ? ImGui::GetDrawData() : data);
 		if (ImGui::GetIO().ConfigFlags & ImGuiConfigFlags_ViewportsEnable) {
 			GLFWwindow* backup_current_context = glfwGetCurrentContext();
 			ImGui::UpdatePlatformWindows();
@@ -93,6 +93,15 @@ namespace ImGui {
 
 	template<typename T> bool bit_flags(const cstr label, T& flags, LiteralArray<string> bit_names) {
 		return bit_flags(label, flags, larray(bit_names));
+	}
+
+	template<typename F> inline ImDrawData* RenderNewFrame(F func) {
+		ImGui_ImplOpenGL3_NewFrame();
+		ImGui_ImplGlfw_NewFrame();
+		ImGui::NewFrame();
+		func();
+		ImGui::Render();
+		return ImGui::GetDrawData();
 	}
 
 }
@@ -154,6 +163,14 @@ bool EditorWidget(const cstr label, v4u32& data) {
 
 bool EditorWidget(const cstr label, bool& data) {
 	return ImGui::Checkbox(label, &data);
+}
+
+bool EditorWidget(const cstr label, rtf32& data) {
+	bool changed = false;
+	ImGui::Text(label);
+	changed |= EditorWidget("Min Corner", data.min);
+	changed |= EditorWidget("Max Corner", data.max);
+	return changed;
 }
 
 template <typename T, typename U = int> struct has_name: std::false_type {};

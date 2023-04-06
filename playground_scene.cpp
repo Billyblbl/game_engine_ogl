@@ -22,9 +22,32 @@
 
 #define MAX_SPRITES MAX_ENTITIES
 
+#define ASSETS_FD "C:/Users/billy/Documents/assets/boss-spaceship-2d-sprites-pixel-art/PNG_Parts&Spriter_Animation"
+
 const struct {
-	cstrp ship1 = "C:/Users/billy/Documents/assets/boss-spaceship-2d-sprites-pixel-art/PNG_Parts&Spriter_Animation/Boss_ship1/Boss_ship7.png";
-	cstrp ship2 = "C:/Users/billy/Documents/assets/boss-spaceship-2d-sprites-pixel-art/PNG_Parts&Spriter_Animation/Boss_ship2/Boss_ship7.png";
+	const string ships[3 * 7] = {
+		ASSETS_FD"/Boss_ship1/Boss_ship1.png",
+		ASSETS_FD"/Boss_ship1/Boss_ship2.png",
+		ASSETS_FD"/Boss_ship1/Boss_ship3.png",
+		ASSETS_FD"/Boss_ship1/Boss_ship4.png",
+		ASSETS_FD"/Boss_ship1/Boss_ship5.png",
+		ASSETS_FD"/Boss_ship1/Boss_ship6.png",
+		ASSETS_FD"/Boss_ship1/Boss_ship7.png",
+		ASSETS_FD"/Boss_ship2/Boss_ship1.png",
+		ASSETS_FD"/Boss_ship2/Boss_ship2.png",
+		ASSETS_FD"/Boss_ship2/Boss_ship3.png",
+		ASSETS_FD"/Boss_ship2/Boss_ship4.png",
+		ASSETS_FD"/Boss_ship2/Boss_ship5.png",
+		ASSETS_FD"/Boss_ship2/Boss_ship6.png",
+		ASSETS_FD"/Boss_ship2/Boss_ship7.png",
+		ASSETS_FD"/Boss_ship3/Boss_ship1.png",
+		ASSETS_FD"/Boss_ship3/Boss_ship2.png",
+		ASSETS_FD"/Boss_ship3/Boss_ship3.png",
+		ASSETS_FD"/Boss_ship3/Boss_ship4.png",
+		ASSETS_FD"/Boss_ship3/Boss_ship5.png",
+		ASSETS_FD"/Boss_ship3/Boss_ship6.png",
+		ASSETS_FD"/Boss_ship3/Boss_ship7.png",
+	};
 	cstrp draw_pipeline = "./shaders/sprite.glsl";
 } assets;
 
@@ -57,17 +80,18 @@ bool playground(App& app) {
 	physics.debug_draw.view_transform = &rendering.view_projection_matrix;
 
 	auto clock = Time::start();
-
-	auto ship1_sprite = load_into(assets.ship1, rendering.atlas, v2u32(0), 0);
-	auto ship2_sprite = load_into(assets.ship2, rendering.atlas, v2u32(0), 1);
-
 	auto rect = create_rect_mesh(v2f32(1)); defer{ delete_mesh(rect); };
 
-	auto& player = entities.push(create_player(ship1_sprite, rect, physics.world));
-	auto& some_sprite = entities.push({});
-	add_sprite(some_sprite, ship2_sprite, rect);
+	SpriteCursor ship_sprites[array_size(assets.ships)];
+	for (u64 i : u64xrange{ 0, array_size(assets.ships) })
+		ship_sprites[i] = load_into(assets.ships[i].data(), rendering.atlas, v2u32(0), i);
 
-	printf("Finished loading scene with %lu entities\n", entities.allocated().size());
+	auto& player = entities.push(create_player(ship_sprites[0], rect, physics.world));
+
+	for (u64 i : u64xrange{ 1, array_size(assets.ships) })
+		add_sprite(entities.push({}), ship_sprites[i], rect);
+
+	printf("Finished loading scene with %lu entities\n", entities.current);
 	fflush(stdout);
 	sync(rendering.view_projection_matrix);
 	sync(rendering.draw.instances_buffer);
@@ -96,17 +120,28 @@ bool playground(App& app) {
 		}
 
 		{// Build Imgui overlay
-			ImGui_ImplOpenGL3_NewFrame();
-			ImGui_ImplGlfw_NewFrame();
-			ImGui::NewFrame();
-			ImGui::Begin("Controls");
-			physics_controls(physics.world, physics.config, physics.time_point, physics.draw_debug);
-			EditorWidget("Camera", rendering.camera);
-			EditorWidget("Entities", entities.allocated());
-			ImGui::Text("Time = %f", clock.current);
-			ImGui::End();
-			ImGui::Render();
+			// ImGui_ImplOpenGL3_NewFrame();
+			// ImGui_ImplGlfw_NewFrame();
+			// ImGui::NewFrame();
+			// ImGui::Begin("Controls");
+			// physics_controls(physics.world, physics.config, physics.time_point, physics.draw_debug);
+			// EditorWidget("Camera", rendering.camera);
+			// EditorWidget("Entities", entities.allocated());
+			// ImGui::Text("Time = %f", clock.current);
+			// ImGui::End();
+			// ImGui::Render();
 		}
+
+		auto imgui_draw_data = ImGui::RenderNewFrame(
+			[&]() {
+				ImGui::Begin("Controls");
+				physics_controls(physics.world, physics.config, physics.time_point, physics.draw_debug);
+				EditorWidget("Camera", rendering.camera);
+				EditorWidget("Entities", entities.allocated());
+				ImGui::Text("Time = %f", clock.current);
+				ImGui::End();
+			}
+		);
 
 		// Rendering
 		render(0, { v2u32(0), app.pixel_dimensions }, GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT,
@@ -120,7 +155,7 @@ bool playground(App& app) {
 				rendering.draw(rect, rendering.atlas, rendering.view_projection_matrix, batch.current);
 
 				//Draw overlay
-				ImGui::Draw();
+				ImGui::Draw(imgui_draw_data);
 
 				//Draw physics debug
 				if (physics.draw_debug)

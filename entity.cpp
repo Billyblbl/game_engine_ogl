@@ -10,7 +10,7 @@
 #include <physics2d.cpp>
 #include <sprite.cpp>
 
-#define MAX_ENTITIES 10
+#define MAX_ENTITIES 100
 #define MAX_DRAW_BATCH MAX_ENTITIES
 
 struct Entity {
@@ -20,7 +20,7 @@ struct Entity {
 	b2Body* body;
 	//TODO add shape for physics
 	RenderMesh* mesh;
-	SpriteIndex sprite;
+	SpriteCursor sprite;
 	f32 speed;
 	f32 accel;
 	string name = "__entity__";
@@ -37,7 +37,7 @@ bool EditorWidget(const cstr label, Entity& entity) {
 		if (has_one(entity.flags, mask<u64>(Entity::Sprite, Entity::Collision)))
 			ImGui::Text("TODO : Widget for mesh reference");
 		if (has_one(entity.flags, mask<u64>(Entity::Sprite)))
-			ImGui::Text("TODO : Widget for texture reference");
+			changed |= EditorWidget("sprite", entity.sprite);
 		if (has_one(entity.flags, mask<u64>(Entity::Player))) {
 			changed |= EditorWidget("speed", entity.speed);
 			changed |= EditorWidget("accel", entity.accel);
@@ -47,7 +47,7 @@ bool EditorWidget(const cstr label, Entity& entity) {
 	return changed;
 }
 
-auto& add_sprite(Entity& ent, SpriteIndex sprite, RenderMesh& mesh) {
+auto& add_sprite(Entity& ent, SpriteCursor sprite, RenderMesh& mesh) {
 	ent.flags |= mask<u64>(Entity::Sprite);
 	ent.sprite = sprite;
 	ent.mesh = &mesh;
@@ -63,7 +63,7 @@ auto& add_dynbody(Entity& ent, b2World& world) {
 	return ent;
 }
 
-auto create_player(SpriteIndex sprite, RenderMesh& mesh, b2World& world, f32 speed= 10.f, f32 accel = 100.f) {
+auto create_player(SpriteCursor sprite, RenderMesh& mesh, b2World& world, f32 speed = 10.f, f32 accel = 100.f) {
 	Entity ent = { mask<u64>(Entity::Player) };
 	add_sprite(ent, sprite, mesh);
 	add_dynbody(ent, world);
@@ -74,7 +74,7 @@ auto create_player(SpriteIndex sprite, RenderMesh& mesh, b2World& world, f32 spe
 }
 
 Array<Entity*> gather(u64 flags, Array<Entity> entities, Array<Entity*> buffer) {
-	auto list = List { buffer, 0 };
+	auto list = List{ buffer, 0 };
 	for (auto&& ent : entities) if (has_all(ent.flags, flags)) {
 		list.push(&ent);
 	}

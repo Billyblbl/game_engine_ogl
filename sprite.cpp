@@ -7,6 +7,8 @@
 #define STB_IMAGE_IMPLEMENTATION
 #include <stb_image.h>
 
+//TODO depth, non batched simple rendering, animation
+
 int gl_to_stb_channels(GLenum GLChannels) {
 	switch (GLChannels) {
 	case GL_RED: return STBI_grey;
@@ -21,20 +23,30 @@ int gl_to_stb_channels(GLenum GLChannels) {
 	}
 }
 
-struct SpriteIndex {
+struct SpriteCursor {
 	rtf32 uv_rect;
 	u32 atlas_index;
 };
 
-constexpr SpriteIndex null_sprite = { { v2f32(0), v2f32(0) }, 0 };
-constexpr SpriteIndex full_texture(u32 index) { return { { v2f32(0), v2f32(1) }, index }; }
+bool EditorWidget(const cstr label, SpriteCursor& data) {
+	bool changed = false;
+	if (ImGui::TreeNode(label)) {
+		changed |= EditorWidget("UV rect", data.uv_rect);
+		changed |= EditorWidget("Atlas index", data.atlas_index);
+		ImGui::TreePop();
+	}
+	return changed;
+}
+
+constexpr SpriteCursor null_sprite = { { v2f32(0), v2f32(0) }, 0 };
+constexpr SpriteCursor full_texture(u32 index) { return { { v2f32(0), v2f32(1) }, index }; }
 
 tuple<SrcFormat, v2u32, Array<u8>> load_image(const cstr path) {
 	int width, height, channels = 0;
 	auto* img = stbi_load(path, &width, &height, &channels, 0);
+	printf("Loading texture %s:%ix%i-%i\n", path, width, height, channels);
 	if (img == null)
 		return fail_ret(stbi_failure_reason(), tuple(SrcFormat{}, v2u32(0), Array<u8>{}));
-	printf("Loaded texture %s:%ix%i-%i\n", path, width, height, channels);
 	return tuple(Formats<u8>[channels], v2u32(width, height), carray((u8*)img, width * height * channels));
 }
 
@@ -45,13 +57,13 @@ TexBuffer load_texture(const cstr path, GPUFormat target_format = RGBA32F) {
 
 rtf32 ratio(rtu32 area, v2u32 dimensions) { return { v2f32(area.min) / v2f32(dimensions), v2f32(area.max) / v2f32(dimensions) }; }
 
-SpriteIndex load_into(const cstr path, TexBuffer& texture, v2u32 upper_left, u32 index = 0) {
+SpriteCursor load_into(const cstr path, TexBuffer& texture, v2u32 upper_left = v2u32(0), u32 page = 0) {
 	auto [format, dimensions, data] = load_image(path); defer{ stbi_image_free(data.data()); };
 	auto rect = rtu32{ upper_left, upper_left + dimensions };
 	if (data.size() > 0 &&
 		expect(texture.dimensions.x >= dimensions.x && texture.dimensions.y >= dimensions.y) &&
-		upload_texture_data(texture, cast<byte>(data), format, slice_to_area<2>(rect, index)))
-		return SpriteIndex{ ratio(rect, texture.dimensions), index };
+		upload_texture_data(texture, cast<byte>(data), format, slice_to_area<2>(rect, page)))
+		return SpriteCursor{ ratio(rect, texture.dimensions), page };
 	else
 		return {};
 }

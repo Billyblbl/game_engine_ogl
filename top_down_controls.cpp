@@ -3,8 +3,17 @@
 
 #include <inputs.cpp>
 #include <physics2D.cpp>
+#include <animation.cpp>
+#include <imgui_extension.cpp>
 
 namespace controls {
+
+	// x = time
+	// y = angle
+	// z = speed
+	rtf32 animate_character_spritesheet(Array<const rtf32> keyframes, v3u32 dimensions, v3f32 coordinates) {
+		return animate_grid(keyframes, dimensions, coordinates, AnimationConfig<3>(AnimRepeat, AnimRepeat, AnimClamp));
+	}
 
 	constexpr auto VECTOR_LENGTH_THRESHOLD = 0.000001f;
 
@@ -23,6 +32,28 @@ namespace controls {
 		return safe_normalise(key_axis(left, right, down, up));
 	}
 
+	struct TopDownControl {
+		f32 speed;
+		f32 accel;
+		f32 walk_cycke_duration;
+		v2f32 input;
+		f32 look_angle;
+	};
+
+	// rtf32 animate(TopDownControl& ctrl, AnimationGrid<rtf32, 3>& animation, f32 time) { //TODO speed parameter
+	rtf32 animate(TopDownControl& ctrl, AnimationGrid<rtf32, 2>& animation, f32 time) {
+		auto walking = glm::length(ctrl.input) > 0.1f;
+		if (walking)
+			ctrl.look_angle = glm::orientedAngle(v2f32(0, 1), ctrl.input);
+		return animate_character_spritesheet(animation.keyframes, v3u32(animation.dimensions, 1),
+			v3f32(
+				walking ? time * ctrl.speed / ctrl.walk_cycke_duration : 0,
+				ctrl.look_angle / (2 * glm::pi<f32>()),
+				0 //TODO speed variation
+			)
+		);
+	}
+
 	void move_top_down(b2Body* body, v2f32 input, f32 speed, f32 accel) {
 		auto velocity = b2d_to_glm(body->GetLinearVelocity());
 		auto target_velocity = input * speed;
@@ -31,6 +62,19 @@ namespace controls {
 		body->SetLinearVelocity(glm_to_b2d(velocity + effective_accel));
 	}
 
+}
+
+bool EditorWidget(const cstr label, controls::TopDownControl& data) {
+	bool changed = false;
+	if (ImGui::TreeNode(label)) {
+		changed |= EditorWidget("speed", data.speed);
+		changed |= EditorWidget("accel", data.accel);
+		changed |= EditorWidget("walk cycke duration", data.walk_cycke_duration);
+		changed |= EditorWidget("input", data.input);
+		changed |= EditorWidget("look angle", data.look_angle);
+		ImGui::TreePop();
+	}
+	return changed;
 }
 
 #endif

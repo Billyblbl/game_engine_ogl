@@ -97,12 +97,12 @@ bool init_ogl(App& app) {
 }
 
 bool update(App& app, Scene target_scene) {
+	defer{ glfwSwapBuffers(app.window); };
 	int display_w, display_h;
 	glfwGetFramebufferSize(app.window, &display_w, &display_h);
 	app.pixel_dimensions.x = display_w;
 	app.pixel_dimensions.y = display_h;
 
-	defer{ glfwSwapBuffers(app.window); };
 
 	if (glfwWindowShouldClose(app.window)) {
 		app.scene = null;

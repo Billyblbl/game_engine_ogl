@@ -3,6 +3,8 @@
 
 #include <glm/glm.hpp>
 #include <glm/gtc/type_ptr.hpp>
+#include <glm/gtx/rotate_vector.hpp>
+#include <glm/gtx/vector_angle.hpp>
 
 using v1f32 = glm::f32vec1;
 using v1f64 = glm::f64vec1;

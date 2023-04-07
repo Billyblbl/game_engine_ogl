@@ -54,7 +54,15 @@ TexBuffer load_texture(const cstr path, GPUFormat target_format = RGBA32F) {
 	return create_texture(data, format, TX2D, v4u32(dimensions, 1, 1), target_format);
 }
 
-rtf32 ratio(rtu32 area, v2u32 dimensions) { return { v2f32(area.min) / v2f32(dimensions), v2f32(area.max) / v2f32(dimensions) }; }
+inline rtf32 ratio(rtu32 area, v2u32 dimensions) { return { v2f32(area.min) / v2f32(dimensions), v2f32(area.max) / v2f32(dimensions) }; }
+
+inline v2f32 rect_to_world(rtf32 rect, v2f32 v) {
+	return v * (rect.max - rect.min) + rect.min;
+}
+
+inline rtf32 rect_in_rect(rtf32 reference, rtf32 rect) {
+	return { rect_to_world(reference, rect.min), rect_to_world(reference, rect.max) };
+}
 
 SpriteCursor load_into(const cstr path, TexBuffer& texture, v2u32 upper_left = v2u32(0), u32 page = 0) {
 	auto [format, dimensions, data] = load_image(path); defer{ stbi_image_free(data.data()); };

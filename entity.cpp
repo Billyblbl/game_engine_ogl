@@ -9,6 +9,7 @@
 #include <rendering.cpp>
 #include <physics2d.cpp>
 #include <sprite.cpp>
+#include <top_down_controls.cpp>
 
 #define MAX_ENTITIES 100
 #define MAX_DRAW_BATCH MAX_ENTITIES
@@ -22,8 +23,7 @@ struct Entity {
 	RenderMesh* mesh;
 	SpriteCursor sprite;
 	f32 draw_layer;
-	f32 speed;
-	f32 accel;
+	controls::TopDownControl controls;
 	string name = "__entity__";
 };
 
@@ -41,10 +41,8 @@ bool EditorWidget(const cstr label, Entity& entity) {
 			changed |= EditorWidget("sprite", entity.sprite);
 			changed |= EditorWidget("draw layer", entity.draw_layer);
 		}
-		if (has_one(entity.flags, mask<u64>(Entity::Player))) {
-			changed |= EditorWidget("speed", entity.speed);
-			changed |= EditorWidget("accel", entity.accel);
-		}
+		if (has_one(entity.flags, mask<u64>(Entity::Player)))
+			changed |= EditorWidget("controls", entity.controls);
 		ImGui::TreePop();
 	}
 	return changed;
@@ -71,8 +69,9 @@ auto create_player(SpriteCursor sprite, RenderMesh& mesh, b2World& world, f32 sp
 	add_sprite(ent, sprite, mesh);
 	add_dynbody(ent, world);
 	ent.name = "Player";
-	ent.speed = speed;
-	ent.accel = accel;
+	ent.controls.accel = accel;
+	ent.controls.speed = speed;
+	ent.controls.walk_cycke_duration = 2.f;
 	return ent;
 }
 

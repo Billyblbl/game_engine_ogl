@@ -7,7 +7,7 @@
 m4x4f32 trs_2d(v2f32 translation, f32 rotation, v2f32 scales) {
 	using namespace glm;
 	return translate(m4x4f32(1), v3f32(translation, 0)) *
-		rotate(m4x4f32(1), radians(rotation), v3f32(0, 0, -1)) *
+		rotate(m4x4f32(1), radians(rotation), v3f32(0, 0, 1)) *
 		scale(m4x4f32(1), v3f32(scales, 1));
 }
 

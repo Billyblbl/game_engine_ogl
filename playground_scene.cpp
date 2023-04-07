@@ -15,17 +15,20 @@
 #include <transform.cpp>
 #include <physics2d.cpp>
 #include <blblstd.hpp>
+#include <math.cpp>
+#include <animation.cpp>
 
 #include <top_down_controls.cpp>
 #include <entity.cpp>
 #include <sprite.cpp>
+
 
 #define MAX_SPRITES MAX_ENTITIES
 
 #define ASSETS_FD "C:/Users/billy/Documents/assets/boss-spaceship-2d-sprites-pixel-art/PNG_Parts&Spriter_Animation"
 
 const struct {
-	const string ships[3 * 7] = {
+	string ships[3 * 7] = {
 		ASSETS_FD"/Boss_ship1/Boss_ship1.png",
 		ASSETS_FD"/Boss_ship1/Boss_ship2.png",
 		ASSETS_FD"/Boss_ship1/Boss_ship3.png",
@@ -48,6 +51,8 @@ const struct {
 		ASSETS_FD"/Boss_ship3/Boss_ship6.png",
 		ASSETS_FD"/Boss_ship3/Boss_ship7.png",
 	};
+	cstrp test_character_spritesheet_path = "test_character.png";
+	cstrp test_character_anim_path = "test_character.anim";
 	cstrp draw_pipeline = "./shaders/sprite.glsl";
 } assets;
 
@@ -60,9 +65,12 @@ bool playground(App& app) {
 		OrthoCamera camera = { v3f32(16.f, 9.f, 1000.f) / 2.f, v3f32(0) };
 		MappedObject<m4x4f32> view_projection_matrix = map_object(m4x4f32(1));
 		SpriteRenderer draw = load_sprite_renderer(assets.draw_pipeline, MAX_DRAW_BATCH);
-		TexBuffer atlas = create_texture(TX2DARR, v4u32(256 * 2, 256 * 2, MAX_SPRITES, 1));
+		TexBuffer atlas = create_texture(TX2DARR, v4u32(256, 256, MAX_SPRITES, 1));
+		AnimationGrid<rtf32, 2> player_character_animation = load_animation_grid<rtf32, 2>(assets.test_character_anim_path, std_allocator);
 	} rendering;
+	rendering.atlas.conf_sampling(SamplingConfig{ Nearest, Nearest });
 	defer{
+		dealloc_array(std_allocator, rendering.player_character_animation.keyframes);
 		unload(rendering.atlas);
 		unload(rendering.draw);
 		unmap(rendering.view_projection_matrix);
@@ -81,24 +89,27 @@ bool playground(App& app) {
 
 	auto clock = Time::start();
 	auto rect = create_rect_mesh(v2f32(1)); defer{ delete_mesh(rect); };
+	auto& player = entities.push(create_player(load_into(assets.test_character_spritesheet_path, rendering.atlas, v2u32(0), 50), rect, physics.world));
 
-	SpriteCursor ship_sprites[array_size(assets.ships)];
-	for (u64 i : u64xrange{ 0, array_size(assets.ships) })
-		ship_sprites[i] = load_into(assets.ships[i].data(), rendering.atlas, v2u32(0), i);
-
-	auto& player = entities.push(create_player(ship_sprites[0], rect, physics.world));
-
-	for (u64 i : u64xrange{ 1, array_size(assets.ships) })
-		add_sprite(entities.push({}), ship_sprites[i], rect);
+	for (u64 i : u64xrange{ 0, array_size(assets.ships) }) {
+		auto& ship = add_sprite(entities.push({}), load_into(assets.ships[i].data(), rendering.atlas, v2u32(0), i), rect);
+		ship.name = "ship";
+		ship.transform.translation += v2f32(cos(glm::degrees(f32(i * 10))), sin(glm::degrees(f32(i * 10)))) * f32(i) / 5.f;
+		ship.transform.rotation += i * 10;
+	}
 
 	printf("Finished loading scene with %lu entities\n", entities.current);
 	fflush(stdout);
-	sync(rendering.view_projection_matrix);
-	sync(rendering.draw.instances_buffer);
 	wait_gpu();
 	while (update(app, playground)) {
 		update(clock);
 		Input::poll(app.inputs);
+
+		{ // Player update
+			using namespace Input::Keyboard;
+			player.controls.input = controls::keyboard_plane(W, A, S, D);
+			player.sprite.uv_rect = controls::animate(player.controls, rendering.player_character_animation, clock.current);
+		}
 
 		// Using a 'while' here instead of an 'if' makes sure that if a frame was slow the physics simulation can catch up
 		// by doing multiple steps in 1 frame
@@ -106,9 +117,8 @@ bool playground(App& app) {
 		// although not sure how pertinent this is since slow rendering would probably be a bigger problem
 		while (Time::metronome(clock.current, physics.config.time_step, physics.time_point)) { // Physics tick
 
-			using namespace Input::Keyboard;
 			if (has_all(player.flags, mask<u64>(Entity::Player, Entity::Dynbody)))
-				controls::move_top_down(player.body, controls::keyboard_plane(W, A, S, D), player.speed, player.accel * physics.config.time_step);
+				controls::move_top_down(player.body, player.controls.input, player.controls.speed, player.controls.accel * physics.config.time_step);
 
 			Entity* pbuff[entities.current];
 			auto to_sim = gather(mask<u64>(Entity::Dynbody), entities.allocated(), carray(pbuff, entities.current));
@@ -117,19 +127,6 @@ bool playground(App& app) {
 			update_sim(physics.world, physics.config);
 			for (auto ent : to_sim)
 				override_transform(ent->body, ent->transform.translation, ent->transform.rotation);
-		}
-
-		{// Build Imgui overlay
-			// ImGui_ImplOpenGL3_NewFrame();
-			// ImGui_ImplGlfw_NewFrame();
-			// ImGui::NewFrame();
-			// ImGui::Begin("Controls");
-			// physics_controls(physics.world, physics.config, physics.time_point, physics.draw_debug);
-			// EditorWidget("Camera", rendering.camera);
-			// EditorWidget("Entities", entities.allocated());
-			// ImGui::Text("Time = %f", clock.current);
-			// ImGui::End();
-			// ImGui::Render();
 		}
 
 		auto imgui_draw_data = ImGui::RenderNewFrame(
@@ -148,7 +145,7 @@ bool playground(App& app) {
 			[&]() {
 
 				//Draw entities
-				rendering.view_projection_matrix.obj = view_project(project(rendering.camera), m4x4f32(1));
+				rendering.view_projection_matrix.obj = view_project(project(rendering.camera), trs_2d(player.transform));
 				auto batch = rendering.draw.start_batch();
 				for (auto&& ent : entities.allocated()) if (has_all(ent.flags, mask<u64>(Entity::Sprite)))
 					batch.push(sprite_data(trs_2d(ent.transform), ent.sprite.uv_rect, ent.sprite.atlas_index, ent.draw_layer));

@@ -13,7 +13,7 @@ bool override_body(b2Body* body, v2f32 position, f32 rotation) {
 	if (body == null)
 		return fail_ret("Physics entity has no body", false);
 	auto pos = b2Vec2(position.x, position.y);
-	body->SetTransform(pos, -glm::radians(rotation));
+	body->SetTransform(pos, glm::radians(rotation));
 	//TODO awake only when needed
 	body->SetAwake(true);
 	return true;
@@ -23,7 +23,7 @@ bool override_transform(const b2Body* body, v2f32& position, f32& rotation) {
 	if (body == null)
 		return fail_ret("Physics entity has no body", false);
 	position = b2d_to_glm(body->GetPosition());
-	rotation = -glm::degrees(body->GetAngle());
+	rotation = glm::degrees(body->GetAngle());
 	return true;
 }
 

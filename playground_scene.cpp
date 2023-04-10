@@ -96,10 +96,7 @@ bool playground(App& app) {
 		// otherwise slowness in the rendering would also slow down the physics
 		// although not sure how pertinent this is since slow rendering would probably be a bigger problem
 		while (Time::metronome(clock.current, physics.config.time_step, physics.time_point)) { // Physics tick
-
-			if (has_all(player.flags, mask<u64>(Entity::Player, Entity::Dynbody)))
-				controls::move_top_down(player.body, player.controls.input, player.controls.speed, player.controls.accel * physics.config.time_step);
-
+			controls::move_top_down(player.body, player.controls.input, player.controls.speed, player.controls.accel * physics.config.time_step);
 			Entity* pbuff[entities.current];
 			auto to_sim = gather(mask<u64>(Entity::Dynbody), entities.allocated(), carray(pbuff, entities.current));
 			for (auto ent : to_sim)
@@ -109,19 +106,21 @@ bool playground(App& app) {
 				override_transform(ent->body, ent->transform.translation, ent->transform.rotation);
 		}
 
+		// Scene
+		render(scene_panel, { v2u32(0), scene_texture.dimensions }, GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT, v4f32(v3f32(0.3), 1),
+			[&]() {
+				rendering.view_projection_matrix.obj = view_project(project(rendering.camera), trs_2d(player.transform));
+				auto batch = rendering.draw.start_batch();
+				for (auto&& ent : entities.allocated()) if (has_all(ent.flags, mask<u64>(Entity::Sprite)))
+					batch.push(sprite_data(trs_2d(ent.transform), ent.sprite.uv_rect, ent.sprite.atlas_index, ent.draw_layer));
+				rendering.draw(rect, rendering.atlas, rendering.view_projection_matrix, batch.current);
+				if (physics.draw_debug) physics.world.DebugDraw();
+			}
+		);
+
+		// UI
 		auto imgui_draw_data = ImGui::RenderNewFrame(
 			[&]() {
-				if (ImGui::BeginMainMenuBar()) {
-					if (ImGui::BeginMenu("Test Menu")) {
-						if (ImGui::MenuItem("New", "Ctrl+N")) {}
-						if (ImGui::MenuItem("Open", "Ctrl+O")) {}
-						if (ImGui::MenuItem("Save as", "Ctrl+Shift+S")) {}
-						if (ImGui::MenuItem("Save", "Ctrl+S")) {}
-						ImGui::EndMenu();
-					}
-					ImGui::EndMainMenuBar();
-				}
-
 				ImGui::DockSpaceOverViewport(ImGui::GetMainViewport());
 
 				ImGui::Begin("Scene");
@@ -143,19 +142,6 @@ bool playground(App& app) {
 			}
 		);
 
-		// Scene
-		render(scene_panel, { v2u32(0), scene_texture.dimensions }, GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT, v4f32(v3f32(0.3), 1),
-			[&]() {
-				rendering.view_projection_matrix.obj = view_project(project(rendering.camera), trs_2d(player.transform));
-				auto batch = rendering.draw.start_batch();
-				for (auto&& ent : entities.allocated()) if (has_all(ent.flags, mask<u64>(Entity::Sprite)))
-					batch.push(sprite_data(trs_2d(ent.transform), ent.sprite.uv_rect, ent.sprite.atlas_index, ent.draw_layer));
-				rendering.draw(rect, rendering.atlas, rendering.view_projection_matrix, batch.current);
-				if (physics.draw_debug) physics.world.DebugDraw();
-			}
-		);
-
-		// UI
 		render(0, { v2u32(0), app.pixel_dimensions }, GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT, v4f32(v3f32(0), 1), [&]() { ImGui::Draw(imgui_draw_data); });
 	}
 	return true;

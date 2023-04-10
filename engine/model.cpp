@@ -184,6 +184,7 @@ RenderMesh create_rect_mesh(v2u32 source_dimensions, f32 ppu) {
 }
 
 RenderMesh get_unit_rect_mesh() {
+	//TODO when do we delete this ???
 	static auto mesh = create_rect_mesh(v2f32(1));
 	return mesh;
 }

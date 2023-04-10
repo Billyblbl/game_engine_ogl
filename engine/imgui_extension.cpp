@@ -104,22 +104,24 @@ namespace ImGui {
 		return ImGui::GetDrawData();
 	}
 
+	inline v2f32 to_glm(ImVec2 in) { return {in.x, in.y}; }
+	inline ImVec2 from_glm(v2f32 in) { return {in.x, in.y}; }
 }
 
 bool EditorWidget(const cstr label, f32& data) {
-	return ImGui::DragFloat(label, &data, .1f, .0f, .0f, "%.4f");
+	return ImGui::DragFloat(label, &data, .01f, .0f, .0f, "%.4f");
 }
 
 bool EditorWidget(const cstr label, v2f32& data) {
-	return ImGui::DragFloat2(label, glm::value_ptr(data), .1f, .0f, .0f, "%.4f");
+	return ImGui::DragFloat2(label, glm::value_ptr(data), .01f, .0f, .0f, "%.4f");
 }
 
 bool EditorWidget(const cstr label, v3f32& data) {
-	return ImGui::DragFloat3(label, glm::value_ptr(data), .1f, .0f, .0f, "%.4f");
+	return ImGui::DragFloat3(label, glm::value_ptr(data), .01f, .0f, .0f, "%.4f");
 }
 
 bool EditorWidget(const cstr label, v4f32& data) {
-	return ImGui::DragFloat4(label, glm::value_ptr(data), .1f, .0f, .0f, "%.4f");
+	return ImGui::DragFloat4(label, glm::value_ptr(data), .01f, .0f, .0f, "%.4f");
 }
 
 bool EditorWidget(const cstr label, i32& data) {

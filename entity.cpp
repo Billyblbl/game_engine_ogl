@@ -11,7 +11,7 @@
 #include <sprite.cpp>
 #include <top_down_controls.cpp>
 
-#define MAX_ENTITIES 100
+#define MAX_ENTITIES 30
 #define MAX_DRAW_BATCH MAX_ENTITIES
 
 struct Entity {

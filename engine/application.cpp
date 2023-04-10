@@ -61,36 +61,32 @@ auto create_app(const cstr window_title, v2u32 window_dimensions, Scene start_sc
 	auto& input_context = Input::init_context(window);
 	glfwMakeContextCurrent(window);
 	glfwSwapInterval(1); // Enable vsync
-	return App{ window, input_context, window_dimensions, start_scene };
+
+	int display_w, display_h;
+	glfwGetFramebufferSize(window, &display_w, &display_h);
+
+	return App{ window, input_context, v2u32(display_w, display_h), start_scene };
 }
 
 bool init_ogl(App& app) {
 	printf("Initializing OpenGL\n");
 	GLenum err = glewInit();
-	if (GLEW_OK != err) {
-		fprintf(stderr, "GLEW Error: %s\n", glewGetErrorString(err));
-		return false;
-	}
-	fprintf(stdout, "Status: Using GLEW %s\n", glewGetString(GLEW_VERSION));
-
-	auto clear_color = v4f32(0.45f, 0.55f, 0.60f, 1.00f);
-
-	int display_w, display_h;
-	glfwGetFramebufferSize(app.window, &display_w, &display_h);
+	if (GLEW_OK != err)
+		return fail_ret(glewGetErrorString(err), false);
+	printf("Status: Using GLEW %s\n", glewGetString(GLEW_VERSION));
 
 	glEnable(GL_DEBUG_OUTPUT);
 	glEnable(GL_DEBUG_OUTPUT_SYNCHRONOUS);
 	glDebugMessageCallback(ogl_debug_callback, null);
 	glDebugMessageControl(GL_DONT_CARE, GL_DONT_CARE, GL_DONT_CARE, 0, null, GL_TRUE);
 
-	GL_GUARD(glViewport(0, 0, display_w, display_h));
+	GL_GUARD(glViewport(0, 0, app.pixel_dimensions.x, app.pixel_dimensions.y));
 	GL_GUARD(glEnable(GL_CULL_FACE));
 	// GL_GUARD(glDisable(GL_CULL_FACE));
 	GL_GUARD(glCullFace(GL_BACK));
 	// GL_GUARD(glCullFace(GL_FRONT));
 	GL_GUARD(glEnable(GL_DEPTH_TEST));
 	GL_GUARD(glDepthFunc(GL_LEQUAL));
-	GL_GUARD(glClearColor(clear_color.r * clear_color.w, clear_color.g * clear_color.w, clear_color.b * clear_color.w, clear_color.w));
 	GL_GUARD(glEnable(GL_BLEND));
 	GL_GUARD(glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA));
 	return true;
@@ -102,7 +98,6 @@ bool update(App& app, Scene target_scene) {
 	glfwGetFramebufferSize(app.window, &display_w, &display_h);
 	app.pixel_dimensions.x = display_w;
 	app.pixel_dimensions.y = display_h;
-
 
 	if (glfwWindowShouldClose(app.window)) {
 		app.scene = null;

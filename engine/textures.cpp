@@ -150,13 +150,12 @@ constexpr TexBuffer null_tex = { 0, v4u32(0), NoType };
 TexBuffer create_texture(TexType type, v4u32 dimensions, GPUFormat format = RGBA32F) {
 	GLuint id;
 	GL_GUARD(glCreateTextures(type, 1, &id));
-	printf("Creating %s Texture %u\n", GLtoString(type).data(), id);
-	fflush(stdout);
+	printf("Creating %s:%ux%ux%ux%u id %u\n", GLtoString(type).data(), dimensions.x, dimensions.y, dimensions.z, dimensions.w, id);
 	switch (type) {
 	case TX1D:		GL_GUARD(glTextureStorage1D(id, dimensions.w, format, dimensions.x)); break;
-	case TX2D:		GL_GUARD(glTextureStorage2D(id, dimensions.w, format, dimensions.x, dimensions.z)); break;
-	case TX1DARR:	GL_GUARD(glTextureStorage2D(id, dimensions.w, format, dimensions.x, dimensions.z)); break;
-	case TX3D:		GL_GUARD(glTextureStorage3D(id, dimensions.w, format, dimensions.x, dimensions.y, dimensions.z)); break;
+	case TX2D:
+	case TX1DARR:	GL_GUARD(glTextureStorage2D(id, dimensions.w, format, dimensions.x, dimensions.y)); break;
+	case TX3D:
 	case TX2DARR:	GL_GUARD(glTextureStorage3D(id, dimensions.w, format, dimensions.x, dimensions.y, dimensions.z)); break;
 	default: return fail_ret(GLtoString(type).data(), null_tex);
 	}
@@ -170,6 +169,7 @@ TexBuffer& unload(TexBuffer& texture) {
 }
 
 bool upload_texture_data(TexBuffer& texture, Array<byte> source, SrcFormat format, Area<3> box) {
+	// printf("GPU loading texture data type:%s, id:%u, box.min(%u, %u, %u), box.max(%u, %u, %u)\n", GLtoString(texture.type).data(), texture.id, box.min.x, box.min.y, box.min.z, box.max.x, box.max.y, box.max.z);
 	switch (texture.type) {
 	case TX1D:		GL_GUARD(glTextureSubImage1D(texture.id, 0, box.min.x, width(box), format.channels, format.type, source.data())); break;
 	case TX2D:		GL_GUARD(glTextureSubImage2D(texture.id, 0, box.min.x, box.min.y, width(box), height(box), format.channels, format.type, source.data())); break;

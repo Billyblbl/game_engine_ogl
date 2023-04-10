@@ -184,9 +184,10 @@ inline GPUBinding bind_to(const TexBuffer& mapping, GLuint target) { return GPUB
 template<typename T> inline GPUBinding bind_to(const MappedObject<T>& mapping, GLuint target) { return GPUBinding{ GPUBinding::UBO, mapping.id, target, sizeof(mapping.obj) }; }
 template<typename T> inline GPUBinding bind_to(const MappedBuffer<T>& mapping, GLuint target) { return GPUBinding{ GPUBinding::SSBO, mapping.id, target, (GLsizeiptr)mapping.content.size_bytes() }; }
 
-template<typename Func> inline void render(GLuint fbf, rtu32 viewport, GLbitfield clear_flags, Func commands) {
+template<typename Func> inline void render(GLuint fbf, rtu32 viewport, GLbitfield clear_flags, v4f32 clear_color, Func commands) {
 	GL_GUARD(glBindFramebuffer(GL_FRAMEBUFFER, fbf));
 	GL_GUARD(glViewport(viewport.min.x, viewport.min.x, width(viewport), height(viewport)));
+	GL_GUARD(glClearColor(clear_color.r, clear_color.g, clear_color.b, clear_color.a));
 	GL_GUARD(glClear(clear_flags));
 	commands();
 	GL_GUARD(glBindFramebuffer(GL_FRAMEBUFFER, 0));

@@ -22,35 +22,14 @@
 #include <entity.cpp>
 #include <sprite.cpp>
 
-
 #define MAX_SPRITES MAX_ENTITIES
 
-#define ASSETS_FD "C:/Users/billy/Documents/assets/boss-spaceship-2d-sprites-pixel-art/PNG_Parts&Spriter_Animation"
+ImVec2 fit_to_area(ImVec2 area, v2f32 dimensions) {
+	auto ratios = ImGui::to_glm(area) / dimensions;
+	return ImGui::from_glm(dimensions * min(ratios.x, ratios.y));
+}
 
 const struct {
-	string ships[3 * 7] = {
-		ASSETS_FD"/Boss_ship1/Boss_ship1.png",
-		ASSETS_FD"/Boss_ship1/Boss_ship2.png",
-		ASSETS_FD"/Boss_ship1/Boss_ship3.png",
-		ASSETS_FD"/Boss_ship1/Boss_ship4.png",
-		ASSETS_FD"/Boss_ship1/Boss_ship5.png",
-		ASSETS_FD"/Boss_ship1/Boss_ship6.png",
-		ASSETS_FD"/Boss_ship1/Boss_ship7.png",
-		ASSETS_FD"/Boss_ship2/Boss_ship1.png",
-		ASSETS_FD"/Boss_ship2/Boss_ship2.png",
-		ASSETS_FD"/Boss_ship2/Boss_ship3.png",
-		ASSETS_FD"/Boss_ship2/Boss_ship4.png",
-		ASSETS_FD"/Boss_ship2/Boss_ship5.png",
-		ASSETS_FD"/Boss_ship2/Boss_ship6.png",
-		ASSETS_FD"/Boss_ship2/Boss_ship7.png",
-		ASSETS_FD"/Boss_ship3/Boss_ship1.png",
-		ASSETS_FD"/Boss_ship3/Boss_ship2.png",
-		ASSETS_FD"/Boss_ship3/Boss_ship3.png",
-		ASSETS_FD"/Boss_ship3/Boss_ship4.png",
-		ASSETS_FD"/Boss_ship3/Boss_ship5.png",
-		ASSETS_FD"/Boss_ship3/Boss_ship6.png",
-		ASSETS_FD"/Boss_ship3/Boss_ship7.png",
-	};
 	cstrp test_character_spritesheet_path = "test_character.png";
 	cstrp test_character_anim_path = "test_character.anim";
 	cstrp draw_pipeline = "./shaders/sprite.glsl";
@@ -68,13 +47,20 @@ bool playground(App& app) {
 		TexBuffer atlas = create_texture(TX2DARR, v4u32(256, 256, MAX_SPRITES, 1));
 		AnimationGrid<rtf32, 2> player_character_animation = load_animation_grid<rtf32, 2>(assets.test_character_anim_path, std_allocator);
 	} rendering;
-	rendering.atlas.conf_sampling(SamplingConfig{ Nearest, Nearest });
+	rendering.atlas.conf_sampling({ Nearest, Nearest });
 	defer{
 		dealloc_array(std_allocator, rendering.player_character_animation.keyframes);
 		unload(rendering.atlas);
 		unload(rendering.draw);
 		unmap(rendering.view_projection_matrix);
 	};
+
+	auto scene_texture = create_texture(TX2D, v4u32(app.pixel_dimensions, 1, 1)); defer{ unload(scene_texture); };
+	auto scene_texture_depth = create_texture(TX2D, v4u32(app.pixel_dimensions, 1, 1), DEPTH_COMPONENT32); defer{ unload(scene_texture_depth); };
+	auto scene_panel = create_framebuffer({
+		bind_to_fb(Color0Attc, scene_texture.conf_sampling({ Nearest, Nearest }), 0, 0),
+		bind_to_fb(DepthAttc, scene_texture_depth, 0, 0)
+	}); defer{ destroy_fb(scene_panel); };
 
 	struct {
 		PhysicsConfig config;
@@ -88,19 +74,13 @@ bool playground(App& app) {
 	physics.debug_draw.view_transform = &rendering.view_projection_matrix;
 
 	auto clock = Time::start();
-	auto rect = create_rect_mesh(v2f32(1)); defer{ delete_mesh(rect); };
-	auto& player = entities.push(create_player(load_into(assets.test_character_spritesheet_path, rendering.atlas, v2u32(0), 50), rect, physics.world));
-
-	for (u64 i : u64xrange{ 0, array_size(assets.ships) }) {
-		auto& ship = add_sprite(entities.push({}), load_into(assets.ships[i].data(), rendering.atlas, v2u32(0), i), rect);
-		ship.name = "ship";
-		ship.transform.translation += v2f32(cos(glm::degrees(f32(i * 10))), sin(glm::degrees(f32(i * 10)))) * f32(i) / 5.f;
-		ship.transform.rotation += i * 10;
-	}
+	auto rect = get_unit_rect_mesh(); defer{ delete_mesh(rect); }; //TODO replace this manual delete of a global data with another way
+	auto& player = entities.push(create_player(load_into(assets.test_character_spritesheet_path, rendering.atlas, v2u32(0), MAX_SPRITES - 1), rect, physics.world));
 
 	printf("Finished loading scene with %lu entities\n", entities.current);
 	fflush(stdout);
 	wait_gpu();
+
 	while (update(app, playground)) {
 		update(clock);
 		Input::poll(app.inputs);
@@ -131,34 +111,52 @@ bool playground(App& app) {
 
 		auto imgui_draw_data = ImGui::RenderNewFrame(
 			[&]() {
-				ImGui::Begin("Controls");
+				if (ImGui::BeginMainMenuBar()) {
+					if (ImGui::BeginMenu("Test Menu")) {
+						if (ImGui::MenuItem("New", "Ctrl+N")) {}
+						if (ImGui::MenuItem("Open", "Ctrl+O")) {}
+						if (ImGui::MenuItem("Save as", "Ctrl+Shift+S")) {}
+						if (ImGui::MenuItem("Save", "Ctrl+S")) {}
+						ImGui::EndMenu();
+					}
+					ImGui::EndMainMenuBar();
+				}
+
+				ImGui::DockSpaceOverViewport(ImGui::GetMainViewport());
+
+				ImGui::Begin("Scene");
+				ImGui::Image((ImTextureID)(u64)scene_texture.id, fit_to_area(ImGui::GetWindowContentSize(), scene_texture.dimensions), ImVec2(0, 1), ImVec2(1, 0));
+				ImGui::End();
+
+				ImGui::Begin("Configs");
 				physics_controls(physics.world, physics.config, physics.time_point, physics.draw_debug);
 				EditorWidget("Camera", rendering.camera);
-				EditorWidget("Entities", entities.allocated());
 				ImGui::Text("Time = %f", clock.current);
+				ImGui::End();
+
+				ImGui::Begin("Entities");
+				ImGui::Text("Capacity : %u/%u", entities.current, entities.capacity.size());
+				EditorWidget("Allocated", entities.allocated());
+				if (entities.current < entities.capacity.size() && ImGui::Button("Allocate"))
+					entities.push({});
 				ImGui::End();
 			}
 		);
 
-		// Rendering
-		render(0, { v2u32(0), app.pixel_dimensions }, GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT,
+		// Scene
+		render(scene_panel, { v2u32(0), scene_texture.dimensions }, GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT, v4f32(v3f32(0.3), 1),
 			[&]() {
-
-				//Draw entities
 				rendering.view_projection_matrix.obj = view_project(project(rendering.camera), trs_2d(player.transform));
 				auto batch = rendering.draw.start_batch();
 				for (auto&& ent : entities.allocated()) if (has_all(ent.flags, mask<u64>(Entity::Sprite)))
 					batch.push(sprite_data(trs_2d(ent.transform), ent.sprite.uv_rect, ent.sprite.atlas_index, ent.draw_layer));
 				rendering.draw(rect, rendering.atlas, rendering.view_projection_matrix, batch.current);
-
-				//Draw overlay
-				ImGui::Draw(imgui_draw_data);
-
-				//Draw physics debug
-				if (physics.draw_debug)
-					physics.world.DebugDraw();
+				if (physics.draw_debug) physics.world.DebugDraw();
 			}
 		);
+
+		// UI
+		render(0, { v2u32(0), app.pixel_dimensions }, GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT, v4f32(v3f32(0), 1), [&]() { ImGui::Draw(imgui_draw_data); });
 	}
 	return true;
 }

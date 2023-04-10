@@ -4,7 +4,6 @@
 *.so
 *.dll
 *.log
-*.ini
 
 .vscode
 build

@@ -212,6 +212,16 @@ const string GLtoString(GLenum value) {
 	case GL_DEBUG_SEVERITY_LOW: return serialise_macro(GL_DEBUG_SEVERITY_LOW);
 	case GL_DEBUG_SEVERITY_NOTIFICATION: return serialise_macro(GL_DEBUG_SEVERITY_NOTIFICATION);
 
+	case GL_FRAMEBUFFER_UNDEFINED: return serialise_macro(GL_FRAMEBUFFER_UNDEFINED);
+	case GL_FRAMEBUFFER_INCOMPLETE_ATTACHMENT: return serialise_macro(GL_FRAMEBUFFER_INCOMPLETE_ATTACHMENT);
+	case GL_FRAMEBUFFER_INCOMPLETE_MISSING_ATTACHMENT: return serialise_macro(GL_FRAMEBUFFER_INCOMPLETE_MISSING_ATTACHMENT);
+	case GL_FRAMEBUFFER_INCOMPLETE_DRAW_BUFFER: return serialise_macro(GL_FRAMEBUFFER_INCOMPLETE_DRAW_BUFFER);
+	case GL_FRAMEBUFFER_INCOMPLETE_READ_BUFFER: return serialise_macro(GL_FRAMEBUFFER_INCOMPLETE_READ_BUFFER);
+	case GL_FRAMEBUFFER_UNSUPPORTED: return serialise_macro(GL_FRAMEBUFFER_UNSUPPORTED);
+	case GL_FRAMEBUFFER_INCOMPLETE_MULTISAMPLE: return serialise_macro(GL_FRAMEBUFFER_INCOMPLETE_MULTISAMPLE);
+	case GL_FRAMEBUFFER_INCOMPLETE_LAYER_TARGETS: return serialise_macro(GL_FRAMEBUFFER_INCOMPLETE_LAYER_TARGETS);
+	case GL_FRAMEBUFFER_COMPLETE: return serialise_macro(GL_FRAMEBUFFER_COMPLETE);
+
 	default: return lstr("Unknown OpenGL enum");
 	}
 }
@@ -234,7 +244,7 @@ void CheckGLError(string expression, string file_name, u32 line_number) {
 #define CGL_BUFFER_MAPPED (GL_MAP_WRITE_BIT | GL_MAP_PERSISTENT_BIT)
 
 static void flush_mapped_buffer(GLuint buffer, u64range range) {
-	GL_GUARD(glFlushMappedNamedBufferRange(buffer, range.min , range.max));
+	GL_GUARD(glFlushMappedNamedBufferRange(buffer, range.min, range.max));
 }
 
 //TODO chose what to do about optional types
@@ -286,6 +296,9 @@ enum GPUFormat: GLenum {
 
 	//Sized
 
+	DEPTH_COMPONENT16 = GL_DEPTH_COMPONENT16,
+	DEPTH_COMPONENT24 = GL_DEPTH_COMPONENT24,
+	DEPTH_COMPONENT32 = GL_DEPTH_COMPONENT32,
 	R8 = GL_R8,
 	R8_SNORM = GL_R8_SNORM,
 	R16 = GL_R16,

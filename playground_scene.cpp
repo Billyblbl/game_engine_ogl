@@ -36,8 +36,6 @@ const struct {
 } assets;
 
 bool playground(App& app) {
-	auto entities = List{ alloc_array<Entity>(std_allocator, MAX_ENTITIES), 0 }; defer{ dealloc_array(std_allocator, entities.capacity); };
-
 	ImGui::init_ogl_glfw(app.window); defer{ ImGui::shutdown_ogl_glfw(); };
 
 	struct {
@@ -46,21 +44,30 @@ bool playground(App& app) {
 		SpriteRenderer draw = load_sprite_renderer(assets.draw_pipeline, MAX_DRAW_BATCH);
 		TexBuffer atlas = create_texture(TX2DARR, v4u32(256, 256, MAX_SPRITES, 1));
 		AnimationGrid<rtf32, 2> player_character_animation = load_animation_grid<rtf32, 2>(assets.test_character_anim_path, std_allocator);
+		RenderMesh rect = get_unit_rect_mesh();
 	} rendering;
 	rendering.atlas.conf_sampling({ Nearest, Nearest });
 	defer{
+		delete_mesh(rendering.rect); //TODO replace this manual delete of a global data with another way
 		dealloc_array(std_allocator, rendering.player_character_animation.keyframes);
 		unload(rendering.atlas);
 		unload(rendering.draw);
 		unmap(rendering.view_projection_matrix);
 	};
 
-	auto scene_texture = create_texture(TX2D, v4u32(app.pixel_dimensions, 1, 1)); defer{ unload(scene_texture); };
-	auto scene_texture_depth = create_texture(TX2D, v4u32(app.pixel_dimensions, 1, 1), DEPTH_COMPONENT32); defer{ unload(scene_texture_depth); };
-	auto scene_panel = create_framebuffer({
-		bind_to_fb(Color0Attc, scene_texture.conf_sampling({ Nearest, Nearest }), 0, 0),
-		bind_to_fb(DepthAttc, scene_texture_depth, 0, 0)
-	}); defer{ destroy_fb(scene_panel); };
+	struct {
+		TexBuffer scene_texture;
+		TexBuffer scene_texture_depth;
+		GLuint scene_panel;
+		ImDrawData* draw_data = null;
+		bool active = true;
+	} editor;
+	editor.scene_texture = create_texture(TX2D, v4u32(app.pixel_dimensions, 1, 1)); defer{ unload(editor.scene_texture); };
+	editor.scene_texture_depth = create_texture(TX2D, v4u32(app.pixel_dimensions, 1, 1), DEPTH_COMPONENT32); defer{ unload(editor.scene_texture_depth); };
+	editor.scene_panel = create_framebuffer({
+		bind_to_fb(Color0Attc, editor.scene_texture.conf_sampling({ Nearest, Nearest }), 0, 0),
+		bind_to_fb(DepthAttc, editor.scene_texture_depth, 0, 0)
+	}); defer{ destroy_fb(editor.scene_panel); };
 
 	struct {
 		PhysicsConfig config;
@@ -73,20 +80,21 @@ bool playground(App& app) {
 	physics.debug_draw.SetFlags(b2Draw::e_shapeBit);
 	physics.debug_draw.view_transform = &rendering.view_projection_matrix;
 
-	auto clock = Time::start();
-	auto rect = get_unit_rect_mesh(); defer{ delete_mesh(rect); }; //TODO replace this manual delete of a global data with another way
-	auto& player = entities.push(create_player(load_into(assets.test_character_spritesheet_path, rendering.atlas, v2u32(0), MAX_SPRITES - 1), rect, physics.world));
+	auto entities = List{ alloc_array<Entity>(std_allocator, MAX_ENTITIES), 0 }; defer{ dealloc_array(std_allocator, entities.capacity); };
+	auto& player = entities.push(create_player(load_into(assets.test_character_spritesheet_path, rendering.atlas, v2u32(0), MAX_SPRITES - 1), rendering.rect, physics.world));
 
 	printf("Finished loading scene with %lu entities\n", entities.current);
 	fflush(stdout);
 	wait_gpu();
 
+	auto clock = Time::start();
 	while (update(app, playground)) {
 		update(clock);
-		Input::poll(app.inputs);
 
 		{ // Player update
 			using namespace Input::Keyboard;
+			if (Input::get_key(LEFT_CONTROL) & Input::Down)
+				editor.active = !editor.active;
 			player.controls.input = controls::keyboard_plane(W, A, S, D);
 			player.sprite.uv_rect = controls::animate(player.controls, rendering.player_character_animation, clock.current);
 		}
@@ -97,52 +105,45 @@ bool playground(App& app) {
 		// although not sure how pertinent this is since slow rendering would probably be a bigger problem
 		while (Time::metronome(clock.current, physics.config.time_step, physics.time_point)) { // Physics tick
 			controls::move_top_down(player.body, player.controls.input, player.controls.speed, player.controls.accel * physics.config.time_step);
-			Entity* pbuff[entities.current];
-			auto to_sim = gather(mask<u64>(Entity::Dynbody), entities.allocated(), carray(pbuff, entities.current));
-			for (auto ent : to_sim)
-				override_body(ent->body, ent->transform.translation, ent->transform.rotation);
-			update_sim(physics.world, physics.config);
-			for (auto ent : to_sim)
-				override_transform(ent->body, ent->transform.translation, ent->transform.rotation);
+			simulate_entities(entities.allocated(), physics.world, physics.config);
 		}
 
 		// Scene
-		render(scene_panel, { v2u32(0), scene_texture.dimensions }, GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT, v4f32(v3f32(0.3), 1),
+		render(editor.active ? editor.scene_panel : 0, { v2u32(0), editor.scene_texture.dimensions }, GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT, v4f32(v3f32(0.3), 1),
 			[&]() {
 				rendering.view_projection_matrix.obj = view_project(project(rendering.camera), trs_2d(player.transform));
-				auto batch = rendering.draw.start_batch();
-				for (auto&& ent : entities.allocated()) if (has_all(ent.flags, mask<u64>(Entity::Sprite)))
-					batch.push(sprite_data(trs_2d(ent.transform), ent.sprite.uv_rect, ent.sprite.atlas_index, ent.draw_layer));
-				rendering.draw(rect, rendering.atlas, rendering.view_projection_matrix, batch.current);
+				draw_entities(entities.allocated(), rendering.rect, rendering.view_projection_matrix, rendering.atlas, rendering.draw);
 				if (physics.draw_debug) physics.world.DebugDraw();
 			}
 		);
 
 		// UI
-		auto imgui_draw_data = ImGui::RenderNewFrame(
-			[&]() {
-				ImGui::DockSpaceOverViewport(ImGui::GetMainViewport());
+		if (editor.active) {
+			editor.draw_data = ImGui::RenderNewFrame(
+				[&]() {
+					ImGui::DockSpaceOverViewport(ImGui::GetMainViewport());
 
-				ImGui::Begin("Scene");
-				ImGui::Image((ImTextureID)(u64)scene_texture.id, fit_to_area(ImGui::GetWindowContentSize(), scene_texture.dimensions), ImVec2(0, 1), ImVec2(1, 0));
-				ImGui::End();
+					ImGui::Begin("Scene");
+					ImGui::Image((ImTextureID)(u64)editor.scene_texture.id, fit_to_area(ImGui::GetWindowContentSize(), editor.scene_texture.dimensions), ImVec2(0, 1), ImVec2(1, 0));
+					ImGui::End();
 
-				ImGui::Begin("Configs");
-				physics_controls(physics.world, physics.config, physics.time_point, physics.draw_debug);
-				EditorWidget("Camera", rendering.camera);
-				ImGui::Text("Time = %f", clock.current);
-				ImGui::End();
+					ImGui::Begin("Configs");
+					physics_controls(physics.world, physics.config, physics.time_point, physics.draw_debug);
+					EditorWidget("Camera", rendering.camera);
+					ImGui::Text("Time = %f", clock.current);
+					ImGui::End();
 
-				ImGui::Begin("Entities");
-				ImGui::Text("Capacity : %u/%u", entities.current, entities.capacity.size());
-				EditorWidget("Allocated", entities.allocated());
-				if (entities.current < entities.capacity.size() && ImGui::Button("Allocate"))
-					entities.push({});
-				ImGui::End();
-			}
-		);
+					ImGui::Begin("Entities");
+					ImGui::Text("Capacity : %u/%u", entities.current, entities.capacity.size());
+					EditorWidget("Allocated", entities.allocated());
+					if (entities.current < entities.capacity.size() && ImGui::Button("Allocate"))
+						entities.push({});
+					ImGui::End();
+				}
+			);
 
-		render(0, { v2u32(0), app.pixel_dimensions }, GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT, v4f32(v3f32(0), 1), [&]() { ImGui::Draw(imgui_draw_data); });
+			render(0, { v2u32(0), app.pixel_dimensions }, GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT, v4f32(v3f32(0), 1), [&]() { ImGui::Draw(editor.draw_data); });
+		}
 	}
 	return true;
 }

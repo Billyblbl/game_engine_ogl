@@ -68,17 +68,19 @@ auto create_app(const cstr window_title, v2u32 window_dimensions, Scene start_sc
 	return App{ window, input_context, v2u32(display_w, display_h), start_scene };
 }
 
-bool init_ogl(App& app) {
+bool init_ogl(App& app, bool debug = true) {
 	printf("Initializing OpenGL\n");
 	GLenum err = glewInit();
 	if (GLEW_OK != err)
 		return fail_ret(glewGetErrorString(err), false);
 	printf("Status: Using GLEW %s\n", glewGetString(GLEW_VERSION));
 
-	glEnable(GL_DEBUG_OUTPUT);
-	glEnable(GL_DEBUG_OUTPUT_SYNCHRONOUS);
-	glDebugMessageCallback(ogl_debug_callback, null);
-	glDebugMessageControl(GL_DONT_CARE, GL_DONT_CARE, GL_DONT_CARE, 0, null, GL_TRUE);
+	if (debug) {
+		glEnable(GL_DEBUG_OUTPUT);
+		glEnable(GL_DEBUG_OUTPUT_SYNCHRONOUS);
+		glDebugMessageCallback(ogl_debug_callback, null);
+		glDebugMessageControl(GL_DONT_CARE, GL_DONT_CARE, GL_DONT_CARE, 0, null, GL_TRUE);
+	}
 
 	GL_GUARD(glViewport(0, 0, app.pixel_dimensions.x, app.pixel_dimensions.y));
 	GL_GUARD(glEnable(GL_CULL_FACE));
@@ -103,7 +105,7 @@ bool update(App& app, Scene target_scene) {
 		app.scene = null;
 		return false;
 	}
-
+	Input::poll(app.inputs);
 	return app.scene == target_scene;
 }
 

@@ -286,7 +286,7 @@ namespace Input {
 	};
 
 	ButtonState operator|=(ButtonState& a, ButtonState b) {
-		return a = (ButtonState)(a | b);
+		return (a = (ButtonState)(a | b));
 	}
 
 	inline ButtonState manual_update(ButtonState current, ButtonState polled) {
@@ -371,11 +371,11 @@ namespace Input {
 
 	struct Context {
 		GLFWwindow* window = nullptr;
-		ButtonState keyStates[Keyboard::COUNT];
-		ButtonState mouseButtonStates[Mouse::COUNT];
-		v2f64 mousePos = v2f64(0);
-		v2f64 mouseDelta = v2f64(0);
-		v2f64 scrollDelta = v2f64(0);
+		ButtonState key_states[Keyboard::COUNT];
+		ButtonState mouse_button_states[Mouse::COUNT];
+		v2f64 mouse_pos = v2f64(0);
+		v2f64 mouse_delta = v2f64(0);
+		v2f64 scroll_delta = v2f64(0);
 		struct {
 			Array<u8> indices;
 			Gamepad::State states[Gamepad::MaxGamepadCount];
@@ -385,19 +385,19 @@ namespace Input {
 	void poll(Context& context) {
 		//Reset states
 		for (auto key : Keyboard::All)
-			context.keyStates[Keyboard::index_of(key)] = ButtonState::None;
+			context.key_states[Keyboard::index_of(key)] = ButtonState::None;
 		for (auto i : u32xrange{ 0, Mouse::COUNT })
-			context.keyStates[i] = ButtonState::None;
-		context.mouseDelta = v2f64(0);
-		context.scrollDelta = v2f64(0);
+			context.key_states[i] = ButtonState::None;
+		context.mouse_delta = v2f64(0);
+		context.scroll_delta = v2f64(0);
 
 		glfwPollEvents();
 
 		// Read pressed button states
 		for (auto key : Keyboard::All) if (glfwGetKey(context.window, key) == Action::Press)
-			context.keyStates[Keyboard::index_of(key)] |= ButtonState::Pressed;
+			context.key_states[Keyboard::index_of(key)] |= ButtonState::Pressed;
 		for (auto i : u32xrange{ 0, Mouse::COUNT }) if (glfwGetMouseButton(context.window, i))
-			context.mouseButtonStates[i] |= ButtonState::Pressed;
+			context.mouse_button_states[i] |= ButtonState::Pressed;
 		for (auto id : context.gamepads.indices)
 			Gamepad::poll(id, context.gamepads.states[id]);
 	}
@@ -424,7 +424,7 @@ namespace Input {
 		return v3f32(composite(negH, posH), composite(negV, posV), composite(negD, posD));
 	}
 
-	inline ButtonState get_key(Keyboard::Key key) { return get_context().keyStates[Keyboard::index_of(key)]; }
+	inline ButtonState get_key(Keyboard::Key key) { return get_context().key_states[Keyboard::index_of(key)]; }
 
 	inline f32 key_axis(Keyboard::Key neg, Keyboard::Key pos) {
 		return composite(get_key(neg), get_key(pos));
@@ -453,11 +453,12 @@ namespace Input {
 		int mods
 	) {
 		if (action != Action::Press && action != Action::Release) return;
-		auto context = get_context();
-		if (action != Action::Press)
-			context.keyStates[Keyboard::index_of(key)] |= ButtonState::Down;
-		else if (action != Action::Release)
-			context.keyStates[Keyboard::index_of(key)] |= ButtonState::Up;
+		auto& context = get_context();
+		if (action == Action::Press) {
+			context.key_states[Keyboard::index_of(key)] |= ButtonState::Down;
+		} else if (action == Action::Release) {
+			context.key_states[Keyboard::index_of(key)] |= ButtonState::Up;
+		}
 	}
 
 	void context_mouse_button_callback(
@@ -467,22 +468,22 @@ namespace Input {
 		int mods
 	) {
 		if (action != Action::Press && action != Action::Release) return;
-		auto context = get_context();
+		auto& context = get_context();
 		if (action != Action::Press)
-			context.mouseButtonStates[button] |= ButtonState::Down;
+			context.mouse_button_states[button] |= ButtonState::Down;
 		else if (action != Action::Release)
-			context.mouseButtonStates[button] |= ButtonState::Up;
+			context.mouse_button_states[button] |= ButtonState::Up;
 	}
 
 	void context_mouse_pos_callback(GLFWwindow* window, double x, double y) {
-		auto context = get_context();
+		auto& context = get_context();
 		auto newPos = v2f64(x, y);
-		context.mouseDelta += newPos - context.mousePos;
-		context.mousePos = newPos;
+		context.mouse_delta += newPos - context.mouse_pos;
+		context.mouse_pos = newPos;
 	}
 
 	void context_scroll_callback(GLFWwindow* window, double x, double y) {
-		get_context().scrollDelta += glm::dvec2(x, y);
+		get_context().scroll_delta += glm::dvec2(x, y);
 	}
 
 	Array<u8>	get_gamepads() {
@@ -499,12 +500,12 @@ namespace Input {
 	Context& init_context(GLFWwindow* window) {
 		auto& newContext = get_context();
 		newContext.window = window;
-		memset(newContext.keyStates, 0, sizeof(newContext.keyStates));
-		memset(newContext.mouseButtonStates, 0, sizeof(newContext.mouseButtonStates));
+		memset(newContext.key_states, 0, sizeof(newContext.key_states));
+		memset(newContext.mouse_button_states, 0, sizeof(newContext.mouse_button_states));
 
 		glfwSetKeyCallback(window, (GLFWkeyfun)&context_key_callback);
 		glfwSetMouseButtonCallback(window, (GLFWmousebuttonfun)&context_mouse_button_callback);
-		glfwGetCursorPos(window, &newContext.mousePos.x, &newContext.mousePos.y);
+		glfwGetCursorPos(window, &newContext.mouse_pos.x, &newContext.mouse_pos.y);
 		glfwSetCursorPosCallback(window, (GLFWcursorposfun)&context_mouse_pos_callback);
 		glfwSetScrollCallback(window, (GLFWscrollfun)&context_scroll_callback);
 

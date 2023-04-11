@@ -77,10 +77,26 @@ auto create_player(SpriteCursor sprite, RenderMesh& mesh, b2World& world, f32 sp
 
 Array<Entity*> gather(u64 flags, Array<Entity> entities, Array<Entity*> buffer) {
 	auto list = List{ buffer, 0 };
-	for (auto&& ent : entities) if (has_all(ent.flags, flags)) {
+	for (auto& ent : entities) if (has_all(ent.flags, flags))
 		list.push(&ent);
-	}
 	return list.allocated();
+}
+
+void draw_entities(Array<Entity> entities, const RenderMesh& rect, MappedObject<m4x4f32> view_projection, const TexBuffer atlas, SpriteRenderer draw) {
+	auto batch = draw.start_batch();
+	for (auto&& ent : entities) if (has_all(ent.flags, mask<u64>(Entity::Sprite)))
+		batch.push(sprite_data(trs_2d(ent.transform), ent.sprite.uv_rect, ent.sprite.atlas_index, ent.draw_layer));
+	draw(rect, atlas, view_projection, batch.current);
+}
+
+void simulate_entities(Array<Entity> entities, b2World& world, const PhysicsConfig& config) {
+	Entity* pbuff[entities.size()];
+	auto to_sim = gather(mask<u64>(Entity::Dynbody), entities, carray(pbuff, entities.size()));
+	for (auto ent : to_sim)
+		override_body(ent->body, ent->transform.translation, ent->transform.rotation);
+	update_sim(world, config);
+	for (auto ent : to_sim)
+		override_transform(ent->body, ent->transform.translation, ent->transform.rotation);
 }
 
 #endif

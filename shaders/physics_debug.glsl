@@ -6,7 +6,8 @@
 #define pass in
 #endif
 
-layout(std140, binding = 0) uniform Scene { mat4 view_matrix; };
+layout(std140, binding = 0) uniform Camera { mat4 view_matrix; };
+layout(std140, binding = 1) uniform Object { vec4 color; };
 
 #ifdef VERTEX_SHADER
 
@@ -23,7 +24,7 @@ void main() {
 layout(location = 0) out vec4 pixel_color;
 
 void main() {
-	pixel_color = vec4(1, 0, 0, 1);
+	pixel_color = color;
 }
 
 #endif

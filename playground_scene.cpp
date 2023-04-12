@@ -63,7 +63,7 @@ bool playground(App& app) {
 		bool draw_debug = false;
 		b2PolygonShape shape;
 	} physics;
-	physics.shape.SetAsBox(.25f, .75f/2.f, b2Vec2(0, -.1f), 0);
+	physics.shape.SetAsBox(.25f, .75f / 2.f, b2Vec2(0, -.1f), 0);
 	physics.world.SetDebugDraw(&physics.debug_draw);
 	physics.debug_draw.SetFlags(b2Draw::e_shapeBit);
 	physics.debug_draw.view_transform = &rendering.view_projection_matrix;
@@ -82,6 +82,7 @@ bool playground(App& app) {
 		bind_to_fb(DepthAttc, editor.scene_texture_depth, 0, 0)
 	}); defer{ destroy_fb(editor.scene_panel); };
 
+	auto clock = Time::start();
 	auto entities = List{ alloc_array<Entity>(std_allocator, MAX_ENTITIES), 0 }; defer{ dealloc_array(std_allocator, entities.capacity); };
 	auto& player = entities.push(create_player(load_into(assets.test_character_spritesheet_path, rendering.atlas, v2u32(0), 0), rendering.rect, physics.world, physics.shape));
 
@@ -89,7 +90,6 @@ bool playground(App& app) {
 	fflush(stdout);
 	wait_gpu();
 
-	auto clock = Time::start();
 	while (update(app, playground)) {
 		update(clock);
 
@@ -129,18 +129,13 @@ bool playground(App& app) {
 					ImGui::Image((ImTextureID)(u64)editor.scene_texture.id, fit_to_area(ImGui::GetWindowContentSize(), editor.scene_texture.dimensions), ImVec2(0, 1), ImVec2(1, 0));
 					ImGui::End();
 
-					ImGui::Begin("Configs");
-					physics_controls(physics.world, physics.config, physics.time_point, physics.draw_debug, physics.debug_draw.wireframe);
+					ImGui::Begin("Misc");
 					EditorWidget("Camera", rendering.camera);
 					ImGui::Text("Time = %f", clock.current);
 					ImGui::End();
 
-					ImGui::Begin("Entities");
-					ImGui::Text("Capacity : %u/%u", entities.current, entities.capacity.size());
-					EditorWidget("Allocated", entities.allocated());
-					if (entities.current < entities.capacity.size() && ImGui::Button("Allocate"))
-						entities.push({});
-					ImGui::End();
+					physics_controls("Physics", physics.world, physics.config, physics.time_point, physics.draw_debug, physics.debug_draw.wireframe);
+					EditorWindow("Entities", entities);
 				}
 			);
 

@@ -51,23 +51,22 @@ bool EditorWidget(const cstr label, PhysicsConfig& config) {
 }
 
 bool physics_controls(
+	const cstr label,
 	b2World& world,
 	PhysicsConfig& config,
 	f32 time_point,
 	bool& draw_debug,
 	bool& wireframe
 ) {
+	ImGui::Begin(label); defer {ImGui::End();};
 	auto changed = false;
-	if (ImGui::TreeNode("Physics")) {
-		auto gravity = b2d_to_glm(world.GetGravity());
-		if (changed |= EditorWidget("Gravity", gravity))
-			world.SetGravity(glm_to_b2d(gravity));
-		changed |= EditorWidget("Config", config);
-		EditorWidget("Debug draw", draw_debug);
-		EditorWidget("Wireframe", wireframe);
-		ImGui::Text("time point = %f", time_point);
-		ImGui::TreePop();
-	}
+	auto gravity = b2d_to_glm(world.GetGravity());
+	if (changed |= EditorWidget("Gravity", gravity))
+		world.SetGravity(glm_to_b2d(gravity));
+	changed |= EditorWidget("Config", config);
+	changed |= EditorWidget("Debug draw", draw_debug);
+	changed |= EditorWidget("Wireframe", wireframe);
+	ImGui::Text("time point = %f", time_point);
 	return changed;
 }
 
@@ -174,6 +173,14 @@ bool EditorWidget(const cstr label, b2Fixture* fixture) {
 			auto changed = EditorWidget("Restitution Threshold", restitution_threshold);
 			if (changed)
 				fixture->SetRestitutionThreshold(restitution_threshold);
+			fixture_changed |= changed;
+		}
+
+		{
+			auto sensor = fixture->IsSensor();
+			auto changed = EditorWidget("Sensor", sensor);
+			if (changed)
+				fixture->SetSensor(sensor);
 			fixture_changed |= changed;
 		}
 

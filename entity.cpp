@@ -11,7 +11,7 @@
 #include <sprite.cpp>
 #include <top_down_controls.cpp>
 
-#define MAX_ENTITIES 30
+#define MAX_ENTITIES 1000
 #define MAX_DRAW_BATCH MAX_ENTITIES
 
 struct Entity {
@@ -112,4 +112,15 @@ void simulate_entities(Array<Entity> entities, b2World& world, const PhysicsConf
 		override_transform(ent->body, ent->transform.translation, ent->transform.rotation);
 }
 
+bool EditorWindow(const cstr label, List<Entity>& entities) {
+	ImGui::Begin(label); defer {ImGui::End();};
+	bool changed = false;
+	ImGui::Text("Capacity : %u/%u", entities.current, entities.capacity.size());
+	changed |= EditorWidget("Allocated", entities.allocated());
+	if (entities.current < entities.capacity.size() && ImGui::Button("Allocate")) {
+		entities.push({});
+		return true;
+	}
+	return changed;
+}
 #endif

@@ -75,11 +75,6 @@ SpriteCursor load_into(const cstr path, TexBuffer& texture, v2u32 upper_left = v
 		return {};
 }
 
-//Rectangle
-// rtf32 fit(v2u32 dimensions, v2u32 storage, Array<rtf32> used) {
-// 	//TODO Implement
-// }
-
 using AtlasPage = List<rtu32>;
 using Atlas = Array<AtlasPage>;
 

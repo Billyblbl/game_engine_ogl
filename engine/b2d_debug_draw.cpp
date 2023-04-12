@@ -23,10 +23,11 @@ public:
 		);
 		mesh.element_count = vertexCount;
 		sync(*view_transform);
+		sync(color_ubo, v4f32(color.r, color.g, color.b, color.a));
 
 		if (wireframe)
 			GL_GUARD(glPolygonMode(GL_FRONT_AND_BACK, GL_LINE));
-		draw_pipeline(mesh, 1, { bind_to(*view_transform, 0) });
+		draw_pipeline(mesh, 1, { bind_to(*view_transform, 0), bind_to(color_ubo, 1) });
 		if (wireframe)
 			GL_GUARD(glPolygonMode(GL_FRONT_AND_BACK, GL_FILL));
 
@@ -41,9 +42,15 @@ public:
 	void DrawTransform(const b2Transform& xf) {}
 	void DrawPoint(const b2Vec2& p, f32 size, const b2Color& color) {};
 
+	MappedObject<v4f32> color_ubo = map_object(v4f32(1, 0, 0, 1));
 	MappedObject<m4x4f32>* view_transform = null;
 	Pipeline draw_pipeline = load_pipeline("./shaders/physics_debug.glsl");
 	bool wireframe = true;
+
+	~B2dDebugDraw() {
+		destroy_pipeline(draw_pipeline);
+		unmap(color_ubo);
+	}
 };
 
 #endif

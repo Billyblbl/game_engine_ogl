@@ -56,6 +56,19 @@ bool playground(App& app) {
 	};
 
 	struct {
+		PhysicsConfig config;
+		b2World world = b2World(b2Vec2(0.f, -9.f));
+		B2dDebugDraw debug_draw;
+		f32 time_point = 0.f;
+		bool draw_debug = false;
+		b2PolygonShape shape;
+	} physics;
+	physics.shape.SetAsBox(.25f, .75f/2.f, b2Vec2(0, -.1f), 0);
+	physics.world.SetDebugDraw(&physics.debug_draw);
+	physics.debug_draw.SetFlags(b2Draw::e_shapeBit);
+	physics.debug_draw.view_transform = &rendering.view_projection_matrix;
+
+	struct {
 		TexBuffer scene_texture;
 		TexBuffer scene_texture_depth;
 		GLuint scene_panel;
@@ -65,23 +78,12 @@ bool playground(App& app) {
 	editor.scene_texture = create_texture(TX2D, v4u32(app.pixel_dimensions, 1, 1)); defer{ unload(editor.scene_texture); };
 	editor.scene_texture_depth = create_texture(TX2D, v4u32(app.pixel_dimensions, 1, 1), DEPTH_COMPONENT32); defer{ unload(editor.scene_texture_depth); };
 	editor.scene_panel = create_framebuffer({
-		bind_to_fb(Color0Attc, editor.scene_texture.conf_sampling({ Nearest, Nearest }), 0, 0),
+		bind_to_fb(Color0Attc, editor.scene_texture, 0, 0),
 		bind_to_fb(DepthAttc, editor.scene_texture_depth, 0, 0)
 	}); defer{ destroy_fb(editor.scene_panel); };
 
-	struct {
-		PhysicsConfig config;
-		b2World world = b2World(b2Vec2(0.f, -9.f));
-		B2dDebugDraw debug_draw;
-		f32 time_point = 0.f;
-		bool draw_debug = false;
-	} physics;
-	physics.world.SetDebugDraw(&physics.debug_draw);
-	physics.debug_draw.SetFlags(b2Draw::e_shapeBit);
-	physics.debug_draw.view_transform = &rendering.view_projection_matrix;
-
 	auto entities = List{ alloc_array<Entity>(std_allocator, MAX_ENTITIES), 0 }; defer{ dealloc_array(std_allocator, entities.capacity); };
-	auto& player = entities.push(create_player(load_into(assets.test_character_spritesheet_path, rendering.atlas, v2u32(0), MAX_SPRITES - 1), rendering.rect, physics.world));
+	auto& player = entities.push(create_player(load_into(assets.test_character_spritesheet_path, rendering.atlas, v2u32(0), 0), rendering.rect, physics.world, physics.shape));
 
 	printf("Finished loading scene with %lu entities\n", entities.current);
 	fflush(stdout);
@@ -128,7 +130,7 @@ bool playground(App& app) {
 					ImGui::End();
 
 					ImGui::Begin("Configs");
-					physics_controls(physics.world, physics.config, physics.time_point, physics.draw_debug);
+					physics_controls(physics.world, physics.config, physics.time_point, physics.draw_debug, physics.debug_draw.wireframe);
 					EditorWidget("Camera", rendering.camera);
 					ImGui::Text("Time = %f", clock.current);
 					ImGui::End();

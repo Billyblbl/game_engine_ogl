@@ -19,7 +19,7 @@ struct Entity {
 	u64 flags = 0;
 	Transform2D transform;
 	b2Body* body;
-	//TODO add shape for physics
+	b2Fixture* collider;
 	RenderMesh* mesh;
 	SpriteCursor sprite;
 	f32 draw_layer;
@@ -35,6 +35,8 @@ bool EditorWidget(const cstr label, Entity& entity) {
 			changed |= EditorWidget("transform", entity.transform);
 		if (has_one(entity.flags, mask<u64>(Entity::Dynbody, Entity::Collision)))
 			changed |= EditorWidget("body", entity.body);
+		if (has_one(entity.flags, mask<u64>(Entity::Collision)))
+			changed |= EditorWidget("collider", entity.collider);
 		if (has_one(entity.flags, mask<u64>(Entity::Sprite, Entity::Collision)))
 			ImGui::Text("TODO : Widget for mesh reference");
 		if (has_one(entity.flags, mask<u64>(Entity::Sprite))) {
@@ -64,10 +66,21 @@ auto& add_dynbody(Entity& ent, b2World& world) {
 	return ent;
 }
 
-auto create_player(SpriteCursor sprite, RenderMesh& mesh, b2World& world, f32 speed = 10.f, f32 accel = 100.f) {
+auto& add_collider(Entity& ent, b2Shape& shape) {
+	if (ent.body == null)
+		return fail_ret("Can't add collider without body", ent);
+	ent.flags |= mask<u64>(Entity::Collision);
+	b2FixtureDef def;
+	def.shape = &shape;
+	ent.collider = ent.body->CreateFixture(&def);
+	return ent;
+}
+
+auto create_player(SpriteCursor sprite, RenderMesh& mesh, b2World& world, b2Shape& shape, f32 speed = 10.f, f32 accel = 100.f) {
 	Entity ent = { mask<u64>(Entity::Player) };
 	add_sprite(ent, sprite, mesh);
 	add_dynbody(ent, world);
+	add_collider(ent, shape);
 	ent.name = "Player";
 	ent.controls.accel = accel;
 	ent.controls.speed = speed;

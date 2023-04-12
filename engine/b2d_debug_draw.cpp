@@ -23,7 +23,13 @@ public:
 		);
 		mesh.element_count = vertexCount;
 		sync(*view_transform);
+
+		if (wireframe)
+			GL_GUARD(glPolygonMode(GL_FRONT_AND_BACK, GL_LINE));
 		draw_pipeline(mesh, 1, { bind_to(*view_transform, 0) });
+		if (wireframe)
+			GL_GUARD(glPolygonMode(GL_FRONT_AND_BACK, GL_FILL));
+
 		wait_gpu();
 		delete_mesh(mesh);
 	}
@@ -36,10 +42,8 @@ public:
 	void DrawPoint(const b2Vec2& p, f32 size, const b2Color& color) {};
 
 	MappedObject<m4x4f32>* view_transform = null;
-	Pipeline draw_pipeline = create_render_pipeline(
-		load_shader("./shaders/simpleDraw.vert", GL_VERTEX_SHADER),
-		load_shader("./shaders/simpleDraw.frag", GL_FRAGMENT_SHADER)
-	);
+	Pipeline draw_pipeline = load_pipeline("./shaders/physics_debug.glsl");
+	bool wireframe = true;
 };
 
 #endif

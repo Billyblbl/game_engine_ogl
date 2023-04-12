@@ -54,7 +54,8 @@ bool physics_controls(
 	b2World& world,
 	PhysicsConfig& config,
 	f32 time_point,
-	bool& draw_debug
+	bool& draw_debug,
+	bool& wireframe
 ) {
 	auto changed = false;
 	if (ImGui::TreeNode("Physics")) {
@@ -63,6 +64,7 @@ bool physics_controls(
 			world.SetGravity(glm_to_b2d(gravity));
 		changed |= EditorWidget("Config", config);
 		EditorWidget("Debug draw", draw_debug);
+		EditorWidget("Wireframe", wireframe);
 		ImGui::Text("time point = %f", time_point);
 		ImGui::TreePop();
 	}
@@ -117,6 +119,67 @@ bool EditorWidget(const cstr label, b2Body* body) {
 	}
 
 	return body_changed;
+}
+
+bool EditorWidget(const cstr label, b2PolygonShape* shape) {
+	if (shape == null) return false;
+	bool changed = false;
+
+	ImGui::Text(label);
+	changed |= EditorWidget("Vertices", cast<v2f32>(carray(shape->m_vertices, shape->m_count)));
+	changed |= EditorWidget("Normals", cast<v2f32>(carray(shape->m_normals, shape->m_count)));
+	ImGui::Text("Immutable count: would break some caching in b2d");
+	return changed;
+}
+
+bool EditorWidget(const cstr label, b2Fixture* fixture) {
+	if (fixture == null) return false;
+	bool fixture_changed = false;
+	if (ImGui::TreeNode(label)) {
+		static const string types[] = { "Circle", "Edge", "Polygon", "Chain" };
+
+		ImGui::Text("Type : %s", types[fixture->GetType()].data());
+		if (fixture->GetType() == b2Shape::e_polygon) {
+			fixture_changed |= EditorWidget("Shape", (b2PolygonShape*)fixture->GetShape());
+		} else {
+			ImGui::Text("TODO  : Shape manipulation");
+		}
+
+		{
+			auto density = fixture->GetDensity();
+			auto changed = EditorWidget("Density", density);
+			if (changed)
+				fixture->SetDensity(density);
+			fixture_changed |= changed;
+		}
+
+		{
+			auto friction = fixture->GetFriction();
+			auto changed = EditorWidget("Friction", friction);
+			if (changed)
+				fixture->SetFriction(friction);
+			fixture_changed |= changed;
+		}
+
+		{
+			auto restitution = fixture->GetRestitution();
+			auto changed = EditorWidget("Restitution", restitution);
+			if (changed)
+				fixture->SetRestitution(restitution);
+			fixture_changed |= changed;
+		}
+
+		{
+			auto restitution_threshold = fixture->GetRestitutionThreshold();
+			auto changed = EditorWidget("Restitution Threshold", restitution_threshold);
+			if (changed)
+				fixture->SetRestitutionThreshold(restitution_threshold);
+			fixture_changed |= changed;
+		}
+
+		ImGui::TreePop();
+	}
+	return fixture_changed;
 }
 
 #endif

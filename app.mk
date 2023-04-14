@@ -7,6 +7,7 @@
 ## GLFW
 ## GLEW
 ## BOX2D
+## OPENAL
 ## BLBLSTD
 ##
 ##
@@ -32,6 +33,10 @@ APP_SRC += engine/transform.cpp
 APP_SRC += engine/vertex.cpp
 APP_SRC += engine/sprite.cpp
 APP_SRC += engine/animation.cpp
+APP_SRC += engine/alutils.cpp
+APP_SRC += engine/audio.cpp
+APP_SRC += engine/audio_source.cpp
+APP_SRC += engine/audio_buffer.cpp
 APP_SRC += playground_scene.cpp
 APP_SRC += top_down_controls.cpp
 APP_SRC += entity.cpp
@@ -39,6 +44,7 @@ APP_SRC += entity.cpp
 INC += $(IMGUI)
 INC += $(GLM)
 INC += $(STB)
+INC += $(OPENAL)
 INC += $(IMGUI)/backends
 INC += $(GLFW)/include
 INC += $(GLEW)/include
@@ -53,6 +59,7 @@ LIB += $(GLEW)/lib
 LDFLAGS += -lglfw3
 LDFLAGS += -lglew32
 LDFLAGS += -lopengl32
+LDFLAGS += -lopenal
 LDFLAGS += -lbox2d
 
 APP_NAME=test_app

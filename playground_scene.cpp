@@ -22,6 +22,8 @@
 #include <entity.cpp>
 #include <sprite.cpp>
 
+#include <audio.cpp>
+
 #define MAX_SPRITES MAX_ENTITIES
 
 ImVec2 fit_to_area(ImVec2 area, v2f32 dimensions) {
@@ -33,10 +35,22 @@ const struct {
 	cstrp test_character_spritesheet_path = "test_character.png";
 	cstrp test_character_anim_path = "test_character.anim";
 	cstrp draw_pipeline = "./shaders/sprite.glsl";
+	cstrp test_sound = "./audio/file_example_OOG_1MG.ogg";
 } assets;
 
 bool playground(App& app) {
 	ImGui::init_ogl_glfw(app.window); defer{ ImGui::shutdown_ogl_glfw(); };
+
+	struct {
+		AudioData data = init_audio();
+		AudioBuffer buffer = create_audio_buffer();
+	} audio;
+	defer{
+		destroy(audio.buffer);
+		deinit_audio(audio.data);
+	};
+	auto clip = load_clip_file(assets.test_sound); defer{ unload_clip(clip); };
+	write_audio_clip(audio.buffer, clip);
 
 	struct {
 		OrthoCamera camera = { v3f32(16.f, 9.f, 1000.f) / 2.f, v3f32(0) };
@@ -86,6 +100,9 @@ bool playground(App& app) {
 	auto entities = List{ alloc_array<Entity>(std_allocator, MAX_ENTITIES), 0 }; defer{ dealloc_array(std_allocator, entities.capacity); };
 	auto& player = entities.push(create_player(load_into(assets.test_character_spritesheet_path, rendering.atlas, v2u32(0), 0), rendering.rect, physics.world, physics.shape));
 
+	// Audio test
+	add_sound(player, create_audio_source().set<BUFFER>(audio.buffer.id)); defer{ destroy(player.audio_source); };
+
 	printf("Finished loading scene with %lu entities\n", entities.current);
 	fflush(stdout);
 	wait_gpu();
@@ -93,13 +110,27 @@ bool playground(App& app) {
 	while (update(app, playground)) {
 		update(clock);
 
-		{ // Player update
+		{
 			using namespace Input::Keyboard;
-			if (Input::get_key(LEFT_CONTROL) & Input::Down)
+			if (Input::get_key(K_LEFT_CONTROL) & Input::Down)
 				editor.active = !editor.active;
-			player.controls.input = controls::keyboard_plane(W, A, S, D);
+
+			// Audio test controls
+			if (Input::get_key(K_SPACE) & Input::Up) {
+				if (player.audio_source.get<SOURCE_STATE>() == PLAYING)
+					player.audio_source.pause();
+				else
+					player.audio_source.play();
+			}
+			if (Input::get_key(K_R) & Input::Up) {
+				player.audio_source.rewind();
+			}
+
+			player.controls.input = controls::keyboard_plane(K_W, K_A, K_S, K_D);
 			player.sprite.uv_rect = controls::animate(player.controls, rendering.player_character_animation, clock.current);
 		}
+
+		update_audio_sources(entities.allocated());
 
 		// Using a 'while' here instead of an 'if' makes sure that if a frame was slow the physics simulation can catch up
 		// by doing multiple steps in 1 frame
@@ -125,14 +156,23 @@ bool playground(App& app) {
 				[&]() {
 					ImGui::DockSpaceOverViewport(ImGui::GetMainViewport());
 
-					ImGui::Begin("Scene");
-					ImGui::Image((ImTextureID)(u64)editor.scene_texture.id, fit_to_area(ImGui::GetWindowContentSize(), editor.scene_texture.dimensions), ImVec2(0, 1), ImVec2(1, 0));
-					ImGui::End();
+					{
+						ImGui::Begin("Scene"); defer{ ImGui::End(); };
+						ImGui::Image((ImTextureID)(u64)editor.scene_texture.id, fit_to_area(ImGui::GetWindowContentSize(), editor.scene_texture.dimensions), ImVec2(0, 1), ImVec2(1, 0));
+					}
 
-					ImGui::Begin("Misc");
-					EditorWidget("Camera", rendering.camera);
-					ImGui::Text("Time = %f", clock.current);
-					ImGui::End();
+					{
+						ImGui::Begin("Misc"); defer{ ImGui::End(); };
+						EditorWidget("Camera", rendering.camera);
+						ImGui::Text("Time = %f", clock.current);
+					}
+
+					{
+						ImGui::Begin("Audio"); defer { ImGui::End(); };
+						ImGui::Text("Device : %p", audio.data.device);
+						ImGui::Text("%u", audio.data.extensions.size()); ImGui::SameLine(); EditorWidget("Extensions", audio.data.extensions);
+						ALListener::EditorWidget("Listener");
+					}
 
 					physics_controls("Physics", physics.world, physics.config, physics.time_point, physics.draw_debug, physics.debug_draw.wireframe);
 					EditorWindow("Entities", entities);

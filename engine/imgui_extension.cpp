@@ -151,6 +151,13 @@ bool EditorWidget(const cstr label, u8& data) {
 	return changed;
 }
 
+bool EditorWidget(const cstr label, u64& data) {
+	u32 tmp = data;
+	auto changed = EditorWidget(label, tmp);
+	if (changed) data = tmp;
+	return changed;
+}
+
 bool EditorWidget(const cstr label, v2u32& data) {
 	return EditorWidget(label, (v2i32&)data);
 }
@@ -173,6 +180,11 @@ bool EditorWidget(const cstr label, rtf32& data) {
 	changed |= EditorWidget("Min Corner", data.min);
 	changed |= EditorWidget("Max Corner", data.max);
 	return changed;
+}
+
+bool EditorWidget(const cstr label, string data) {
+	ImGui::Text(label); ImGui::SameLine(); ImGui::Text(data.data());
+	return false;
 }
 
 template <typename T, typename U = int> struct has_name: std::false_type {};

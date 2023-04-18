@@ -33,11 +33,11 @@ tuple<AnimationGridHeader, Buffer, v4u32, usize> read_animation_grid(FILE* file,
 	return { header, data, dimensions, read };
 }
 
-template<typename Keyframe, i32 D> AnimationGrid<Keyframe, D> parse_animation_grid(FILE* file, Alloc allocator) {
-	using GridType = AnimationGrid<Keyframe, D>;
+template<typename K, i32 D> AnimationGrid<K, D> parse_animation_grid(FILE* file, Alloc allocator) {
+	using GridType = AnimationGrid<K, D>;
 	auto [hd, buffer, dims, _] = read_animation_grid(file, allocator);
-	if (expect(hd.keyframe_size == sizeof(Keyframe)) && expect(hd.dimensions_count == D))
-		return { cast<Keyframe>(buffer), dims };
+	if (expect(hd.keyframe_size == sizeof(K)) && expect(hd.dimensions_count == D))
+		return { cast<K>(buffer), dims };
 	else
 		return fail_ret("Invalid animation format", GridType{});
 }

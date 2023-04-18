@@ -70,72 +70,72 @@ using m4x4f64 = glm::f64mat4x4;
 using qf32 = glm::fquat;
 using qf64 = glm::dquat;
 
-template<typename P> struct polytope {
+template<typename P> struct reg_polytope {
 	P min;
 	P max;
-	template<typename OP> operator polytope<OP>() { return { OP(min), OP(max) }; }
+	template<typename OP> operator reg_polytope<OP>() { return { OP(min), OP(max) }; }
 };
 
-template<typename P> auto width(polytope<P> p) { return p.max.x - p.min.x; }
-template<typename P> auto height(polytope<P> p) { return p.max.y - p.min.y; }
-template<typename P> auto depth(polytope<P> p) { return p.max.z - p.min.z; }
-template<typename P> auto dim_4(polytope<P> p) { return p.max.w - p.min.w; }
+template<typename P> auto width(reg_polytope<P> p) { return p.max.x - p.min.x; }
+template<typename P> auto height(reg_polytope<P> p) { return p.max.y - p.min.y; }
+template<typename P> auto depth(reg_polytope<P> p) { return p.max.z - p.min.z; }
+template<typename P> auto dim_4(reg_polytope<P> p) { return p.max.w - p.min.w; }
 
-template<typename P> P dims_p1(polytope<P> p) { return P(width(p)); }
-template<typename P> P dims_p2(polytope<P> p) { return P(width(p), height(p)); }
-template<typename P> P dims_p3(polytope<P> p) { return P(width(p), height(p), depth(p)); }
-template<typename P> P dims_p4(polytope<P> p) { return P(width(p), height(p), depth(p), dim_4(p));  }
+template<typename P> P dims_p1(reg_polytope<P> p) { return P(width(p)); }
+template<typename P> P dims_p2(reg_polytope<P> p) { return P(width(p), height(p)); }
+template<typename P> P dims_p3(reg_polytope<P> p) { return P(width(p), height(p), depth(p)); }
+template<typename P> P dims_p4(reg_polytope<P> p) { return P(width(p), height(p), depth(p), dim_4(p));  }
 
-using sgf32 = polytope<v1f32>;
-using sgf64 = polytope<v1f64>;
+using sgf32 = reg_polytope<v1f32>;
+using sgf64 = reg_polytope<v1f64>;
 
-using sgu8 = polytope<v1u8>;
-using sgu16 = polytope<v1u16>;
-using sgu32 = polytope<v1u32>;
-using sgu64 = polytope<v1u64>;
+using sgu8 = reg_polytope<v1u8>;
+using sgu16 = reg_polytope<v1u16>;
+using sgu32 = reg_polytope<v1u32>;
+using sgu64 = reg_polytope<v1u64>;
 
-using sgi8 = polytope<v1i8>;
-using sgi16 = polytope<v1i16>;
-using sgi32 = polytope<v1i32>;
-using sgi64 = polytope<v1i64>;
+using sgi8 = reg_polytope<v1i8>;
+using sgi16 = reg_polytope<v1i16>;
+using sgi32 = reg_polytope<v1i32>;
+using sgi64 = reg_polytope<v1i64>;
 
-using rtf32 = polytope<v2f32>;
-using rtf64 = polytope<v2f64>;
+using rtf32 = reg_polytope<v2f32>;
+using rtf64 = reg_polytope<v2f64>;
 
-using rtu8 = polytope<v2u8>;
-using rtu16 = polytope<v2u16>;
-using rtu32 = polytope<v2u32>;
-using rtu64 = polytope<v2u64>;
+using rtu8 = reg_polytope<v2u8>;
+using rtu16 = reg_polytope<v2u16>;
+using rtu32 = reg_polytope<v2u32>;
+using rtu64 = reg_polytope<v2u64>;
 
-using rti8 = polytope<v2i8>;
-using rti16 = polytope<v2i16>;
-using rti32 = polytope<v2i32>;
-using rti64 = polytope<v2i64>;
+using rti8 = reg_polytope<v2i8>;
+using rti16 = reg_polytope<v2i16>;
+using rti32 = reg_polytope<v2i32>;
+using rti64 = reg_polytope<v2i64>;
 
-using bxf32 = polytope<v3f32>;
-using bxf64 = polytope<v3f64>;
+using bxf32 = reg_polytope<v3f32>;
+using bxf64 = reg_polytope<v3f64>;
 
-using bxu8 = polytope<v3u8>;
-using bxu16 = polytope<v3u16>;
-using bxu32 = polytope<v3u32>;
-using bxu64 = polytope<v3u64>;
+using bxu8 = reg_polytope<v3u8>;
+using bxu16 = reg_polytope<v3u16>;
+using bxu32 = reg_polytope<v3u32>;
+using bxu64 = reg_polytope<v3u64>;
 
-using bxi8 = polytope<v3i8>;
-using bxi16 = polytope<v3i16>;
-using bxi32 = polytope<v3i32>;
-using bxi64 = polytope<v3i64>;
+using bxi8 = reg_polytope<v3i8>;
+using bxi16 = reg_polytope<v3i16>;
+using bxi32 = reg_polytope<v3i32>;
+using bxi64 = reg_polytope<v3i64>;
 
-using tsf32 = polytope<v4f32>;
-using tsf64 = polytope<v4f64>;
+using tsf32 = reg_polytope<v4f32>;
+using tsf64 = reg_polytope<v4f64>;
 
-using tsu8 = polytope<v4u8>;
-using tsu16 = polytope<v4u16>;
-using tsu32 = polytope<v4u32>;
-using tsu64 = polytope<v4u64>;
+using tsu8 = reg_polytope<v4u8>;
+using tsu16 = reg_polytope<v4u16>;
+using tsu32 = reg_polytope<v4u32>;
+using tsu64 = reg_polytope<v4u64>;
 
-using tsi8 = polytope<v4i8>;
-using tsi16 = polytope<v4i16>;
-using tsi32 = polytope<v4i32>;
-using tsi64 = polytope<v4i64>;
+using tsi8 = reg_polytope<v4i8>;
+using tsi16 = reg_polytope<v4i16>;
+using tsi32 = reg_polytope<v4i32>;
+using tsi64 = reg_polytope<v4i64>;
 
 #endif

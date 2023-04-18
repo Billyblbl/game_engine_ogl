@@ -59,6 +59,7 @@ namespace controls {
 		auto target_velocity = input * speed;
 		auto target_accel = target_velocity - velocity;
 		auto effective_accel = safe_normalise(target_accel) * min(accel, glm::length(target_accel));
+		body->SetAwake(true);
 		body->SetLinearVelocity(glm_to_b2d(velocity + effective_accel));
 	}
 

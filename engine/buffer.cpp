@@ -6,13 +6,13 @@
 
 template<typename T> struct MappedObject {
 	GLuint id;
-	T& obj;
+	T* obj;
 };
 
 template<typename T> MappedObject<T> map_object(const T& obj) {
 	T* ptr = nullptr;
 	auto id = create_buffer_single(obj, &ptr);
-	return MappedObject { id, *ptr };
+	return MappedObject { id, ptr };
 }
 
 template<typename T> struct MappedBuffer {
@@ -52,13 +52,13 @@ template<typename T> Array<T> sync(MappedBuffer<T> buffer) {
 
 template<typename T> T& sync(MappedObject<T> obj) {
 	flush_mapped_buffer(obj.id, {0, sizeof(T)});
-	return obj.obj;
+	return *obj.obj;
 }
 
 template<typename T> T& sync(MappedObject<T> obj, const T& new_value) {
-	obj.obj = new_value;
+	*obj.obj = new_value;
 	flush_mapped_buffer(obj.id, {0, sizeof(T)});
-	return obj.obj;
+	return *obj.obj;
 }
 
 #endif

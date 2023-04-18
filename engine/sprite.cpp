@@ -43,15 +43,17 @@ constexpr SpriteCursor full_texture(u32 index) { return { { v2f32(0), v2f32(1) }
 tuple<SrcFormat, v2u32, Array<u8>> load_image(const cstr path) {
 	int width, height, channels = 0;
 	auto* img = stbi_load(path, &width, &height, &channels, 0);
-	printf("Loading texture %s:%ix%i-%i\n", path, width, height, channels);
+	printf("Loading image %s:%ix%i-%i\n", path, width, height, channels);
 	if (img == null)
 		return fail_ret(stbi_failure_reason(), tuple(SrcFormat{}, v2u32(0), Array<u8>{}));
 	return tuple(Formats<u8>[channels], v2u32(width, height), carray((u8*)img, width * height * channels));
 }
 
-TexBuffer load_texture(const cstr path, GPUFormat target_format = RGBA32F) {
+TexBuffer load_texture(const cstr path, GPUFormat target_format = RGBA32F, TexType type = TX2D) {
 	auto [format, dimensions, data] = load_image(path); defer{ stbi_image_free(data.data()); };
-	return create_texture(data, format, TX2D, v4u32(dimensions, 1, 1), target_format);
+	if (dimensions.x * dimensions.y == 0)
+		return fail_ret("can't create texture without image", null_tex);
+	return create_texture(data, format, type, v4u32(dimensions, 1, 1), target_format);
 }
 
 inline rtf32 ratio(rtu32 area, v2u32 dimensions) { return { v2f32(area.min) / v2f32(dimensions), v2f32(area.max) / v2f32(dimensions) }; }

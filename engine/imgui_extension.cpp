@@ -104,8 +104,17 @@ namespace ImGui {
 		return ImGui::GetDrawData();
 	}
 
-	inline v2f32 to_glm(ImVec2 in) { return {in.x, in.y}; }
-	inline ImVec2 from_glm(v2f32 in) { return {in.x, in.y}; }
+	inline v2f32 to_glm(ImVec2 in) { return { in.x, in.y }; }
+	inline ImVec2 from_glm(v2f32 in) { return { in.x, in.y }; }
+
+	inline ImVec2 fit_to_window(ImVec2 dimensions) {
+		auto window = GetWindowContentSize();
+		auto ratios = ImVec2(window.x / dimensions.x, window.y / dimensions.y);
+		return ImVec2(
+			dimensions.x * min(ratios.x, ratios.y),
+			dimensions.y * min(ratios.x, ratios.y)
+		);
+	}
 }
 
 bool EditorWidget(const cstr label, f32& data) {
@@ -187,8 +196,8 @@ bool EditorWidget(const cstr label, string data) {
 	return false;
 }
 
-template <typename T, typename U = int> struct has_name: std::false_type {};
-template <typename T> struct has_name<T, decltype((void)T::name, 0)>: std::true_type {};
+template <typename T, typename U = int> struct has_name : std::false_type {};
+template <typename T> struct has_name<T, decltype((void)T::name, 0)> : std::true_type {};
 
 template<typename T> bool EditorWidget(const cstr label, Array<T> data) {
 	bool changed = false;

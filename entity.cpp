@@ -16,6 +16,7 @@
 #define MAX_DRAW_BATCH MAX_ENTITIES
 
 struct Entity {
+	using Controls = controls::TopDownControl;
 	enum FlagIndex : u64 { Dynbody, Collision, Sprite, Player, Sound };
 	u64 flags = 0;
 	Transform2D transform;
@@ -24,7 +25,7 @@ struct Entity {
 	RenderMesh* mesh;
 	SpriteCursor sprite;
 	f32 draw_layer;
-	controls::TopDownControl controls;
+	Controls controls;
 	AudioSource audio_source;
 	string name = "__entity__";
 };

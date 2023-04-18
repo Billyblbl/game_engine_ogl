@@ -12,6 +12,7 @@ class B2dDebugDraw : public b2Draw {
 public:
 	void DrawSolidPolygon(const b2Vec2* vertices, int32 vertexCount, const b2Color& color) {
 		if (view_transform == null) return;
+		if (vertexCount < 3) return;
 		u32	indices[vertexCount];
 		for (u32 i = 0; i < vertexCount; i++)
 			indices[i] = i;

@@ -144,7 +144,7 @@ bool playground(App& app) {
 		// Scene
 		render(editor.active ? editor.scene_panel : 0, { v2u32(0), editor.scene_texture.dimensions }, GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT, v4f32(v3f32(0.3), 1),
 			[&]() {
-				rendering.view_projection_matrix.obj = view_project(project(rendering.camera), trs_2d(player.transform));
+				*rendering.view_projection_matrix.obj = view_project(project(rendering.camera), trs_2d(player.transform));
 				draw_entities(entities.allocated(), rendering.rect, rendering.view_projection_matrix, rendering.atlas, rendering.draw);
 				if (physics.draw_debug) physics.world.DebugDraw();
 			}

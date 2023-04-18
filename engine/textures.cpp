@@ -74,7 +74,7 @@ using SwizzleConfig = glm::vec<4, Swizzle>;
 using WrapConfig = glm::vec<3, WrapMode>;
 struct SamplingConfig { SamplingFilter min, max; };
 
-template<u32 D> using Area = polytope<glm::vec<D, u32>>;
+template<u32 D> using Area = reg_polytope<glm::vec<D, u32>>;
 
 struct TexBuffer {
 	GLuint	id;

@@ -14,8 +14,6 @@ bool override_body(b2Body* body, v2f32 position, f32 rotation) {
 		return fail_ret("Physics entity has no body", false);
 	auto pos = b2Vec2(position.x, position.y);
 	body->SetTransform(pos, glm::radians(rotation));
-	//TODO awake only when needed
-	body->SetAwake(true);
 	return true;
 }
 
@@ -35,6 +33,44 @@ struct PhysicsConfig {
 
 void update_sim(b2World& world, PhysicsConfig config) {
 	world.Step(config.time_step, config.velocity_iterations, config.position_iterations);
+}
+
+tuple<Array<v2f32>, usize> read_polygon(FILE* file, Alloc allocator) {
+	usize read = 0;
+	usize count = 0;
+	read += fread(&count, sizeof(usize), 1, file);
+	auto array = alloc_array<v2f32>(allocator, count);
+	read += fread(array.data(), sizeof(v2f32), count, file);
+	return tuple(array, read);
+}
+
+usize write_polygon(FILE* file, Array<v2f32> polygon) {
+	usize wrote = 0;
+	usize count = polygon.size();
+	wrote += fwrite(&count, sizeof(usize), 1, file);
+	wrote += fwrite(polygon.data(), sizeof(v2f32), count, file);
+	return wrote;
+}
+
+b2PolygonShape load_b2d_polygon(const cstr path) {
+	v2f32 buffer[b2_maxPolygonVertices];
+	auto file = fopen(path, "r"); defer{ fclose(file); };
+	if (!file)
+		perror("path");
+	auto arena = as_arena(larray(buffer));
+	auto [points, _] = read_polygon(file, as_stack(arena));
+	b2PolygonShape shape;
+	shape.Set(cast<b2Vec2>(points).data(), points.size());
+	printf("Loaded Polygon %s:%u:%u\n", path, points.size(), shape.m_count);
+	return shape;
+}
+
+void save_polygon(const cstr path, b2PolygonShape* shape) {
+	auto file = fopen(path, "w"); defer{ fclose(file); };
+	if (!file)
+		perror("path");
+	write_polygon(file, cast<v2f32>(carray(shape->m_vertices, shape->m_count)));
+	printf("Saved Polygon %s:%u\n", path, shape->m_count);
 }
 
 bool EditorWidget(const cstr label, PhysicsConfig& config) {
@@ -58,7 +94,7 @@ bool physics_controls(
 	bool& draw_debug,
 	bool& wireframe
 ) {
-	ImGui::Begin(label); defer {ImGui::End();};
+	ImGui::Begin(label); defer{ ImGui::End(); };
 	auto changed = false;
 	auto gravity = b2d_to_glm(world.GetGravity());
 	if (changed |= EditorWidget("Gravity", gravity))

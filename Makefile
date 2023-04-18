@@ -22,6 +22,7 @@ NOCOLOR=\033[0m
 default: app
 
 include imgui.mk
+include editor.mk
 include app.mk
 
 $(BUILD_DIR):

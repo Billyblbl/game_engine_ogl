@@ -4,7 +4,8 @@
 #include <application.cpp>
 #include <imgui_extension.cpp>
 #include <utils.cpp>
-#include <physics2d.cpp>
+// #include <physics2d.cpp>
+#include <physics_2d.cpp>
 #include <transform.cpp>
 #include <textures.cpp>
 #include <framebuffer.cpp>
@@ -38,13 +39,6 @@ SpriteObject load(SpriteObject& old, const cstr path, f32 ppu) {
 	return { texture, rect, matrix };
 }
 
-b2Fixture* reset_fixture_shape(b2Body* body, const b2Shape& new_shape) {
-	body->DestroyFixture(body->GetFixtureList());
-	b2FixtureDef def;
-	def.shape = &new_shape;
-	return body->CreateFixture(&def);
-}
-
 i32 main() {
 	auto app = create_app("BLBLED", v2u32(1920, 1080), null); defer{ destroy(app); };
 	if (!init_ogl(app))
@@ -60,13 +54,7 @@ i32 main() {
 	rendering.sprite.texture.id = 0;
 
 	struct {
-		b2World world = b2World(b2Vec2(0.f, -9.f));
-		B2dDebugDraw debug_draw;
-		b2PolygonShape shape;
 	} physics;
-	physics.world.SetDebugDraw(&physics.debug_draw);
-	physics.debug_draw.SetFlags(b2Draw::e_shapeBit);
-	physics.debug_draw.view_transform = &rendering.sprite.view_projection_matrix;
 
 	struct {
 		TexBuffer color;
@@ -81,21 +69,10 @@ i32 main() {
 
 	struct {
 		bool active;
-		b2Body* body = null;
-		b2Fixture* shape = null;
 		Transform2D transform;
 		f32 ppu = 256;
 		SpriteCursor sprite = { {v2f32(0), v2f32(1)}, 0 };
 	} shape_editor;
-
-	b2BodyDef def_bod;
-	def_bod.position = b2Vec2(0, 0);
-	def_bod.type = b2_staticBody;
-	shape_editor.body = physics.world.CreateBody(&def_bod);
-	b2FixtureDef def_fix;
-	physics.shape.SetAsBox(1, 1);
-	def_fix.shape = &physics.shape;
-	shape_editor.shape = shape_editor.body->CreateFixture(&def_fix);
 
 	fflush(stdout);
 	wait_gpu();
@@ -127,7 +104,7 @@ i32 main() {
 								batch.push(sprite_data(trs_2d(shape_editor.transform), shape_editor.sprite.uv_rect, shape_editor.sprite.atlas_index, 0));
 								rendering.draw(rendering.sprite.rect, rendering.sprite.texture, rendering.sprite.view_projection_matrix, 1);
 							}
-							physics.world.DebugDraw();
+							// physics.world.DebugDraw();
 						}
 					);
 					ImGui::Image((ImTextureID)(u64)scene.color.id, ImGui::fit_to_window(ImGui::from_glm(scene.color.dimensions)), ImVec2(0, 1), ImVec2(1, 0));
@@ -148,30 +125,33 @@ i32 main() {
 					if (ImGui::Button("Load Sprite"))
 						rendering.sprite = load(rendering.sprite, sprite_filename, shape_editor.ppu);
 
-					EditorWidget("Transform", shape_editor.transform);
-					override_body(shape_editor.body, shape_editor.transform.translation, shape_editor.transform.rotation);
-					auto* polygon_shape = (b2PolygonShape*)shape_editor.shape->GetShape();
-					i32 v_count = polygon_shape->m_count;
-					if (ImGui::InputInt("Vertices count", &v_count) && v_count < b2_maxPolygonVertices) {
-						b2PolygonShape new_shape = *((b2PolygonShape*)shape_editor.shape->GetShape());
-						new_shape.m_count = v_count;
-						shape_editor.shape = reset_fixture_shape(shape_editor.body, new_shape);
-					}
-					EditorWidget("Vertices", cast<v2f32>(carray(polygon_shape->m_vertices, polygon_shape->m_count)));
-					auto current_shape = (b2PolygonShape*)shape_editor.shape->GetShape();
-					auto convex = current_shape->Validate();
-					ImGui::Text("Convex : %s\n", convex ? "true" : "false");
+					// TODO redo editor
+					// EditorWidget("Transform", shape_editor.transform);
+					// override_body(shape_editor.body, shape_editor.transform.translation, shape_editor.transform.rotation);
+					// auto* polygon_shape = (b2PolygonShape*)shape_editor.shape->GetShape();
+					// i32 v_count = polygon_shape->m_count;
+					// if (ImGui::InputInt("Vertices count", &v_count) && v_count < b2_maxPolygonVertices) {
+					// 	b2PolygonShape new_shape = *((b2PolygonShape*)shape_editor.shape->GetShape());
+					// 	new_shape.m_count = v_count;
+					// 	shape_editor.shape = reset_fixture_shape(shape_editor.body, new_shape);
+					// }
+					// EditorWidget("Vertices", cast<v2f32>(carray(polygon_shape->m_vertices, polygon_shape->m_count)));
+					// auto current_shape = (b2PolygonShape*)shape_editor.shape->GetShape();
+					// auto convex = current_shape->Validate();
+					// ImGui::Text("Convex : %s\n", convex ? "true" : "false");
 
 					ImGui::Text("TODO : Path from OS filesystem selection");
 					static char polygon_filename[999] = "polygon_path.poly";
 					ImGui::InputText("Polygon file", polygon_filename, sizeof(polygon_filename));
-					ImGui::BeginDisabled(!convex);
-					if (ImGui::Button("Save Poly"))
-						save_polygon(polygon_filename, current_shape);
-					ImGui::EndDisabled();
+					// ImGui::BeginDisabled(!convex);
+					if (ImGui::Button("Save Poly")) {
+						// save_polygon(polygon_filename, current_shape);
+					}
+					// ImGui::EndDisabled();
 					ImGui::SameLine();
-					if (ImGui::Button("Load Poly"))
-						shape_editor.shape = reset_fixture_shape(shape_editor.body, load_b2d_polygon(polygon_filename));
+					if (ImGui::Button("Load Poly")) {
+						// shape_editor.shape = reset_fixture_shape(shape_editor.body, load_b2d_polygon(polygon_filename));
+					}
 				}
 
 			}

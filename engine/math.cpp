@@ -1,6 +1,7 @@
 #ifndef GMATH
 # define GMATH
 
+#include <blblstd.hpp>
 #include <glm/glm.hpp>
 #include <glm/gtc/type_ptr.hpp>
 #include <glm/gtx/rotate_vector.hpp>
@@ -84,7 +85,10 @@ template<typename P> auto dim_4(reg_polytope<P> p) { return p.max.w - p.min.w; }
 template<typename P> P dims_p1(reg_polytope<P> p) { return P(width(p)); }
 template<typename P> P dims_p2(reg_polytope<P> p) { return P(width(p), height(p)); }
 template<typename P> P dims_p3(reg_polytope<P> p) { return P(width(p), height(p), depth(p)); }
-template<typename P> P dims_p4(reg_polytope<P> p) { return P(width(p), height(p), depth(p), dim_4(p));  }
+template<typename P> P dims_p4(reg_polytope<P> p) { return P(width(p), height(p), depth(p), dim_4(p)); }
+
+template<typename T> T lerp(T a, T b, f32 t) { return a + t * (b - a); }
+template<typename T> f32 inv_lerp(T a, T b, T v) { return (b == a) ? 0 : (v - a) / (b - a); }
 
 using sgf32 = reg_polytope<v1f32>;
 using sgf64 = reg_polytope<v1f64>;

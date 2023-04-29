@@ -16,12 +16,15 @@ LIB = $(PWD)
 
 BLBLSTD_MODULE = $(BUILD_DIR)/blblstd.o
 
+INC = .
+
 COLOR=\033[0;34m
 NOCOLOR=\033[0m
 
 default: app
 
 include imgui.mk
+include engine.mk
 include editor.mk
 include app.mk
 
@@ -36,4 +39,4 @@ clean:
 
 re: clean default
 
-.PHONY: app clean re
+.PHONY: app clean re $(BLBLSTD_MODULE)

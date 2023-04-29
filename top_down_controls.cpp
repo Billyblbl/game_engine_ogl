@@ -2,7 +2,8 @@
 # define GTOP_DOWN_CONTROLS
 
 #include <inputs.cpp>
-#include <physics2D.cpp>
+// #include <physics2D.cpp>
+#include <physics_2d.cpp>
 #include <animation.cpp>
 #include <imgui_extension.cpp>
 
@@ -54,13 +55,12 @@ namespace controls {
 		);
 	}
 
-	void move_top_down(b2Body* body, v2f32 input, f32 speed, f32 accel) {
-		auto velocity = b2d_to_glm(body->GetLinearVelocity());
+	void move_top_down(Body2D& body, v2f32 input, f32 speed, f32 accel) {
 		auto target_velocity = input * speed;
-		auto target_accel = target_velocity - velocity;
+		auto target_accel = target_velocity - body.derivatives.translation;
 		auto effective_accel = safe_normalise(target_accel) * min(accel, glm::length(target_accel));
-		body->SetAwake(true);
-		body->SetLinearVelocity(glm_to_b2d(velocity + effective_accel));
+		// body->SetAwake(true); TODO implement body sleep/awake states
+		body.derivatives.translation += effective_accel;
 	}
 
 }

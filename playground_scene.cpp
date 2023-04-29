@@ -13,7 +13,8 @@
 #include <rendering.cpp>
 #include <time.cpp>
 #include <transform.cpp>
-#include <physics2d.cpp>
+#include <physics_2d.cpp>
+#include <physics_2d_debug.cpp>
 #include <blblstd.hpp>
 #include <math.cpp>
 #include <animation.cpp>
@@ -21,7 +22,6 @@
 #include <top_down_controls.cpp>
 #include <entity.cpp>
 #include <sprite.cpp>
-
 #include <audio.cpp>
 
 #define MAX_SPRITES MAX_ENTITIES
@@ -70,17 +70,19 @@ bool playground(App& app) {
 	};
 
 	struct {
-		PhysicsConfig config;
-		b2World world = b2World(b2Vec2(0.f, -9.f));
-		B2dDebugDraw debug_draw;
+		Arena physics_update_buffer = create_virtual_arena(MAX_ENTITIES * MAX_ENTITIES * sizeof(Collision) * 2);
+		List<Collider2D> colliders = List{ alloc_array<Collider2D>(std_allocator, MAX_ENTITIES), 0 };
+		Array<Collision> collisions;
 		f32 time_point = 0.f;
+		f32 time_step = 1.f / 60.f;
 		bool draw_debug = false;
-		b2PolygonShape shape;
+		bool wireframe = true;
+		ColliderRenderer debug_draw = load_collider_renderer();
 	} physics;
-	physics.shape.SetAsBox(.25f, .75f / 2.f, b2Vec2(0, -.1f), 0);
-	physics.world.SetDebugDraw(&physics.debug_draw);
-	physics.debug_draw.SetFlags(b2Draw::e_shapeBit);
-	physics.debug_draw.view_transform = &rendering.view_projection_matrix;
+	defer{
+		dealloc_array(std_allocator, physics.colliders.capacity);
+		destroy_virtual_arena(physics.physics_update_buffer);
+	};
 
 	struct {
 		TexBuffer scene_texture;
@@ -94,15 +96,28 @@ bool playground(App& app) {
 	editor.scene_panel = create_framebuffer({
 		bind_to_fb(Color0Attc, editor.scene_texture, 0, 0),
 		bind_to_fb(DepthAttc, editor.scene_texture_depth, 0, 0)
-	}); defer{ destroy_fb(editor.scene_panel); };
+		}); defer{ destroy_fb(editor.scene_panel); };
+
+	auto sprite = load_into(assets.test_character_spritesheet_path, rendering.atlas, v2u32(0), 0);
+	Collider2D blueprint = { Collider2D::Polygon, { 1.f }, 1, 1, true };
+
+	v2f32 polygon_shape[] = {
+		v2f32(-1, -1) / 2.f,
+		v2f32(1, -1) / 2.f,
+		v2f32(1,  1) / 2.f,
+		v2f32(-1,  1) / 2.f,
+	};
+	blueprint.polygon = cast<v2f32>(larray(polygon_shape));
 
 	auto clock = Time::start();
 	auto entities = List{ alloc_array<Entity>(std_allocator, MAX_ENTITIES), 0 }; defer{ dealloc_array(std_allocator, entities.capacity); };
-	auto& player = entities.push(create_player(load_into(assets.test_character_spritesheet_path, rendering.atlas, v2u32(0), 0), rendering.rect, physics.world, physics.shape));
+	auto& player = entities.push(create_player(load_into(assets.test_character_spritesheet_path, rendering.atlas, v2u32(0), 0), &rendering.rect, {}, &physics.colliders.push(blueprint)));
+	entities.push(create_player(sprite, &rendering.rect, {}, & physics.colliders.push(blueprint))).transform.translation = v2f32(1.5f);
 
 	// Audio test
 	add_sound(player, create_audio_source().set<BUFFER>(audio.buffer.id)); defer{ destroy(player.audio_source); };
 
+	update_bodies(entities.allocated());
 	printf("Finished loading scene with %lu entities\n", entities.current);
 	fflush(stdout);
 	wait_gpu();
@@ -131,22 +146,30 @@ bool playground(App& app) {
 		}
 
 		update_audio_sources(entities.allocated());
+		update_audio_listener(player);
 
 		// Using a 'while' here instead of an 'if' makes sure that if a frame was slow the physics simulation can catch up
 		// by doing multiple steps in 1 frame
 		// otherwise slowness in the rendering would also slow down the physics
 		// although not sure how pertinent this is since slow rendering would probably be a bigger problem
-		while (Time::metronome(clock.current, physics.config.time_step, physics.time_point)) { // Physics tick
-			controls::move_top_down(player.body, player.controls.input, player.controls.speed, player.controls.accel * physics.config.time_step);
-			simulate_entities(entities.allocated(), physics.world, physics.config);
+		while (Time::metronome(clock.current, physics.time_step, physics.time_point)) { // Physics tick
+			controls::move_top_down(player.body, player.controls.input, player.controls.speed, player.controls.accel * physics.time_step);
+
+			reset_virtual_arena(physics.physics_update_buffer);
+			// update_bodies(entities.allocated());
+			// apply_force(physics.bodies.allocated(), physics.time_step, GRAVITY);
+			//TODO build and test with this configuration, disabled resultion, only detection
+			physics.collisions = simulate_entities(as_v_alloc(physics.physics_update_buffer), entities.allocated(), physics.time_step);
 		}
+		interpolate_bodies(entities.allocated(), clock.current, physics.time_point, clock.dt);
 
 		// Scene
 		render(editor.active ? editor.scene_panel : 0, { v2u32(0), editor.scene_texture.dimensions }, GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT, v4f32(v3f32(0.3), 1),
 			[&]() {
 				*rendering.view_projection_matrix.obj = view_project(project(rendering.camera), trs_2d(player.transform));
 				draw_entities(entities.allocated(), rendering.rect, rendering.view_projection_matrix, rendering.atlas, rendering.draw);
-				if (physics.draw_debug) physics.world.DebugDraw();
+				if (physics.draw_debug) for (auto& ent : entities.allocated()) if (has_all(ent.flags, mask<u64>(Entity::Solid)))
+					physics.debug_draw(*ent.collider, collider_transform(ent), rendering.view_projection_matrix, v4f32(1, 0, 0, 1), physics.wireframe); //TODO change collor based on wether it has a collision or not
 			}
 		);
 
@@ -164,17 +187,31 @@ bool playground(App& app) {
 					{
 						ImGui::Begin("Misc"); defer{ ImGui::End(); };
 						EditorWidget("Camera", rendering.camera);
-						ImGui::Text("Time = %f", clock.current);
+						ImGui::Text("Real Time = %f", clock.current);
+						ImGui::Text("Physics Time = %f", physics.time_point);
+						ImGui::Text("Physics advance = %f", physics.time_point - clock.current);
+						if (ImGui::Button("Break"))
+							printf("Breaking\n");
 					}
 
 					{
-						ImGui::Begin("Audio"); defer { ImGui::End(); };
+						ImGui::Begin("Physics"); defer{ ImGui::End(); };
+						EditorWidget("Colliders", physics.colliders.allocated());
+						EditorWidget("Collisions", physics.collisions);
+						EditorWidget("Draw debug", physics.draw_debug);
+						EditorWidget("Wireframe", physics.wireframe);
+						EditorWidget("Sim time", physics.time_point);
+						EditorWidget("Time step", physics.time_step);
+					}
+
+					{
+						ImGui::Begin("Audio"); defer{ ImGui::End(); };
 						ImGui::Text("Device : %p", audio.data.device);
 						ImGui::Text("%u", audio.data.extensions.size()); ImGui::SameLine(); EditorWidget("Extensions", audio.data.extensions);
 						ALListener::EditorWidget("Listener");
 					}
 
-					physics_controls("Physics", physics.world, physics.config, physics.time_point, physics.draw_debug, physics.debug_draw.wireframe);
+					// physics_controls("Physics", physics.world, physics.config, physics.time_point, physics.draw_debug, physics.debug_draw.wireframe);
 					EditorWindow("Entities", entities);
 				}
 			);

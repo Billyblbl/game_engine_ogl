@@ -15,7 +15,6 @@ IMGUI_SRC += $(IMGUI)/imgui_demo.cpp
 IMGUI_SRC += $(IMGUI)/backends/imgui_impl_opengl3.cpp
 IMGUI_SRC += $(IMGUI)/backends/imgui_impl_glfw.cpp
 
-INC += .
 INC += $(IMGUI)
 INC += $(IMGUI)/backends
 

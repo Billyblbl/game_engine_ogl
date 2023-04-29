@@ -27,6 +27,15 @@ struct Transform2D {
 	f32 rotation = .0f;
 };
 
+Transform2D lerp(const Transform2D& a, const Transform2D& b, f32 t) {
+	Transform2D res;
+	res.translation = lerp(a.translation, b.translation, t);
+	//TODO verify that works correctly
+	res.rotation = lerp(a.rotation, b.rotation, t);
+	res.scale = lerp(a.scale, b.scale, t);
+	return res;
+}
+
 struct OrthoCamera {
 	v3f32	dimensions = v3f32(16, 9, 1);
 	v3f32 center = v3f32(0);

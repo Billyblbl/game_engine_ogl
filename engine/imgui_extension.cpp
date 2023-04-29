@@ -225,4 +225,14 @@ template<> bool EditorWidget<char>(const cstr label, Array<char> data) {
 	return ImGui::InputText(label, data.data(), data.size());
 }
 
+template<typename T> bool EditorWidget(const cstr label, T* data) {
+	auto change = false;
+	if (ImGui::TreeNode(label)) {
+		defer{ ImGui::TreePop(); };
+		ImGui::Text("ptr : %p", data);
+		change |= EditorWidget("value", *data);
+	}
+	return change;
+}
+
 #endif

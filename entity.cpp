@@ -7,43 +7,74 @@
 #include <imgui/backends/imgui_impl_opengl3.h>
 #include <transform.cpp>
 #include <rendering.cpp>
-#include <physics2d.cpp>
+#include <physics_2d.cpp>
 #include <sprite.cpp>
 #include <top_down_controls.cpp>
 #include <audio.cpp>
 
-#define MAX_ENTITIES 1000
+#define MAX_ENTITIES 100
 #define MAX_DRAW_BATCH MAX_ENTITIES
+
+struct GenRef {
+	u32 index;
+	u32 generation;
+};
+
+template<typename T> u32 get_generation(T& t);
+
+template<typename T> T* try_get(Array<T> arr, GenRef ref) {
+	auto current_gen = get_generation(arr[ref.index]);
+	if (current_gen == ref.generation)
+		return &arr[ref.index];
+	else
+		return null;
+}
 
 struct Entity {
 	using Controls = controls::TopDownControl;
-	enum FlagIndex : u64 { Dynbody, Collision, Sprite, Player, Sound };
-	u64 flags = 0;
+	enum FlagIndex : u64 { Allocated, Dynbody, Solid, Sprite, Player, Sound };
+	u64 flags = mask<u64>(Allocated);
+	u32 generation = 0;
 	Transform2D transform;
-	b2Body* body;
-	b2Fixture* collider;
 	RenderMesh* mesh;
 	SpriteCursor sprite;
 	f32 draw_layer;
+	Body2D body;
+	Collider2D* collider;
 	Controls controls;
 	AudioSource audio_source;
 	string name = "__entity__";
 };
 
+template<> u32 get_generation<Entity>(Entity& t) { return t.generation; }
+
+Entity& create_entity(List<Entity>& pool) {
+	Entity* slot = null;
+	for (auto& ent : pool.allocated()) {
+		if (ent.flags == 0) {
+			slot = &ent;
+			break;
+		}
+	}
+	if (slot == null)
+		slot = &pool.push({ 0, 0 });
+	slot->generation++;
+	return *slot;
+}
+
 bool EditorWidget(const cstr label, Entity& entity) {
 	bool changed = false;
 	if (ImGui::TreeNode(label)) {
-		changed |= ImGui::bit_flags("flags", entity.flags, { "Dynbody", "Collision", "Sprite", "Player", "Sound" });
-		if (has_one(entity.flags, mask<u64>(Entity::Dynbody, Entity::Collision, Entity::Sprite, Entity::Player)))
+		changed |= ImGui::bit_flags("flags", entity.flags, { "Allocated", "Dynbody", "Collision", "Sprite", "Player", "Sound" });
+		if (has_one(entity.flags, mask<u64>(Entity::Dynbody, Entity::Solid, Entity::Sprite, Entity::Player)))
 			changed |= EditorWidget("transform", entity.transform);
-		if (has_one(entity.flags, mask<u64>(Entity::Dynbody, Entity::Collision)))
+		if (has_one(entity.flags, mask<u64>(Entity::Dynbody, Entity::Solid)))
 			changed |= EditorWidget("body", entity.body);
-		if (has_one(entity.flags, mask<u64>(Entity::Collision)))
+		if (has_one(entity.flags, mask<u64>(Entity::Solid)))
 			changed |= EditorWidget("collider", entity.collider);
-		if (has_one(entity.flags, mask<u64>(Entity::Sprite, Entity::Collision)))
-			ImGui::Text("TODO : Widget for mesh reference");
-		if (has_one(entity.flags, mask<u64>(Entity::Sprite))) {
-			changed |= EditorWidget("sprite", entity.sprite);
+		if (has_one(entity.flags, mask<u64>(Entity::Sprite)) && ImGui::TreeNode("sprite")) {
+			defer{ ImGui::TreePop(); };
+			changed |= EditorWidget("cursor", entity.sprite);
 			changed |= EditorWidget("draw layer", entity.draw_layer);
 		}
 		if (has_one(entity.flags, mask<u64>(Entity::Player)))
@@ -55,29 +86,23 @@ bool EditorWidget(const cstr label, Entity& entity) {
 	return changed;
 }
 
-auto& add_sprite(Entity& ent, SpriteCursor sprite, RenderMesh& mesh) {
+auto& add_sprite(Entity& ent, SpriteCursor sprite, RenderMesh* mesh) {
 	ent.flags |= mask<u64>(Entity::Sprite);
 	ent.sprite = sprite;
-	ent.mesh = &mesh;
+	ent.mesh = mesh;
 	return ent;
 }
 
-auto& add_dynbody(Entity& ent, b2World& world) {
+auto& add_dynbody(Entity& ent, const Body2D& body) {
 	ent.flags |= mask<u64>(Entity::Dynbody);
-	b2BodyDef def;
-	def.position = glm_to_b2d(ent.transform.translation);
-	def.type = b2_dynamicBody;
-	ent.body = world.CreateBody(&def);
+	ent.body = body;
+	ent.body.transform = ent.transform;
 	return ent;
 }
 
-auto& add_collider(Entity& ent, b2Shape& shape) {
-	if (ent.body == null)
-		return fail_ret("Can't add collider without body", ent);
-	ent.flags |= mask<u64>(Entity::Collision);
-	b2FixtureDef def;
-	def.shape = &shape;
-	ent.collider = ent.body->CreateFixture(&def);
+auto& add_collider(Entity& ent, Collider2D* collider) {
+	ent.flags |= mask<u64>(Entity::Solid);
+	ent.collider = collider;
 	return ent;
 }
 
@@ -87,11 +112,12 @@ auto& add_sound(Entity& ent, AudioSource source) {
 	return ent;
 }
 
-auto create_player(SpriteCursor sprite, RenderMesh& mesh, b2World& world, b2Shape& shape, f32 speed = 10.f, f32 accel = 100.f) {
-	Entity ent = { mask<u64>(Entity::Player) };
+auto create_player(SpriteCursor sprite, RenderMesh* mesh, Body2D body, Collider2D* collider, f32 speed = 10.f, f32 accel = 100.f) {
+	Entity ent;
+	ent.flags |= mask<u64>(Entity::Player);
 	add_sprite(ent, sprite, mesh);
-	add_dynbody(ent, world);
-	add_collider(ent, shape);
+	add_dynbody(ent, body);
+	add_collider(ent, collider);
 	ent.name = "Player";
 	ent.controls.accel = accel;
 	ent.controls.speed = speed;
@@ -106,6 +132,18 @@ Array<Entity*> gather(u64 flags, Array<Entity> entities, Array<Entity*> buffer) 
 	return list.allocated();
 }
 
+template<typename T> Array<T*> gather_member(
+	u64 flags,
+	Array<Entity> entities,
+	T Entity::* member,
+	Array<T> buffer
+) {
+	auto list = List{ buffer, 0 };
+	for (auto& ent : entities) if (has_all(ent.flags, flags))
+		list.push(ent.*member);
+	return list.allocated();
+}
+
 void draw_entities(Array<Entity> entities, const RenderMesh& rect, MappedObject<m4x4f32> view_projection, const TexBuffer atlas, SpriteRenderer draw) {
 	auto batch = draw.start_batch();
 	for (auto&& ent : entities) if (has_all(ent.flags, mask<u64>(Entity::Sprite)))
@@ -113,28 +151,86 @@ void draw_entities(Array<Entity> entities, const RenderMesh& rect, MappedObject<
 	draw(rect, atlas, view_projection, batch.current);
 }
 
-void simulate_entities(Array<Entity> entities, b2World& world, const PhysicsConfig& config) {
-	Entity* pbuff[entities.size()];
-	auto to_sim = gather(mask<u64>(Entity::Dynbody), entities, carray(pbuff, entities.size()));
-	for (auto ent : to_sim)
-		override_body(ent->body, ent->transform.translation, ent->transform.rotation);
-	update_sim(world, config);
-	for (auto ent : to_sim)
-		override_transform(ent->body, ent->transform.translation, ent->transform.rotation);
+void update_bodies(Array<Entity> entities) {
+	for (auto& ent : entities) if (has_all(ent.flags, mask<u64>(Entity::Dynbody))) {
+		ent.body.transform = ent.transform;
+	}
+}
+
+void interpolate_bodies(Array<Entity> entities, f32 real_time, f32 physics_time, f32 dt) {
+	for (auto& ent : entities) if (has_all(ent.flags, mask<u64>(Entity::Dynbody)))
+		ent.transform = lerp(ent.transform, ent.body.transform, inv_lerp(real_time - dt, physics_time, real_time));
+}
+
+m4x4f32 collider_transform(const Entity& ent) {
+	return trs_2d(has_all(ent.flags, mask<u64>(Entity::Dynbody)) ? ent.body.transform : ent.transform);
+}
+
+bool test_entity_collision(Entity& e1, Entity& e2, Collision& collision) {
+	auto has_body = [](const Entity& ent) { return has_all(ent.flags, mask<u64>(Entity::Dynbody)); };
+	auto t1 = collider_transform(e1);
+	auto t2 = collider_transform(e2);
+	auto [collided, normal, depth] = GJK(*e1.collider, *e2.collider, t1, t2);
+	if (!collided)
+		return false;
+	// printf("Colliding %s with %s\n", e1.name.data(), e2.name.data());
+	auto im1 = (has_body(e1) && e1.body.mass > 0) ? 1 / e1.body.mass : 0;
+	auto im2 = (has_body(e2) && e2.body.mass > 0) ? 1 / e2.body.mass : 0;
+	auto v1 = has_body(e1) ? e1.body.derivatives.translation : v2f32(0);
+	auto v2 = has_body(e2) ? e2.body.derivatives.translation : v2f32(0);
+	collision.normal = normal;
+	collision.depth = depth;
+	collision.colliders[0] = e1.collider;
+	collision.colliders[1] = e2.collider;
+	collision.inverse_masses[0] = im1;
+	collision.inverse_masses[1] = im2;
+	collision.rvel = v1 - v2;
+	return true;
+}
+
+Array<Collision> simulate_entities(Alloc allocator, Array<Entity> entities, f32 dt) {
+	for (auto& ent : entities) if (has_all(ent.flags, mask<u64>(Entity::Dynbody)))
+		ent.body.transform = euler_integrate(ent.body.transform, ent.body.derivatives, dt);
+
+	auto collisions = List<Collision>{ {}, 0 };
+	for (auto i : u64xrange{ 0, entities.size() }) if (has_all(entities[i].flags, mask<u64>(Entity::Solid))) {
+		for (auto j : u64xrange{ i + 1, entities.size() }) if (has_all(entities[j].flags, mask<u64>(Entity::Solid))) {
+			Collision out;
+			assert(j > i);
+			if (test_entity_collision(entities[i], entities[j], out)) {
+				static auto _ = printf("First collision between entities %u & %u\n", i, j);
+				auto& col = collisions.push_growing(allocator, std::move(out));
+				if (should_resolve(col)) {
+					//TODO angular momentum
+
+					// Bounce
+					auto impulse = impulse_resolution(col);
+					entities[i].body.derivatives.translation += impulse * col.inverse_masses[0];
+					entities[j].body.derivatives.translation -= impulse * col.inverse_masses[1];
+
+					// Correct penetration
+					entities[i].body.transform.translation -= col.normal * col.depth * col.inverse_masses[0];
+					entities[j].body.transform.translation += col.normal * col.depth * col.inverse_masses[1];
+				}
+			}
+		}
+	}
+
+	return collisions.allocated();
 }
 
 void update_audio_sources(Array<Entity> entities) {
 	for (auto ent : entities) if (has_all(ent.flags, mask<u64>(Entity::Sound))) {
 		ent.audio_source.set<POSITION>(v3f32(ent.transform.translation, 0));
 		if (has_all(ent.flags, mask<u64>(Entity::Dynbody)))
-			ent.audio_source.set<VELOCITY>(v3f32(b2d_to_glm(ent.body->GetLinearVelocity()), 0));
+			ent.audio_source.set<VELOCITY>(v3f32(ent.body.derivatives.translation, 0));
 	}
 }
 
 void update_audio_listener(Entity& listener) {
 	ALListener::set<POSITION>(v3f32(listener.transform.translation, 0));
 	if (has_all(listener.flags, mask<u64>(Entity::Dynbody)))
-		ALListener::set<VELOCITY>(v3f32(b2d_to_glm(listener.body->GetLinearVelocity()), 0));
+		ALListener::set<VELOCITY>(v3f32(listener.body.derivatives.translation, 0));
 }
 
 bool EditorWindow(const cstr label, List<Entity>& entities) {
@@ -143,7 +239,7 @@ bool EditorWindow(const cstr label, List<Entity>& entities) {
 	ImGui::Text("Capacity : %u/%u", entities.current, entities.capacity.size());
 	changed |= EditorWidget("Allocated", entities.allocated());
 	if (entities.current < entities.capacity.size() && ImGui::Button("Allocate")) {
-		entities.push({});
+		entities.push({ 0 });
 		return true;
 	}
 	return changed;

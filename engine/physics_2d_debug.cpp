@@ -5,34 +5,34 @@
 #include <rendering.cpp>
 
 
-struct ColliderRenderer {
-	struct ColliderRenderInfo {
+struct ShapeRenderer {
+	struct ShapeRenderInfo {
 		m4x4f32 matrix;
 		v4f32 color;
 	};
 	Pipeline pipeline;
-	MappedObject<ColliderRenderInfo> render_info;
+	MappedObject<ShapeRenderInfo> render_info;
 
 	void operator()(
-		Collider2D& collider,
+		Shape2D& shape,
 		m4x4f32 model_matrix,
 		MappedObject<m4x4f32> view_matrix,
 		v4f32 color,
 		bool wireframe
 	) {
 		//TODO collider types other than polygon
-		if (collider.type != Collider2D::Polygon) return;
+		if (shape.type != Shape2D::Polygon) return;
 		static const auto v2f32Attribute = make_vertex_attribute_spec<v2f32>(0, sizeof(v2f32));
 		sync(view_matrix);
 		sync(render_info, { model_matrix, color });
 
 		// printf("herrtsh\n");
 
-		u32 indices[collider.polygon.size()];
-		for (auto i : u32xrange {0, collider.polygon.size()})
+		u32 indices[shape.polygon.size()];
+		for (auto i : u32xrange {0, shape.polygon.size()})
 			indices[i] = i;
 
-		auto mesh = upload_mesh(carray(&v2f32Attribute, 1), collider.polygon, carray(indices, collider.polygon.size()), GL_TRIANGLE_FAN);
+		auto mesh = upload_mesh(carray(&v2f32Attribute, 1), shape.polygon, carray(indices, shape.polygon.size()), GL_TRIANGLE_FAN);
 
 		if (wireframe)
 			GL_GUARD(glPolygonMode(GL_FRONT_AND_BACK, GL_LINE));
@@ -48,14 +48,14 @@ struct ColliderRenderer {
 
 };
 
-ColliderRenderer load_collider_renderer(const cstr path = "./shaders/physics_debug.glsl") {
+ShapeRenderer load_collider_renderer(const cstr path = "./shaders/physics_debug.glsl") {
 	return {
 		load_pipeline(path),
-		map_object<ColliderRenderer::ColliderRenderInfo>({})
+		map_object<ShapeRenderer::ShapeRenderInfo>({})
 	};
 }
 
-void unload(ColliderRenderer& rd) {
+void unload(ShapeRenderer& rd) {
 	destroy_pipeline(rd.pipeline);
 	unmap(rd.render_info);
 }

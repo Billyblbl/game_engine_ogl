@@ -77,7 +77,7 @@ bool playground(App& app) {
 		f32 time_step = 1.f / 60.f;
 		bool draw_debug = false;
 		bool wireframe = true;
-		ColliderRenderer debug_draw = load_collider_renderer();
+		ShapeRenderer debug_draw = load_collider_renderer();
 	} physics;
 	defer{
 		dealloc_array(std_allocator, physics.colliders.capacity);
@@ -99,7 +99,7 @@ bool playground(App& app) {
 		}); defer{ destroy_fb(editor.scene_panel); };
 
 	auto sprite = load_into(assets.test_character_spritesheet_path, rendering.atlas, v2u32(0), 0);
-	Collider2D blueprint = { Collider2D::Polygon, { 1.f }, 1, 1, true };
+	Collider2D blueprint = { {Shape2D::Polygon, {}}, 1, 1, false };
 
 	v2f32 polygon_shape[] = {
 		v2f32(-1, -1) / 2.f,
@@ -107,7 +107,7 @@ bool playground(App& app) {
 		v2f32(1,  1) / 2.f,
 		v2f32(-1,  1) / 2.f,
 	};
-	blueprint.polygon = cast<v2f32>(larray(polygon_shape));
+	blueprint.shape.polygon = cast<v2f32>(larray(polygon_shape));
 
 	auto clock = Time::start();
 	auto entities = List{ alloc_array<Entity>(std_allocator, MAX_ENTITIES), 0 }; defer{ dealloc_array(std_allocator, entities.capacity); };
@@ -169,7 +169,7 @@ bool playground(App& app) {
 				*rendering.view_projection_matrix.obj = view_project(project(rendering.camera), trs_2d(player.transform));
 				draw_entities(entities.allocated(), rendering.rect, rendering.view_projection_matrix, rendering.atlas, rendering.draw);
 				if (physics.draw_debug) for (auto& ent : entities.allocated()) if (has_all(ent.flags, mask<u64>(Entity::Solid)))
-					physics.debug_draw(*ent.collider, collider_transform(ent), rendering.view_projection_matrix, v4f32(1, 0, 0, 1), physics.wireframe); //TODO change collor based on wether it has a collision or not
+					physics.debug_draw(ent.collider->shape, collider_transform(ent), rendering.view_projection_matrix, v4f32(1, 0, 0, 1), physics.wireframe); //TODO change collor based on wether it has a collision or not
 			}
 		);
 

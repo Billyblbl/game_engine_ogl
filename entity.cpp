@@ -48,13 +48,11 @@ struct Entity {
 
 template<> u32 get_generation<Entity>(Entity& t) { return t.generation; }
 
-Entity& create_entity(List<Entity>& pool) {
+inline Entity& create_entity(List<Entity>& pool, const Entity& ent = {}) {
 	Entity* slot = null;
-	for (auto& ent : pool.allocated()) {
-		if (ent.flags == 0) {
-			slot = &ent;
-			break;
-		}
+	for (auto& ent : pool.allocated()) if (ent.flags == 0) {
+		slot = &ent;
+		break;
 	}
 	if (slot == null)
 		slot = &pool.push({ 0, 0 });
@@ -166,51 +164,51 @@ m4x4f32 collider_transform(const Entity& ent) {
 	return trs_2d(has_all(ent.flags, mask<u64>(Entity::Dynbody)) ? ent.body.transform : ent.transform);
 }
 
-bool test_entity_collision(Entity& e1, Entity& e2, Collision& collision) {
-	auto has_body = [](const Entity& ent) { return has_all(ent.flags, mask<u64>(Entity::Dynbody)); };
+tuple<bool, Collision> test_entity_collision(Entity& e1, Entity& e2) {
 	auto t1 = collider_transform(e1);
 	auto t2 = collider_transform(e2);
-	auto [collided, normal, depth] = GJK(*e1.collider, *e2.collider, t1, t2);
+	auto [collided, aabbi, penetration] = intersect(e1.collider->shape, e2.collider->shape, t1, t2);
 	if (!collided)
-		return false;
-	// printf("Colliding %s with %s\n", e1.name.data(), e2.name.data());
-	auto im1 = (has_body(e1) && e1.body.mass > 0) ? 1 / e1.body.mass : 0;
-	auto im2 = (has_body(e2) && e2.body.mass > 0) ? 1 / e2.body.mass : 0;
-	auto v1 = has_body(e1) ? e1.body.derivatives.translation : v2f32(0);
-	auto v2 = has_body(e2) ? e2.body.derivatives.translation : v2f32(0);
-	collision.normal = normal;
-	collision.depth = depth;
+		return { false, {} };
+	auto b1 = has_all(e1.flags, mask<u64>(Entity::Dynbody));
+	auto b2 = has_all(e2.flags, mask<u64>(Entity::Dynbody));
+	auto im1 = (b1 && e1.body.mass > 0) ? 1 / e1.body.mass : 0;
+	auto im2 = (b2 && e2.body.mass > 0) ? 1 / e2.body.mass : 0;
+	auto v1 = b1 ? e1.body.derivatives.translation : v2f32(0);
+	auto v2 = b2 ? e2.body.derivatives.translation : v2f32(0);
+	Collision collision;
+	collision.penetration = penetration;
 	collision.colliders[0] = e1.collider;
 	collision.colliders[1] = e2.collider;
 	collision.inverse_masses[0] = im1;
 	collision.inverse_masses[1] = im2;
 	collision.rvel = v1 - v2;
-	return true;
+	return { true, collision };
 }
 
 Array<Collision> simulate_entities(Alloc allocator, Array<Entity> entities, f32 dt) {
 	for (auto& ent : entities) if (has_all(ent.flags, mask<u64>(Entity::Dynbody)))
-		ent.body.transform = euler_integrate(ent.body.transform, ent.body.derivatives, dt);
+		ent.body.transform = euler_integrate(ent.body.transform, filter_locks(ent.body.derivatives, ent.body.locks), dt);
 
 	auto collisions = List<Collision>{ {}, 0 };
 	for (auto i : u64xrange{ 0, entities.size() }) if (has_all(entities[i].flags, mask<u64>(Entity::Solid))) {
 		for (auto j : u64xrange{ i + 1, entities.size() }) if (has_all(entities[j].flags, mask<u64>(Entity::Solid))) {
-			Collision out;
 			assert(j > i);
-			if (test_entity_collision(entities[i], entities[j], out)) {
-				static auto _ = printf("First collision between entities %u & %u\n", i, j);
+			auto [collided, out] = test_entity_collision(entities[i], entities[j]);
+			if (collided) {
 				auto& col = collisions.push_growing(allocator, std::move(out));
 				if (should_resolve(col)) {
 					//TODO angular momentum
 
 					// Bounce
-					auto impulse = impulse_resolution(col);
-					entities[i].body.derivatives.translation += impulse * col.inverse_masses[0];
-					entities[j].body.derivatives.translation -= impulse * col.inverse_masses[1];
+					auto [v1, v2] = bounce_impulse(col);
+					entities[i].body.derivatives.translation += v1;
+					entities[j].body.derivatives.translation += v2;
 
 					// Correct penetration
-					entities[i].body.transform.translation -= col.normal * col.depth * col.inverse_masses[0];
-					entities[j].body.transform.translation += col.normal * col.depth * col.inverse_masses[1];
+					auto [o1, o2] = correction_offset(col);
+					entities[i].body.transform.translation += o1;
+					entities[j].body.transform.translation += o2;
 				}
 			}
 		}

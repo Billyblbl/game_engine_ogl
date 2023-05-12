@@ -36,7 +36,7 @@ namespace controls {
 	struct TopDownControl {
 		f32 speed;
 		f32 accel;
-		f32 walk_cycke_duration;
+		f32 walk_cycle_duration;
 		v2f32 input;
 		f32 look_angle;
 	};
@@ -48,7 +48,7 @@ namespace controls {
 			ctrl.look_angle = glm::orientedAngle(v2f32(0, 1), ctrl.input);
 		return animate_character_spritesheet(animation.keyframes, v3u32(animation.dimensions, 1),
 			v3f32(
-				walking ? time * ctrl.speed / ctrl.walk_cycke_duration : 0,
+				walking ? time * ctrl.speed / ctrl.walk_cycle_duration : 0,
 				ctrl.look_angle / (2 * glm::pi<f32>()),
 				0 //TODO speed variation
 			)
@@ -57,10 +57,10 @@ namespace controls {
 
 	void move_top_down(Body2D& body, v2f32 input, f32 speed, f32 accel) {
 		auto target_velocity = input * speed;
-		auto target_accel = target_velocity - body.derivatives.translation;
+		auto target_accel = target_velocity - body.velocity_transform.translation;
 		auto effective_accel = safe_normalise(target_accel) * min(accel, glm::length(target_accel));
 		// body->SetAwake(true); TODO implement body sleep/awake states
-		body.derivatives.translation += effective_accel;
+		body.velocity_transform.translation += effective_accel;
 	}
 
 }
@@ -70,7 +70,7 @@ bool EditorWidget(const cstr label, controls::TopDownControl& data) {
 	if (ImGui::TreeNode(label)) {
 		changed |= EditorWidget("speed", data.speed);
 		changed |= EditorWidget("accel", data.accel);
-		changed |= EditorWidget("walk cycke duration", data.walk_cycke_duration);
+		changed |= EditorWidget("walk cycke duration", data.walk_cycle_duration);
 		changed |= EditorWidget("input", data.input);
 		changed |= EditorWidget("look angle", data.look_angle);
 		ImGui::TreePop();

@@ -40,7 +40,7 @@ struct Entity {
 	SpriteCursor sprite;
 	f32 draw_layer;
 	Body2D body;
-	Collider2D* collider;
+	Collider2D collider;
 	Controls controls;
 	AudioSource audio_source;
 	string name = "__entity__";
@@ -66,7 +66,7 @@ bool EditorWidget(const cstr label, Entity& entity) {
 		changed |= ImGui::bit_flags("flags", entity.flags, { "Allocated", "Dynbody", "Collision", "Sprite", "Player", "Sound" });
 		if (has_one(entity.flags, mask<u64>(Entity::Dynbody, Entity::Solid, Entity::Sprite, Entity::Player)))
 			changed |= EditorWidget("transform", entity.transform);
-		if (has_one(entity.flags, mask<u64>(Entity::Dynbody, Entity::Solid)))
+		if (has_one(entity.flags, mask<u64>(Entity::Dynbody)))
 			changed |= EditorWidget("body", entity.body);
 		if (has_one(entity.flags, mask<u64>(Entity::Solid)))
 			changed |= EditorWidget("collider", entity.collider);
@@ -98,7 +98,7 @@ auto& add_dynbody(Entity& ent, const Body2D& body) {
 	return ent;
 }
 
-auto& add_collider(Entity& ent, Collider2D* collider) {
+auto& add_collider(Entity& ent, const Collider2D& collider) {
 	ent.flags |= mask<u64>(Entity::Solid);
 	ent.collider = collider;
 	return ent;
@@ -110,16 +110,11 @@ auto& add_sound(Entity& ent, AudioSource source) {
 	return ent;
 }
 
-auto create_player(SpriteCursor sprite, RenderMesh* mesh, Body2D body, Collider2D* collider, f32 speed = 10.f, f32 accel = 100.f) {
-	Entity ent;
+auto& add_controls(Entity& ent, f32 speed, f32 acceleration, f32 walk_cycle) {
 	ent.flags |= mask<u64>(Entity::Player);
-	add_sprite(ent, sprite, mesh);
-	add_dynbody(ent, body);
-	add_collider(ent, collider);
-	ent.name = "Player";
-	ent.controls.accel = accel;
 	ent.controls.speed = speed;
-	ent.controls.walk_cycke_duration = 2.f;
+	ent.controls.accel = acceleration;
+	ent.controls.walk_cycle_duration = walk_cycle;
 	return ent;
 }
 
@@ -127,18 +122,6 @@ Array<Entity*> gather(u64 flags, Array<Entity> entities, Array<Entity*> buffer) 
 	auto list = List{ buffer, 0 };
 	for (auto& ent : entities) if (has_all(ent.flags, flags))
 		list.push(&ent);
-	return list.allocated();
-}
-
-template<typename T> Array<T*> gather_member(
-	u64 flags,
-	Array<Entity> entities,
-	T Entity::* member,
-	Array<T> buffer
-) {
-	auto list = List{ buffer, 0 };
-	for (auto& ent : entities) if (has_all(ent.flags, flags))
-		list.push(ent.*member);
 	return list.allocated();
 }
 
@@ -160,60 +143,66 @@ void interpolate_bodies(Array<Entity> entities, f32 real_time, f32 physics_time,
 		ent.transform = lerp(ent.transform, ent.body.transform, inv_lerp(real_time - dt, physics_time, real_time));
 }
 
-m4x4f32 collider_transform(const Entity& ent) {
-	return trs_2d(has_all(ent.flags, mask<u64>(Entity::Dynbody)) ? ent.body.transform : ent.transform);
-}
+using Collision = tuple<u32, u32, rtf32, v2f32, v2f32, v2f32>;
 
-tuple<bool, Collision> test_entity_collision(Entity& e1, Entity& e2) {
-	auto t1 = collider_transform(e1);
-	auto t2 = collider_transform(e2);
-	auto [collided, aabbi, penetration] = intersect(e1.collider->shape, e2.collider->shape, t1, t2);
-	if (!collided)
-		return { false, {} };
-	auto b1 = has_all(e1.flags, mask<u64>(Entity::Dynbody));
-	auto b2 = has_all(e2.flags, mask<u64>(Entity::Dynbody));
-	auto im1 = (b1 && e1.body.mass > 0) ? 1 / e1.body.mass : 0;
-	auto im2 = (b2 && e2.body.mass > 0) ? 1 / e2.body.mass : 0;
-	auto v1 = b1 ? e1.body.derivatives.translation : v2f32(0);
-	auto v2 = b2 ? e2.body.derivatives.translation : v2f32(0);
-	Collision collision;
-	collision.penetration = penetration;
-	collision.colliders[0] = e1.collider;
-	collision.colliders[1] = e2.collider;
-	collision.inverse_masses[0] = im1;
-	collision.inverse_masses[1] = im2;
-	collision.rvel = v1 - v2;
-	return { true, collision };
-}
-
-Array<Collision> simulate_entities(Alloc allocator, Array<Entity> entities, f32 dt) {
+void apply_global_force(Array<Entity> entities, f32 dt, v2f32 force) {
 	for (auto& ent : entities) if (has_all(ent.flags, mask<u64>(Entity::Dynbody)))
-		ent.body.transform = euler_integrate(ent.body.transform, filter_locks(ent.body.derivatives, ent.body.locks), dt);
+		ent.body.velocity_transform.translation += force * dt;;
+}
 
-	auto collisions = List<Collision>{ {}, 0 };
+Array<Collision> simulate_collisions(Array<Entity> entities) {
+	auto has_body = [](const Entity& ent) { return has_all(ent.flags, mask<u64>(Entity::Dynbody)); };
+
+	//! DEBUG
+	static Collision collision_buffer[MAX_ENTITIES * MAX_ENTITIES];
+	auto collisions = List{ larray(collision_buffer), 0 };
+	//!
+
 	for (auto i : u64xrange{ 0, entities.size() }) if (has_all(entities[i].flags, mask<u64>(Entity::Solid))) {
 		for (auto j : u64xrange{ i + 1, entities.size() }) if (has_all(entities[j].flags, mask<u64>(Entity::Solid))) {
-			assert(j > i);
-			auto [collided, out] = test_entity_collision(entities[i], entities[j]);
-			if (collided) {
-				auto& col = collisions.push_growing(allocator, std::move(out));
-				if (should_resolve(col)) {
-					//TODO angular momentum
+			auto& e1 = entities[i];
+			auto& e2 = entities[j];
+			auto t1 = trs_2d(has_body(e1) ? e1.body.transform : e1.transform);
+			auto t2 = trs_2d(has_body(e2) ? e2.body.transform : e2.transform);
+			auto [collided, aabbi, pen] = intersect(e1.collider.shape, e2.collider.shape, t1, t2);
+			if (!collided)
+				continue;
 
-					// Bounce
-					auto [v1, v2] = bounce_impulse(col);
-					entities[i].body.derivatives.translation += v1;
-					entities[j].body.derivatives.translation += v2;
+			auto desc1 = describe_body(has_body(e1) ? &e1.body : null, t1);
+			auto desc2 = describe_body(has_body(e2) ? &e2.body : null, t2);
 
-					// Correct penetration
-					auto [o1, o2] = correction_offset(col);
-					entities[i].body.transform.translation += o1;
-					entities[j].body.transform.translation += o2;
-				}
-			}
+			if (!e1.collider.sensor && !e2.collider.sensor &&
+				glm::length2(pen) > penetration_threshold * penetration_threshold &&
+				can_resolve_collision(desc1, desc2)) { // resolve
+
+				// Correct penetration
+				auto [o1, o2] = correction_offset(pen, desc1.inverse_mass, desc2.inverse_mass);
+				e1.body.transform.translation += o1;
+				e2.body.transform.translation += o2;
+
+				//! TODO physical rotation assumes center of mass = local origin, which requires to not touch the body's center of mass
+				//TODO friction
+				//TODO damping
+				// Compute contact points with new positions
+				auto normal = glm::normalize(pen);
+				auto [ctct1, ctct2] = contacts_points(
+					e1.collider.shape, e2.collider.shape,
+					trs_2d(has_body(e1) ? e1.body.transform : e1.transform),
+					trs_2d(has_body(e2) ? e2.body.transform : e2.transform),
+					normal
+				);
+				v2f32 contacts[2] = { ctct1, ctct2 };
+
+				// Bounce
+				auto [delta1, delta2] = bounce_contacts(desc1, desc2, larray(contacts), normal, min(e1.collider.restitution, e2.collider.restitution));
+				e1.body.velocity_transform = e1.body.velocity_transform + delta1;
+				e2.body.velocity_transform = e2.body.velocity_transform + delta2;
+
+				collisions.push({ i, j, aabbi, pen, ctct1, ctct2 });
+			} else
+				collisions.push({ i, j, aabbi, pen, v2f32(0), v2f32(0) });
 		}
 	}
-
 	return collisions.allocated();
 }
 
@@ -221,25 +210,32 @@ void update_audio_sources(Array<Entity> entities) {
 	for (auto ent : entities) if (has_all(ent.flags, mask<u64>(Entity::Sound))) {
 		ent.audio_source.set<POSITION>(v3f32(ent.transform.translation, 0));
 		if (has_all(ent.flags, mask<u64>(Entity::Dynbody)))
-			ent.audio_source.set<VELOCITY>(v3f32(ent.body.derivatives.translation, 0));
+			ent.audio_source.set<VELOCITY>(v3f32(ent.body.velocity_transform.translation, 0));
 	}
 }
 
 void update_audio_listener(Entity& listener) {
 	ALListener::set<POSITION>(v3f32(listener.transform.translation, 0));
 	if (has_all(listener.flags, mask<u64>(Entity::Dynbody)))
-		ALListener::set<VELOCITY>(v3f32(listener.body.derivatives.translation, 0));
+		ALListener::set<VELOCITY>(v3f32(listener.body.velocity_transform.translation, 0));
 }
 
 bool EditorWindow(const cstr label, List<Entity>& entities) {
 	ImGui::Begin(label); defer{ ImGui::End(); };
 	bool changed = false;
-	ImGui::Text("Capacity : %u/%u", entities.current, entities.capacity.size());
-	changed |= EditorWidget("Allocated", entities.allocated());
-	if (entities.current < entities.capacity.size() && ImGui::Button("Allocate")) {
-		entities.push({ 0 });
-		return true;
+	ImGui::Text("Capacity : %u", entities.capacity.size());
+	int count = entities.current;
+	if (ImGui::InputInt("Current", &count)) {
+		if (entities.current < count) {
+			for (auto i : u64xrange{ 0, count - entities.current }) {
+				if (entities.capacity.size() <= entities.current)
+					break;
+				entities.push({ 0, 0 });
+			}
+		} else if (count >= 0) entities.current = count;
+		changed = true;
 	}
+	changed |= EditorWidget("Allocated", entities.allocated());
 	return changed;
 }
 #endif

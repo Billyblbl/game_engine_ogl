@@ -191,6 +191,14 @@ bool EditorWidget(const cstr label, rtf32& data) {
 	return changed;
 }
 
+bool EditorWidget(const cstr label, Segment<v2f32>& data) {
+	bool changed = false;
+	ImGui::Text(label);
+	changed |= EditorWidget("A", data.A);
+	changed |= EditorWidget("B", data.B);
+	return changed;
+}
+
 bool EditorWidget(const cstr label, string data) {
 	ImGui::Text(label); ImGui::SameLine(); ImGui::Text(data.data());
 	return false;

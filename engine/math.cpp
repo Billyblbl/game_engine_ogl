@@ -71,10 +71,16 @@ using m4x4f64 = glm::f64mat4x4;
 using qf32 = glm::fquat;
 using qf64 = glm::dquat;
 
+template<typename P> struct Segment {
+	P A;
+	P B;
+};
+
 template<typename P> struct reg_polytope {
 	P min;
 	P max;
 	template<typename OP> operator reg_polytope<OP>() { return { OP(min), OP(max) }; }
+	Segment<P> diagonal() { return {min, max}; }
 };
 
 template<typename P> auto width(reg_polytope<P> p) { return p.max.x - p.min.x; }
@@ -87,21 +93,25 @@ template<typename P> P dims_p2(reg_polytope<P> p) { return P(width(p), height(p)
 template<typename P> P dims_p3(reg_polytope<P> p) { return P(width(p), height(p), depth(p)); }
 template<typename P> P dims_p4(reg_polytope<P> p) { return P(width(p), height(p), depth(p), dim_4(p)); }
 
+template<typename P> inline reg_polytope<P> intersect(const reg_polytope<P> a, const reg_polytope<P> b) {
+	return { glm::max(a.min, b.min), glm::min(a.max, b.max) };
+}
+
 template<typename T> T lerp(T a, T b, f32 t) { return a + t * (b - a); }
 template<typename T> f32 inv_lerp(T a, T b, T v) { return (b == a) ? 0 : (v - a) / (b - a); }
 
-using sgf32 = reg_polytope<v1f32>;
-using sgf64 = reg_polytope<v1f64>;
+using axf32 = reg_polytope<v1f32>;
+using axf64 = reg_polytope<v1f64>;
 
-using sgu8 = reg_polytope<v1u8>;
-using sgu16 = reg_polytope<v1u16>;
-using sgu32 = reg_polytope<v1u32>;
-using sgu64 = reg_polytope<v1u64>;
+using axu8 = reg_polytope<v1u8>;
+using axu16 = reg_polytope<v1u16>;
+using axu32 = reg_polytope<v1u32>;
+using axu64 = reg_polytope<v1u64>;
 
-using sgi8 = reg_polytope<v1i8>;
-using sgi16 = reg_polytope<v1i16>;
-using sgi32 = reg_polytope<v1i32>;
-using sgi64 = reg_polytope<v1i64>;
+using axi8 = reg_polytope<v1i8>;
+using axi16 = reg_polytope<v1i16>;
+using axi32 = reg_polytope<v1i32>;
+using axi64 = reg_polytope<v1i64>;
 
 using rtf32 = reg_polytope<v2f32>;
 using rtf64 = reg_polytope<v2f64>;

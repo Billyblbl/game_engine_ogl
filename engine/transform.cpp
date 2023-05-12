@@ -27,6 +27,14 @@ struct Transform2D {
 	f32 rotation = .0f;
 };
 
+inline Transform2D operator+(const Transform2D& lhs, const Transform2D& rhs) {
+	return {
+		lhs.translation + rhs.translation,
+		lhs.scale + rhs.scale,
+		lhs.rotation + rhs.rotation
+	};
+}
+
 Transform2D lerp(const Transform2D& a, const Transform2D& b, f32 t) {
 	Transform2D res;
 	res.translation = lerp(a.translation, b.translation, t);

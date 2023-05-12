@@ -9,8 +9,10 @@
 
 struct Body2D {
 	Transform2D transform = { v2f32(0), v2f32(1), 0 };
-	Transform2D derivatives = { v2f32(0), v2f32(0), 0 };
+	Transform2D velocity_transform = { v2f32(0), v2f32(0), 0 };
+	v2f32 center_of_mass = v2f32(0);
 	f32 mass = 1.f;
+	f32 inertia = 1.f;
 	enum : u32 {
 		FREE = 0,
 		TX = 1 << 0,
@@ -25,15 +27,36 @@ static const cstrp shape_type_names_array[] = { "None", "Circle", "Polygon", "Li
 static const auto shape_type_names = larray(shape_type_names_array);
 
 struct Shape2D {
-	enum : u32 { None, Circle, Polygon, Line, Point, TypeCount } type = None;
+	enum Type : u32 { None, Circle, Polygon, Line, Point, TypeCount } type;
 	union {
-		struct { v2f32 center; f32 radius; } circle;
-		Array<v2f32> polygon;
-		//TODO use something else than a god damn _rectangle_ to represent a _line_
-		reg_polytope<v2f32> line;
+		Array<v2f32> polygon = {};
+		v3f32 circle;//xy center, z radius
+		Segment<v2f32> line;
 		v2f32 point;
 	};
 };
+
+template<Shape2D::Type type> struct shape_mapping {};
+template<> struct shape_mapping<Shape2D::Circle> { static constexpr auto member = &Shape2D::circle; };
+template<> struct shape_mapping<Shape2D::Polygon> { static constexpr auto member = &Shape2D::polygon; };
+template<> struct shape_mapping<Shape2D::Line> { static constexpr auto member = &Shape2D::line; };
+template<> struct shape_mapping<Shape2D::Point> { static constexpr auto member = &Shape2D::point; };
+
+template<Shape2D::Type type> Shape2D make_shape_2d(auto&& init) {
+	Shape2D shape;
+	shape.type = type;
+	shape.*shape_mapping<type>::member = init;
+	return shape;
+}
+
+Shape2D make_box_shape(Alloc allocator, v2f32 dimensions, v2f32 center) {
+	auto vertices = alloc_array<v2f32>(allocator, 4);
+	vertices[0] = center + v2f32(-dimensions.x, dimensions.y) / 2.f;
+	vertices[1] = center - dimensions / 2.f;
+	vertices[2] = center - v2f32(-dimensions.x, dimensions.y) / 2.f;
+	vertices[3] = center + dimensions / 2.f;
+	return make_shape_2d<Shape2D::Polygon>(vertices);
+}
 
 struct Collider2D {
 	Shape2D shape;
@@ -42,49 +65,52 @@ struct Collider2D {
 	bool sensor = false;
 };
 
-struct Collision {
-	Collider2D* colliders[2];
-	f32 inverse_masses[2];
-	v2f32 rvel;
-	// v2f32 normal;
-	// f32 depth;
-	v2f32 penetration;
-	f32 elasticity;
-};
-
-v2f32 support_circle(f32 radius, v2f32 direction) {
-	return glm::normalize(direction) * radius;
+Segment<v2f32> support_circle(v2f32 center, f32 radius, v2f32 direction) {
+	return { center + glm::normalize(direction) * radius, center + glm::normalize(direction) * radius };
 }
 
-v2f32 support_point_cloud(Array<v2f32> vertices, v2f32 direction) {
-	f32 support_dot = std::numeric_limits<f32>::lowest();
-	v2f32 support;
+constexpr auto penetration_threshold = 0.0001f;
+
+Segment<v2f32> support_point_cloud(Array<v2f32> vertices, v2f32 direction) {
+	f32 support_dot[2] = {
+		std::numeric_limits<f32>::lowest(),
+		std::numeric_limits<f32>::lowest()
+	};
+	v2f32 support[2];
 
 	for (auto v : vertices) {
 		auto dot = glm::dot(v, glm::normalize(direction));
-		if (dot > support_dot) {
-			support_dot = dot;
-			support = v;
+		if (dot > support_dot[0]) {
+			support_dot[1] = support_dot[0];
+			support[1] = support[0];
+			support_dot[0] = dot;
+			support[0] = v;
+		} else if (dot > support_dot[1]) {
+			support_dot[1] = dot;
+			support[1] = v;
 		}
 	}
-	return support;
+	if (support_dot[0] - support_dot[1] < penetration_threshold)
+		return { support[0], support[1] };
+	else
+		return { support[0], support[0] };
 }
 
-v2f32 support_polygon(Array<v2f32> vertices, v2f32 direction) {
+Segment<v2f32> support_polygon(Array<v2f32> vertices, v2f32 direction) {
 	return support_point_cloud(vertices, direction);
 }
 
-v2f32 support_line(rtf32 line, v2f32 direction) {
+Segment<v2f32> support_line(Segment<v2f32> line, v2f32 direction) {
 	return support_point_cloud(cast<v2f32>(carray(&line, 1)), direction);
 }
 
-v2f32 support(const Shape2D& shape, v2f32 direction) {
+Segment<v2f32> support(const Shape2D& shape, v2f32 direction) {
 	switch (shape.type) {
-	case Shape2D::Circle: return support_circle(shape.circle.radius, direction);
+	case Shape2D::Circle: return support_circle(v2f32(shape.circle), shape.circle.z, direction);
 	case Shape2D::Polygon: return support_polygon(shape.polygon, direction);
 	case Shape2D::Line: return support_line(shape.line, direction);
-	case Shape2D::Point: return shape.point;
-	default: return fail_ret("Unimplemented support function", v2f32(0));
+	case Shape2D::Point: return { shape.point, shape.point };
+	default: return fail_ret("Unimplemented support function", Segment<v2f32>{});
 	}
 	return {};
 }
@@ -115,8 +141,8 @@ inline rtf32 aabb_polygon(Array<v2f32> vertices, m4x4f32 transform) {
 	return { mn, mx };
 }
 
-inline rtf32 aabb_line(rtf32 line, m4x4f32 transform) {
-	auto transformed = rtf32{ v2f32(transform * v4f32(line.min, 0, 1)), v2f32(transform * v4f32(line.max, 0, 1)) };
+inline rtf32 aabb_line(Segment<v2f32> line, m4x4f32 transform) {
+	auto transformed = rtf32{ v2f32(transform * v4f32(line.A, 0, 1)), v2f32(transform * v4f32(line.B, 0, 1)) };
 	return { glm::min(transformed.min, transformed.max), glm::max(transformed.min, transformed.max) };
 }
 
@@ -127,7 +153,7 @@ inline rtf32 aabb_point(v2f32 point, m4x4f32 transform) {
 
 inline rtf32 aabb_shape(const Shape2D& shape, m4x4f32 transform) {
 	switch (shape.type) {
-	case Shape2D::Circle: return aabb_circle(shape.circle.center, shape.circle.radius, transform);
+	case Shape2D::Circle: return aabb_circle(v2f32(shape.circle), shape.circle.z, transform);
 	case Shape2D::Polygon: return aabb_polygon(shape.polygon, transform);
 	case Shape2D::Line: return aabb_line(shape.line, transform);
 	case Shape2D::Point: return aabb_point(shape.point, transform);
@@ -135,16 +161,12 @@ inline rtf32 aabb_shape(const Shape2D& shape, m4x4f32 transform) {
 	}
 }
 
-inline rtf32 intersect(rtf32 a, rtf32 b) {
-	return { glm::max(a.min, b.min), glm::min(a.max, b.max) };
-}
-
 using Triangle = tuple<v2f32, v2f32, v2f32>;
 
 v2f32 minkowski_diff_support(const Shape2D& s1, const Shape2D& s2, m4x4f32 m1, m4x4f32 m2, v2f32 direction) {
 	return v2f32(
-		m1 * v4f32(support(s1, glm::transpose(m1) * v4f32(direction, 0, 1)), 0, 1) -
-		m2 * v4f32(support(s2, glm::transpose(m2) * v4f32(-direction, 0, 1)), 0, 1)
+		m1 * v4f32(support(s1, glm::transpose(m1) * v4f32(+direction, 0, 1)).A, 0, 1) -
+		m2 * v4f32(support(s2, glm::transpose(m2) * v4f32(-direction, 0, 1)).A, 0, 1)
 	);
 }
 
@@ -251,38 +273,127 @@ v2f32 EPA(const Shape2D& s1, const Shape2D& s2, m4x4f32 m1, m4x4f32 m2, Triangle
 		}
 
 	}
-	return min_normal * (min_dist + iteration_threshold);
+	// return min_normal * (min_dist + iteration_threshold);
+	return min_normal * min_dist;
 }
 
 tuple<bool, rtf32, v2f32> intersect(const Shape2D& s1, const Shape2D& s2, m4x4f32 t1, m4x4f32 t2) {
 	auto aabb_intersection = intersect(aabb_shape(s1, t1), aabb_shape(s2, t2));
 	if (width(aabb_intersection) < 0 || height(aabb_intersection) < 0)
-		return {false, aabb_intersection, v2f32(0)};
+		return { false, aabb_intersection, v2f32(0) };
 	auto [collided, triangle] = GJK(s1, s2, t1, t2);
 	if (!collided)
-		return {false, aabb_intersection, v2f32(0)};
+		return { false, aabb_intersection, v2f32(0) };
 	auto penetration = EPA(s1, s2, t1, t2, triangle);
-	return {true, aabb_intersection, penetration};
+	return { true, aabb_intersection, penetration };
 }
 
-inline bool should_resolve(const Collision& col, f32 min_penetration = 0.1f) {
-	for (auto collider : col.colliders) if (collider->sensor) return false;
-	return glm::length(col.penetration) > min_penetration && col.inverse_masses[0] + col.inverse_masses[1] > 0;
+constexpr auto max_contact_points_convex_2d = 2;
+
+struct PhysicalDescriptor {
+	Transform2D velocity;
+	v2f32 world_cmass;
+	f32 inverse_mass;
+	f32 inverse_inertia;
+};
+
+bool can_resolve_collision(const PhysicalDescriptor& a, const PhysicalDescriptor& b) {
+	return
+		(a.inverse_inertia > 0 ||// can turn
+			b.inverse_inertia > 0) &&
+		(a.inverse_mass > 0 ||// can move
+			b.inverse_mass > 0);
 }
 
-inline tuple<v2f32, v2f32> bounce_impulse(const Collision& col) {
-	auto impulse = -glm::normalize(col.penetration) *
-		(1 + col.elasticity) *
-		glm::dot(-col.rvel, glm::normalize(col.penetration)) /
-		(col.inverse_masses[0] + col.inverse_masses[1]);
-	return tuple(-impulse * col.inverse_masses[0], impulse * col.inverse_masses[1]);
+PhysicalDescriptor describe_body(const Body2D* body, m4x4f32 transform) {
+	return {
+		body != null ? body->velocity_transform : Transform2D{},
+		transform * v4f32(body != null ? body->center_of_mass : v2f32(0), 0, 1),
+		body != null && body->mass > 0 && (body->locks & (Body2D::TX | Body2D::TY) != Body2D::TX | Body2D::TY) ? 1 / body->mass : 0,
+		body != null && body->inertia > 0 && ((body->locks & Body2D::RT) == Body2D::FREE) ? 1 / body->inertia : 0
+	};
 }
 
-inline tuple<v2f32, v2f32> correction_offset(const Collision& col) {
-	auto total_offset = col.penetration / (col.inverse_masses[0] + col.inverse_masses[1]) / 2.f;
-	return { // those indices are normal -> O(x) = O*inv(y)/(inv(x)+inv(y))
-		-total_offset * col.inverse_masses[1] / 2.f,
-		 total_offset * col.inverse_masses[0] / 2.f,
+//linear + angular momentum -> https://www.youtube.com/watch?v=VbvdoLQQUPs&ab_channel=Two-BitCoding
+tuple<Transform2D, Transform2D> bounce_contacts(
+	PhysicalDescriptor ent1, PhysicalDescriptor ent2,
+	Array<const v2f32> contacts,
+	v2f32 normal,
+	f32 elasticity
+) {
+	auto delta_vel_1 = Transform2D{ v2f32(0), v2f32(0), 0.f };
+	auto delta_vel_2 = Transform2D{ v2f32(0), v2f32(0), 0.f };
+
+	for (auto contact : contacts) {
+		auto lever1 = contact - ent1.world_cmass;
+		auto lever2 = contact - ent2.world_cmass;
+		auto r1_perp = v2f32(-lever1.y, lever1.x);
+		auto r2_perp = v2f32(-lever2.y, lever2.x);
+		//TODO maybe? "scale" velocity
+
+		auto rvel =
+			(ent2.velocity.translation + r2_perp * ent2.velocity.rotation) -
+			(ent1.velocity.translation + r1_perp * ent1.velocity.rotation);
+
+		auto impulse =
+			normal *
+			-(1.f + elasticity) * glm::dot(rvel, normal) /
+			f32(ent1.inverse_mass + ent2.inverse_mass +
+				glm::pow(glm::dot(r1_perp, normal), 2) * ent1.inverse_inertia +
+				glm::pow(glm::dot(r2_perp, normal), 2) * ent2.inverse_inertia);
+		delta_vel_1 = delta_vel_1 + Transform2D{
+			-impulse * ent1.inverse_mass,
+				v2f32(0),
+				// glm::degrees(-glm::cross(v3f32(lever1, 0), v3f32(impulse, 0)).z * ent1.inverse_inertia)
+				// glm::radians(-glm::cross(v3f32(lever1, 0), v3f32(impulse, 0)).z * ent1.inverse_inertia)
+				-glm::cross(v3f32(lever1, 0), v3f32(impulse, 0)).z * ent1.inverse_inertia
+		};
+		delta_vel_2 = delta_vel_2 + Transform2D{
+			+impulse * ent2.inverse_mass,
+				v2f32(0),
+				// glm::degrees(+glm::cross(v3f32(lever2, 0), v3f32(impulse, 0)).z * ent2.inverse_inertia)
+				// glm::radians(+glm::cross(v3f32(lever2, 0), v3f32(impulse, 0)).z * ent2.inverse_inertia)
+				+glm::cross(v3f32(lever2, 0), v3f32(impulse, 0)).z * ent2.inverse_inertia
+		};
+	}
+
+	auto contact_count = f32(contacts.size());
+	delta_vel_1.translation /= contact_count;
+	delta_vel_1.scale /= contact_count;
+	delta_vel_1.rotation /= contact_count;
+	delta_vel_2.translation /= contact_count;
+	delta_vel_2.scale /= contact_count;
+	delta_vel_2.rotation /= contact_count;
+	return { delta_vel_1, delta_vel_2 };
+}
+
+inline tuple<v2f32, v2f32> contacts_points(const Shape2D& s1, const Shape2D& s2, m4x4f32 t1, m4x4f32 t2, v2f32 normal) {
+
+	//Local support edges
+	auto [lA1, lB1] = support(s1, glm::transpose(t1) * v4f32(+normal, 0, 1));
+	auto [lA2, lB2] = support(s2, glm::transpose(t2) * v4f32(-normal, 0, 1));
+
+	// global support edges
+	auto A1 = v2f32(t1 * v4f32(lA1, 0, 1));
+	auto B1 = v2f32(t1 * v4f32(lB1, 0, 1));
+
+	auto A2 = v2f32(t2 * v4f32(lA2, 0, 1));
+	auto B2 = v2f32(t2 * v4f32(lB2, 0, 1));
+
+	auto pen_perp = v2f32(-normal.y, normal.x);
+
+	// Shadow intersection
+	return {
+		support_line({support_line({ A1, B1 }, -pen_perp).A, support_line({ A2, B2 }, -pen_perp).A}, +pen_perp).A,
+		support_line({support_line({ A1, B1 }, +pen_perp).A, support_line({ A2, B2 }, +pen_perp).A}, -pen_perp).A
+	};
+
+}
+
+inline tuple<v2f32, v2f32> correction_offset(v2f32 penetration, f32 im1, f32 im2) {
+	return {
+		-penetration * inv_lerp(0.f, im1 + im2, im1),
+		+penetration * inv_lerp(0.f, im1 + im2, im2),
 	};
 }
 
@@ -292,21 +403,16 @@ inline tuple<v2f32, v2f32> correction_offset(const Collision& col) {
 
 constexpr auto GRAVITY = DEFAULT_GRAVITY;
 
-inline void apply_force(Array<Body2D> bodies, f32 dt, v2f32 force) {
-	for (auto&& body : bodies)
-		body.derivatives.translation += force * dt;
-}
-
-inline Transform2D euler_integrate(const Transform2D& transform, const Transform2D& derivatives, f32 dt) {
+inline Transform2D euler_integrate(const Transform2D& transform, const Transform2D& velocity_transform, f32 dt) {
 	return {
-		transform.translation + derivatives.translation * dt,
-		transform.scale + derivatives.scale * dt,
-		transform.rotation + derivatives.rotation * dt
+		transform.translation + velocity_transform.translation * dt,
+		transform.scale + velocity_transform.scale * dt,
+		transform.rotation + velocity_transform.rotation * dt
 	};
 }
 
 inline Transform2D filter_locks(const Transform2D& transform, u32 locks) {
-	Transform2D filtered = { v2f32(0), v2f32(0), 0 };
+	Transform2D filtered;
 	filtered.translation.x = (locks & Body2D::TX) ? 0 : transform.translation.x;
 	filtered.translation.y = (locks & Body2D::TY) ? 0 : transform.translation.y;
 	filtered.rotation = (locks & Body2D::RT) ? 0 : transform.rotation;
@@ -321,7 +427,7 @@ bool EditorWidget(const cstr label, Shape2D& shape) {
 		defer{ ImGui::TreePop(); };
 		changed |= ImGui::Combo("Type", (i32*)&shape.type, shape_type_names.data(), shape_type_names.size());
 		switch (shape.type) {
-		case Shape2D::Circle: changed |= EditorWidget("Radius", shape.circle.radius);break;
+		case Shape2D::Circle: changed |= EditorWidget("Radius", shape.circle.z);break;
 		case Shape2D::Polygon: changed |= EditorWidget("Polygon", shape.polygon);break;
 		case Shape2D::Line: changed |= EditorWidget("Line", shape.line);break;
 		case Shape2D::Point: changed |= EditorWidget("Point", shape.point);break;
@@ -348,29 +454,15 @@ bool EditorWidget(const cstr label, Body2D& body) {
 	if (ImGui::TreeNode(label)) {
 		defer{ ImGui::TreePop(); };
 		changed |= EditorWidget("Physics tick transform", body.transform);
-		changed |= EditorWidget("Derivatives", body.derivatives);
+		changed |= EditorWidget("Derivatives", body.velocity_transform);
 		changed |= EditorWidget("Mass", body.mass);
-		changed |= ImGui::bit_flags("Locks", body.locks, {
+		changed |= EditorWidget("Angular Inertia", body.inertia);
+		changed |= ImGui::bit_flags<u32>("Locks", *(u32*)&body.locks, {
 			"TX", "TY",
 			"R",
 			"SX", "SY",
 			});
 		// changed |= EditorWidget("Shape", body.shape);
-	}
-	return changed;
-}
-
-bool EditorWidget(const cstr label, Collision& col) {
-	bool changed = false;
-	if (ImGui::TreeNode(label)) {
-		defer{ ImGui::TreePop(); };
-		changed |= EditorWidget("Colliders", larray(col.colliders));
-		changed |= EditorWidget("Inverse masses", larray(col.inverse_masses));
-		changed |= EditorWidget("Penetration", col.penetration);
-		changed |= EditorWidget("Elasticity", col.elasticity);
-		changed |= EditorWidget("Relative velocity", col.rvel);
-		auto sr = should_resolve(col);
-		changed |= EditorWidget("Should resolve", sr);
 	}
 	return changed;
 }

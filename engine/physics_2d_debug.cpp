@@ -19,7 +19,7 @@ struct ShapeRenderer {
 		MappedObject<m4x4f32> view_matrix,
 		v4f32 color,
 		bool wireframe
-		) {
+		) const {
 		//TODO collider types other than polygon
 		static const auto v2f32Attribute = make_vertex_attribute_spec<v2f32>(0, sizeof(v2f32));
 		sync(view_matrix);

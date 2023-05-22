@@ -7,9 +7,9 @@
 #include <stdio.h>
 #include <transform.cpp>
 
-struct Body2D {
+struct RigidBody2D {
 	Transform2D transform = { v2f32(0), v2f32(1), 0 };
-	Transform2D velocity_transform = { v2f32(0), v2f32(0), 0 };
+	Transform2D velocity = { v2f32(0), v2f32(0), 0 };
 	v2f32 center_of_mass = v2f32(0);
 	f32 mass = 1.f;
 	f32 inertia = 1.f;
@@ -23,13 +23,14 @@ struct Body2D {
 	} locks = FREE;
 };
 
-static const cstrp shape_type_names_array[] = { "None", "Circle", "Polygon", "Line", "Point" };
+static const cstrp shape_type_names_array[] = { "None", "Circle", "Polygon", "Line", "Point", "Composite" };
 static const auto shape_type_names = larray(shape_type_names_array);
 
 struct Shape2D {
-	enum Type : u32 { None, Circle, Polygon, Line, Point, TypeCount } type;
+	enum Type : u32 { None, Circle, Polygon, Line, Point, Composite, TypeCount } type = None;
 	union {
 		Array<v2f32> polygon = {};
+		Array<Shape2D> composite;
 		v3f32 circle;//xy center, z radius
 		Segment<v2f32> line;
 		v2f32 point;
@@ -41,6 +42,7 @@ template<> struct shape_mapping<Shape2D::Circle> { static constexpr auto member 
 template<> struct shape_mapping<Shape2D::Polygon> { static constexpr auto member = &Shape2D::polygon; };
 template<> struct shape_mapping<Shape2D::Line> { static constexpr auto member = &Shape2D::line; };
 template<> struct shape_mapping<Shape2D::Point> { static constexpr auto member = &Shape2D::point; };
+template<> struct shape_mapping<Shape2D::Composite> { static constexpr auto member = &Shape2D::composite; };
 
 template<Shape2D::Type type> Shape2D make_shape_2d(auto&& init) {
 	Shape2D shape;
@@ -49,17 +51,17 @@ template<Shape2D::Type type> Shape2D make_shape_2d(auto&& init) {
 	return shape;
 }
 
-Shape2D make_box_shape(Alloc allocator, v2f32 dimensions, v2f32 center) {
-	auto vertices = alloc_array<v2f32>(allocator, 4);
-	vertices[0] = center + v2f32(-dimensions.x, dimensions.y) / 2.f;
-	vertices[1] = center - dimensions / 2.f;
-	vertices[2] = center - v2f32(-dimensions.x, dimensions.y) / 2.f;
-	vertices[3] = center + dimensions / 2.f;
-	return make_shape_2d<Shape2D::Polygon>(vertices);
+Shape2D make_box_shape(Array<v2f32> buffer, v2f32 dimensions, v2f32 center) {
+	assert(buffer.size() >= 4);
+	buffer[0] = center + v2f32(-dimensions.x, dimensions.y) / 2.f;
+	buffer[1] = center - dimensions / 2.f;
+	buffer[2] = center - v2f32(-dimensions.x, dimensions.y) / 2.f;
+	buffer[3] = center + dimensions / 2.f;
+	return make_shape_2d<Shape2D::Polygon>(buffer.subspan(0, 4));
 }
 
-struct Collider2D {
-	Shape2D shape;
+struct ShapedCollider2D {
+	Shape2D shape = {};
 	f32 restitution = 1.f;
 	f32 friction = 1.f;
 	bool sensor = false;
@@ -110,6 +112,12 @@ Segment<v2f32> support(const Shape2D& shape, v2f32 direction) {
 	case Shape2D::Polygon: return support_polygon(shape.polygon, direction);
 	case Shape2D::Line: return support_line(shape.line, direction);
 	case Shape2D::Point: return { shape.point, shape.point };
+	case Shape2D::Composite: {
+		Segment<v2f32> supports[shape.composite.size()];
+		for (auto i : u64xrange {0, shape.composite.size()})
+			supports[i] = support(shape.composite[i], direction);
+		return support_point_cloud(cast<v2f32>(carray(supports, shape.composite.size())), direction);
+	};
 	default: return fail_ret("Unimplemented support function", Segment<v2f32>{});
 	}
 	return {};
@@ -133,7 +141,7 @@ inline rtf32 aabb_polygon(Array<v2f32> vertices, m4x4f32 transform) {
 	auto mx = v2f32(std::numeric_limits<f32>::lowest());
 	auto mn = v2f32(std::numeric_limits<f32>::max());
 
-	for (auto&& v : vertices) {
+	for (auto &&v : vertices) {
 		auto tfmd = v2f32(transform * v4f32(v, 0, 1));
 		mx = glm::max(mx, tfmd);
 		mn = glm::min(mn, tfmd);
@@ -157,6 +165,15 @@ inline rtf32 aabb_shape(const Shape2D& shape, m4x4f32 transform) {
 	case Shape2D::Polygon: return aabb_polygon(shape.polygon, transform);
 	case Shape2D::Line: return aabb_line(shape.line, transform);
 	case Shape2D::Point: return aabb_point(shape.point, transform);
+	case Shape2D::Composite: {
+		rtf32 complete = { v2f32(std::numeric_limits<f32>::max()), v2f32(std::numeric_limits<f32>::lowest()) };
+		for (auto &&s : shape.composite) {
+			auto aabb = aabb_shape(s, transform);
+			complete.min = glm::min(complete.min, aabb.min);
+			complete.max = glm::max(complete.max, aabb.max);
+		}
+		return complete;
+	};
 	default: return { v2f32(1), v2f32(-1) };
 	}
 }
@@ -173,7 +190,6 @@ v2f32 minkowski_diff_support(const Shape2D& s1, const Shape2D& s2, m4x4f32 m1, m
 // https://www.youtube.com/watch?v=ajv46BSqcK4&ab_channel=Reducible
 // Gilbert-Johnson-Keerthi
 // TODO continuous collision -> support function only selects point, should sample from the convex hull of the shapes at time t & t+dt
-// TODO contact point -> depend on penetration vector
 tuple<bool, Triangle> GJK(const Shape2D& s1, const Shape2D& s2, m4x4f32 m1, m4x4f32 m2) {
 	constexpr tuple<bool, Triangle> no_collision = { false, {{}, {}, {}} };
 
@@ -305,12 +321,12 @@ bool can_resolve_collision(const PhysicalDescriptor& a, const PhysicalDescriptor
 			b.inverse_mass > 0);
 }
 
-PhysicalDescriptor describe_body(const Body2D* body, m4x4f32 transform) {
+PhysicalDescriptor describe_body(const RigidBody2D* body, m4x4f32 transform) {
 	return {
-		body != null ? body->velocity_transform : Transform2D{},
+		body != null ? body->velocity : Transform2D{},
 		transform * v4f32(body != null ? body->center_of_mass : v2f32(0), 0, 1),
-		body != null && body->mass > 0 && (body->locks & (Body2D::TX | Body2D::TY) != Body2D::TX | Body2D::TY) ? 1 / body->mass : 0,
-		body != null && body->inertia > 0 && ((body->locks & Body2D::RT) == Body2D::FREE) ? 1 / body->inertia : 0
+		body != null && body->mass > 0 && (body->locks & (RigidBody2D::TX | RigidBody2D::TY) != RigidBody2D::TX | RigidBody2D::TY) ? 1 / body->mass : 0,
+		body != null && body->inertia > 0 && ((body->locks & RigidBody2D::RT) == RigidBody2D::FREE) ? 1 / body->inertia : 0
 	};
 }
 
@@ -327,20 +343,18 @@ tuple<Transform2D, Transform2D> bounce_contacts(
 	for (auto contact : contacts) {
 		auto lever1 = contact - ent1.world_cmass;
 		auto lever2 = contact - ent2.world_cmass;
-		auto r1_perp = v2f32(-lever1.y, lever1.x);
-		auto r2_perp = v2f32(-lever2.y, lever2.x);
 		//TODO maybe? "scale" velocity
 
 		auto rvel =
-			(ent2.velocity.translation + r2_perp * ent2.velocity.rotation) -
-			(ent1.velocity.translation + r1_perp * ent1.velocity.rotation);
+			(ent2.velocity.translation + perpendicular(lever2) * ent2.velocity.rotation) -
+			(ent1.velocity.translation + perpendicular(lever1) * ent1.velocity.rotation);
 
 		auto impulse =
 			normal *
 			-(1.f + elasticity) * glm::dot(rvel, normal) /
 			f32(ent1.inverse_mass + ent2.inverse_mass +
-				glm::pow(glm::dot(r1_perp, normal), 2) * ent1.inverse_inertia +
-				glm::pow(glm::dot(r2_perp, normal), 2) * ent2.inverse_inertia);
+				glm::pow(glm::dot(perpendicular(lever1), normal), 2) * ent1.inverse_inertia +
+				glm::pow(glm::dot(perpendicular(lever2), normal), 2) * ent2.inverse_inertia);
 		delta_vel_1 = delta_vel_1 + Transform2D{
 			-impulse * ent1.inverse_mass,
 				v2f32(0),
@@ -403,21 +417,21 @@ inline tuple<v2f32, v2f32> correction_offset(v2f32 penetration, f32 im1, f32 im2
 
 constexpr auto GRAVITY = DEFAULT_GRAVITY;
 
-inline Transform2D euler_integrate(const Transform2D& transform, const Transform2D& velocity_transform, f32 dt) {
+inline Transform2D euler_integrate(const Transform2D& transform, const Transform2D& velocity, f32 dt) {
 	return {
-		transform.translation + velocity_transform.translation * dt,
-		transform.scale + velocity_transform.scale * dt,
-		transform.rotation + velocity_transform.rotation * dt
+		transform.translation + velocity.translation * dt,
+		transform.scale + velocity.scale * dt,
+		transform.rotation + velocity.rotation * dt
 	};
 }
 
 inline Transform2D filter_locks(const Transform2D& transform, u32 locks) {
 	Transform2D filtered;
-	filtered.translation.x = (locks & Body2D::TX) ? 0 : transform.translation.x;
-	filtered.translation.y = (locks & Body2D::TY) ? 0 : transform.translation.y;
-	filtered.rotation = (locks & Body2D::RT) ? 0 : transform.rotation;
-	filtered.scale.x = (locks & Body2D::SX) ? 0 : transform.scale.x;
-	filtered.scale.y = (locks & Body2D::SY) ? 0 : transform.scale.y;
+	filtered.translation.x = (locks & RigidBody2D::TX) ? 0 : transform.translation.x;
+	filtered.translation.y = (locks & RigidBody2D::TY) ? 0 : transform.translation.y;
+	filtered.rotation = (locks & RigidBody2D::RT) ? 0 : transform.rotation;
+	filtered.scale.x = (locks & RigidBody2D::SX) ? 0 : transform.scale.x;
+	filtered.scale.y = (locks & RigidBody2D::SY) ? 0 : transform.scale.y;
 	return filtered;
 }
 
@@ -436,7 +450,7 @@ bool EditorWidget(const cstr label, Shape2D& shape) {
 	return changed;
 }
 
-bool EditorWidget(const cstr label, Collider2D& collider) {
+bool EditorWidget(const cstr label, ShapedCollider2D& collider) {
 	bool changed = false;
 
 	if (ImGui::TreeNode(label)) {
@@ -449,12 +463,12 @@ bool EditorWidget(const cstr label, Collider2D& collider) {
 	return changed;
 }
 
-bool EditorWidget(const cstr label, Body2D& body) {
+bool EditorWidget(const cstr label, RigidBody2D& body) {
 	bool changed = false;
 	if (ImGui::TreeNode(label)) {
 		defer{ ImGui::TreePop(); };
 		changed |= EditorWidget("Physics tick transform", body.transform);
-		changed |= EditorWidget("Derivatives", body.velocity_transform);
+		changed |= EditorWidget("Derivatives", body.velocity);
 		changed |= EditorWidget("Mass", body.mass);
 		changed |= EditorWidget("Angular Inertia", body.inertia);
 		changed |= ImGui::bit_flags<u32>("Locks", *(u32*)&body.locks, {

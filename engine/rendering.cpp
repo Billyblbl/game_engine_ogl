@@ -117,13 +117,13 @@ struct Pipeline {
 		const RenderMesh& mesh,
 		u32 instance_count = 1,
 		Array<const GPUBinding> bindings = {}
-	) { draw(id, mesh, instance_count, bindings); }
+	) const { draw(id, mesh, instance_count, bindings); }
 
 	void operator()(
 		const RenderMesh& mesh,
 		u32 instance_count,
 		LiteralArray<GPUBinding> bindings
-	) { draw(id, mesh, instance_count, larray(bindings)); }
+	) const { draw(id, mesh, instance_count, larray(bindings)); }
 };
 
 Pipeline create_render_pipeline(GLuint vertex_shader, GLuint fragment_shader) {

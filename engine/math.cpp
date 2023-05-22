@@ -100,6 +100,8 @@ template<typename P> inline reg_polytope<P> intersect(const reg_polytope<P> a, c
 template<typename T> T lerp(T a, T b, f32 t) { return a + t * (b - a); }
 template<typename T> f32 inv_lerp(T a, T b, T v) { return (b == a) ? 0 : (v - a) / (b - a); }
 
+inline v2f32 perpendicular(v2f32 v) { return v2f32(-v.y, v.x); }
+
 using axf32 = reg_polytope<v1f32>;
 using axf64 = reg_polytope<v1f64>;
 

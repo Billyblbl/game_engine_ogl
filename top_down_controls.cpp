@@ -55,12 +55,11 @@ namespace controls {
 		);
 	}
 
-	void move_top_down(Body2D& body, v2f32 input, f32 speed, f32 accel) {
+	void move_top_down(RigidBody2D& body, v2f32 input, f32 speed, f32 accel) {
 		auto target_velocity = input * speed;
-		auto target_accel = target_velocity - body.velocity_transform.translation;
+		auto target_accel = target_velocity - body.velocity.translation;
 		auto effective_accel = safe_normalise(target_accel) * min(accel, glm::length(target_accel));
-		// body->SetAwake(true); TODO implement body sleep/awake states
-		body.velocity_transform.translation += effective_accel;
+		body.velocity.translation += effective_accel;
 	}
 
 }

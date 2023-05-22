@@ -8,12 +8,23 @@
 #include <tuple>
 #include <blblstd.hpp>
 
-enum Attachement: GLuint {
+enum Attachement : GLuint {
+	NoAttc = 0,
 	DepthAttc = GL_DEPTH_ATTACHMENT,
 	StencilAttc = GL_STENCIL_ATTACHMENT,
 	DepthStencilAttc = GL_DEPTH_STENCIL_ATTACHMENT,
 	Color0Attc = GL_COLOR_ATTACHMENT0,
 };
+
+GLbitfield clear_bit(Attachement attch) {
+	switch (attch) {
+	case NoAttc: return 0;
+	case DepthAttc: return GL_DEPTH_BUFFER_BIT;
+	case StencilAttc: return GL_STENCIL_BUFFER_BIT;
+	case DepthStencilAttc: return GL_DEPTH_BUFFER_BIT | GL_STENCIL_BUFFER_BIT;
+	default: return GL_COLOR_BUFFER_BIT;
+	}
+}
 
 constexpr GLuint MaxAttachements = GL_MAX_COLOR_ATTACHMENTS;
 

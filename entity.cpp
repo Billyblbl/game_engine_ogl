@@ -39,8 +39,8 @@ struct Entity {
 	RenderMesh* mesh;
 	SpriteCursor sprite;
 	f32 draw_layer;
-	Body2D body;
-	Collider2D collider;
+	RigidBody2D body;
+	ShapedCollider2D collider;
 	Controls controls;
 	AudioSource audio_source;
 	string name = "__entity__";
@@ -91,14 +91,14 @@ auto& add_sprite(Entity& ent, SpriteCursor sprite, RenderMesh* mesh) {
 	return ent;
 }
 
-auto& add_dynbody(Entity& ent, const Body2D& body) {
+auto& add_dynbody(Entity& ent, const RigidBody2D& body) {
 	ent.flags |= mask<u64>(Entity::Dynbody);
 	ent.body = body;
 	ent.body.transform = ent.transform;
 	return ent;
 }
 
-auto& add_collider(Entity& ent, const Collider2D& collider) {
+auto& add_collider(Entity& ent, const ShapedCollider2D& collider) {
 	ent.flags |= mask<u64>(Entity::Solid);
 	ent.collider = collider;
 	return ent;
@@ -147,7 +147,7 @@ using Collision = tuple<u32, u32, rtf32, v2f32, v2f32, v2f32>;
 
 void apply_global_force(Array<Entity> entities, f32 dt, v2f32 force) {
 	for (auto& ent : entities) if (has_all(ent.flags, mask<u64>(Entity::Dynbody)))
-		ent.body.velocity_transform.translation += force * dt;;
+		ent.body.velocity.translation += force * dt;;
 }
 
 Array<Collision> simulate_collisions(Array<Entity> entities) {
@@ -195,8 +195,8 @@ Array<Collision> simulate_collisions(Array<Entity> entities) {
 
 				// Bounce
 				auto [delta1, delta2] = bounce_contacts(desc1, desc2, larray(contacts), normal, min(e1.collider.restitution, e2.collider.restitution));
-				e1.body.velocity_transform = e1.body.velocity_transform + delta1;
-				e2.body.velocity_transform = e2.body.velocity_transform + delta2;
+				e1.body.velocity = e1.body.velocity + delta1;
+				e2.body.velocity = e2.body.velocity + delta2;
 
 				collisions.push({ i, j, aabbi, pen, ctct1, ctct2 });
 			} else
@@ -210,14 +210,14 @@ void update_audio_sources(Array<Entity> entities) {
 	for (auto ent : entities) if (has_all(ent.flags, mask<u64>(Entity::Sound))) {
 		ent.audio_source.set<POSITION>(v3f32(ent.transform.translation, 0));
 		if (has_all(ent.flags, mask<u64>(Entity::Dynbody)))
-			ent.audio_source.set<VELOCITY>(v3f32(ent.body.velocity_transform.translation, 0));
+			ent.audio_source.set<VELOCITY>(v3f32(ent.body.velocity.translation, 0));
 	}
 }
 
-void update_audio_listener(Entity& listener) {
+void update_audio_listener(const Entity& listener) {
 	ALListener::set<POSITION>(v3f32(listener.transform.translation, 0));
 	if (has_all(listener.flags, mask<u64>(Entity::Dynbody)))
-		ALListener::set<VELOCITY>(v3f32(listener.body.velocity_transform.translation, 0));
+		ALListener::set<VELOCITY>(v3f32(listener.body.velocity.translation, 0));
 }
 
 bool EditorWindow(const cstr label, List<Entity>& entities) {

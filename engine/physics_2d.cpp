@@ -7,22 +7,6 @@
 #include <stdio.h>
 #include <transform.cpp>
 
-struct RigidBody2D {
-	Transform2D transform = { v2f32(0), v2f32(1), 0 };
-	Transform2D velocity = { v2f32(0), v2f32(0), 0 };
-	v2f32 center_of_mass = v2f32(0);
-	f32 mass = 1.f;
-	f32 inertia = 1.f;
-	enum : u32 {
-		FREE = 0,
-		TX = 1 << 0,
-		TY = 1 << 1,
-		RT = 1 << 2,
-		SX = 1 << 3,
-		SY = 1 << 4,
-	} locks = FREE;
-};
-
 static const cstrp shape_type_names_array[] = { "None", "Circle", "Polygon", "Line", "Point", "Composite" };
 static const auto shape_type_names = larray(shape_type_names_array);
 
@@ -45,27 +29,24 @@ template<> struct shape_mapping<Shape2D::Point> { static constexpr auto member =
 template<> struct shape_mapping<Shape2D::Composite> { static constexpr auto member = &Shape2D::composite; };
 
 template<Shape2D::Type type> Shape2D make_shape_2d(auto&& init) {
-	Shape2D shape;
+	Shape2D shape = {};
 	shape.type = type;
 	shape.*shape_mapping<type>::member = init;
 	return shape;
 }
 
-Shape2D make_box_shape(Array<v2f32> buffer, v2f32 dimensions, v2f32 center) {
+Array<v2f32> make_box_poly(Array<v2f32> buffer, v2f32 dimensions, v2f32 center) {
 	assert(buffer.size() >= 4);
 	buffer[0] = center + v2f32(-dimensions.x, dimensions.y) / 2.f;
 	buffer[1] = center - dimensions / 2.f;
 	buffer[2] = center - v2f32(-dimensions.x, dimensions.y) / 2.f;
 	buffer[3] = center + dimensions / 2.f;
-	return make_shape_2d<Shape2D::Polygon>(buffer.subspan(0, 4));
+	return buffer.subspan(0, 4);
 }
 
-struct ShapedCollider2D {
-	Shape2D shape = {};
-	f32 restitution = 1.f;
-	f32 friction = 1.f;
-	bool sensor = false;
-};
+Shape2D make_box_shape(Array<v2f32> buffer, v2f32 dimensions, v2f32 center) {
+	return make_shape_2d<Shape2D::Polygon>(make_box_poly(buffer, dimensions, center));
+}
 
 Segment<v2f32> support_circle(v2f32 center, f32 radius, v2f32 direction) {
 	return { center + glm::normalize(direction) * radius, center + glm::normalize(direction) * radius };
@@ -114,7 +95,7 @@ Segment<v2f32> support(const Shape2D& shape, v2f32 direction) {
 	case Shape2D::Point: return { shape.point, shape.point };
 	case Shape2D::Composite: {
 		Segment<v2f32> supports[shape.composite.size()];
-		for (auto i : u64xrange {0, shape.composite.size()})
+		for (auto i : u64xrange{ 0, shape.composite.size() })
 			supports[i] = support(shape.composite[i], direction);
 		return support_point_cloud(cast<v2f32>(carray(supports, shape.composite.size())), direction);
 	};
@@ -141,7 +122,7 @@ inline rtf32 aabb_polygon(Array<v2f32> vertices, m4x4f32 transform) {
 	auto mx = v2f32(std::numeric_limits<f32>::lowest());
 	auto mn = v2f32(std::numeric_limits<f32>::max());
 
-	for (auto &&v : vertices) {
+	for (auto&& v : vertices) {
 		auto tfmd = v2f32(transform * v4f32(v, 0, 1));
 		mx = glm::max(mx, tfmd);
 		mn = glm::min(mn, tfmd);
@@ -167,7 +148,7 @@ inline rtf32 aabb_shape(const Shape2D& shape, m4x4f32 transform) {
 	case Shape2D::Point: return aabb_point(shape.point, transform);
 	case Shape2D::Composite: {
 		rtf32 complete = { v2f32(std::numeric_limits<f32>::max()), v2f32(std::numeric_limits<f32>::lowest()) };
-		for (auto &&s : shape.composite) {
+		for (auto&& s : shape.composite) {
 			auto aabb = aabb_shape(s, transform);
 			complete.min = glm::min(complete.min, aabb.min);
 			complete.max = glm::max(complete.max, aabb.max);
@@ -306,29 +287,18 @@ tuple<bool, rtf32, v2f32> intersect(const Shape2D& s1, const Shape2D& s2, m4x4f3
 
 constexpr auto max_contact_points_convex_2d = 2;
 
+bool can_resolve_collision(f32 im1, f32 im2, f32 ii1, f32 ii2) {
+	return
+		(im1 > 0 || im2 > 0) && // can turn
+		(ii1 > 0 || ii2 > 0);// can move
+}
+
 struct PhysicalDescriptor {
 	Transform2D velocity;
 	v2f32 world_cmass;
 	f32 inverse_mass;
 	f32 inverse_inertia;
 };
-
-bool can_resolve_collision(const PhysicalDescriptor& a, const PhysicalDescriptor& b) {
-	return
-		(a.inverse_inertia > 0 ||// can turn
-			b.inverse_inertia > 0) &&
-		(a.inverse_mass > 0 ||// can move
-			b.inverse_mass > 0);
-}
-
-PhysicalDescriptor describe_body(const RigidBody2D* body, m4x4f32 transform) {
-	return {
-		body != null ? body->velocity : Transform2D{},
-		transform * v4f32(body != null ? body->center_of_mass : v2f32(0), 0, 1),
-		body != null && body->mass > 0 && (body->locks & (RigidBody2D::TX | RigidBody2D::TY) != RigidBody2D::TX | RigidBody2D::TY) ? 1 / body->mass : 0,
-		body != null && body->inertia > 0 && ((body->locks & RigidBody2D::RT) == RigidBody2D::FREE) ? 1 / body->inertia : 0
-	};
-}
 
 //linear + angular momentum -> https://www.youtube.com/watch?v=VbvdoLQQUPs&ab_channel=Two-BitCoding
 tuple<Transform2D, Transform2D> bounce_contacts(
@@ -371,13 +341,9 @@ tuple<Transform2D, Transform2D> bounce_contacts(
 		};
 	}
 
-	auto contact_count = f32(contacts.size());
-	delta_vel_1.translation /= contact_count;
-	delta_vel_1.scale /= contact_count;
-	delta_vel_1.rotation /= contact_count;
-	delta_vel_2.translation /= contact_count;
-	delta_vel_2.scale /= contact_count;
-	delta_vel_2.rotation /= contact_count;
+	auto contact_count_inv = 1 / f32(contacts.size());
+	delta_vel_1 = delta_vel_1 * contact_count_inv;
+	delta_vel_2 = delta_vel_2 * contact_count_inv;
 	return { delta_vel_1, delta_vel_2 };
 }
 
@@ -417,24 +383,6 @@ inline tuple<v2f32, v2f32> correction_offset(v2f32 penetration, f32 im1, f32 im2
 
 constexpr auto GRAVITY = DEFAULT_GRAVITY;
 
-inline Transform2D euler_integrate(const Transform2D& transform, const Transform2D& velocity, f32 dt) {
-	return {
-		transform.translation + velocity.translation * dt,
-		transform.scale + velocity.scale * dt,
-		transform.rotation + velocity.rotation * dt
-	};
-}
-
-inline Transform2D filter_locks(const Transform2D& transform, u32 locks) {
-	Transform2D filtered;
-	filtered.translation.x = (locks & RigidBody2D::TX) ? 0 : transform.translation.x;
-	filtered.translation.y = (locks & RigidBody2D::TY) ? 0 : transform.translation.y;
-	filtered.rotation = (locks & RigidBody2D::RT) ? 0 : transform.rotation;
-	filtered.scale.x = (locks & RigidBody2D::SX) ? 0 : transform.scale.x;
-	filtered.scale.y = (locks & RigidBody2D::SY) ? 0 : transform.scale.y;
-	return filtered;
-}
-
 bool EditorWidget(const cstr label, Shape2D& shape) {
 	bool changed = false;
 	if (ImGui::TreeNode(label)) {
@@ -450,33 +398,36 @@ bool EditorWidget(const cstr label, Shape2D& shape) {
 	return changed;
 }
 
-bool EditorWidget(const cstr label, ShapedCollider2D& collider) {
-	bool changed = false;
+struct Collider2D {
+	struct {
+		f32 inverse_mass = 0.f;
+		f32 inverse_inertia = 0.f;
+		f32 restitution = 0.f;
+		f32 friction = 0.f;
+	} material;
+	Shape2D shape;
+};
 
+bool EditorWidget(const cstr label, Collider2D& collider) {
+	bool changed = false;
 	if (ImGui::TreeNode(label)) {
 		defer{ ImGui::TreePop(); };
 		changed |= EditorWidget("Shape", collider.shape);
-		changed |= EditorWidget("Restitution", collider.restitution);
-		changed |= EditorWidget("Friction", collider.friction);
-		changed |= EditorWidget("Is Sensor", collider.sensor);
-	}
-	return changed;
-}
-
-bool EditorWidget(const cstr label, RigidBody2D& body) {
-	bool changed = false;
-	if (ImGui::TreeNode(label)) {
-		defer{ ImGui::TreePop(); };
-		changed |= EditorWidget("Physics tick transform", body.transform);
-		changed |= EditorWidget("Derivatives", body.velocity);
-		changed |= EditorWidget("Mass", body.mass);
-		changed |= EditorWidget("Angular Inertia", body.inertia);
-		changed |= ImGui::bit_flags<u32>("Locks", *(u32*)&body.locks, {
-			"TX", "TY",
-			"R",
-			"SX", "SY",
-			});
-		// changed |= EditorWidget("Shape", body.shape);
+		if (ImGui::TreeNode("Material")) {
+			defer{ ImGui::TreePop(); };
+			changed |= EditorWidget("Restitution", collider.material.restitution);
+			changed |= EditorWidget("Friction", collider.material.friction);
+			f32 mass = (collider.material.inverse_mass != 0) ? 1 / collider.material.inverse_mass : 0;
+			if (EditorWidget("Mass", mass)) {
+				collider.material.inverse_mass = mass != 0 ? 1 / mass : 0;
+				changed = true;
+			}
+			f32 inertia = (collider.material.inverse_inertia != 0) ? 1 / collider.material.inverse_inertia : 0;
+			if (EditorWidget("Inertia", inertia)) {
+				collider.material.inverse_inertia = inertia != 0 ? 1 / inertia : 0;
+				changed = true;
+			}
+		}
 	}
 	return changed;
 }

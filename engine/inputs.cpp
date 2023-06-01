@@ -7,15 +7,15 @@
 
 namespace Input {
 	namespace Action {
-		enum Type: u32 {
+		enum Type : u32 {
 			Release = GLFW_RELEASE,
 			Press = GLFW_PRESS,
 			Repeat = GLFW_REPEAT
 		};
 	}
 
-	namespace Keyboard {
-		enum Key: i32 {
+	namespace KB {
+		enum Key : i32 {
 			K_UNKNOWN = GLFW_KEY_UNKNOWN,
 			K_SPACE = GLFW_KEY_SPACE,
 			K_FIRST = K_SPACE,
@@ -269,7 +269,7 @@ namespace Input {
 	}
 
 	namespace Mouse {
-		enum Button: u32 {
+		enum Button : u32 {
 			LAST = GLFW_MOUSE_BUTTON_LAST,
 			LEFT = GLFW_MOUSE_BUTTON_LEFT,
 			RIGHT = GLFW_MOUSE_BUTTON_RIGHT,
@@ -278,7 +278,7 @@ namespace Input {
 		};
 	}
 
-	enum ButtonState: u8 {
+	enum ButtonState : u8 {
 		None = 0,
 		Pressed = 1,
 		Down = 2,
@@ -296,8 +296,8 @@ namespace Input {
 		return static_cast<ButtonState>(pressed | down | up);
 	}
 
-	namespace Gamepad {
-		enum Button: u32 {
+	namespace GP {
+		enum Button : u32 {
 			A = GLFW_GAMEPAD_BUTTON_A,
 			B = GLFW_GAMEPAD_BUTTON_B,
 			X = GLFW_GAMEPAD_BUTTON_X,
@@ -323,7 +323,7 @@ namespace Input {
 			TRIANGLE = GLFW_GAMEPAD_BUTTON_TRIANGLE
 		};
 
-		enum Axis: u32 {
+		enum Axis : u32 {
 			LEFT_X = GLFW_GAMEPAD_AXIS_LEFT_X,
 			LEFT_Y = GLFW_GAMEPAD_AXIS_LEFT_Y,
 			RIGHT_X = GLFW_GAMEPAD_AXIS_RIGHT_X,
@@ -371,21 +371,21 @@ namespace Input {
 
 	struct Context {
 		GLFWwindow* window = nullptr;
-		ButtonState key_states[Keyboard::K_COUNT];
+		ButtonState key_states[KB::K_COUNT];
 		ButtonState mouse_button_states[Mouse::COUNT];
 		v2f64 mouse_pos = v2f64(0);
 		v2f64 mouse_delta = v2f64(0);
 		v2f64 scroll_delta = v2f64(0);
 		struct {
 			Array<u8> indices;
-			Gamepad::State states[Gamepad::MaxGamepadCount];
+			GP::State states[GP::MaxGamepadCount];
 		} gamepads;
 	};
 
 	void poll(Context& context) {
 		//Reset states
-		for (auto key : Keyboard::All)
-			context.key_states[Keyboard::index_of(key)] = ButtonState::None;
+		for (auto key : KB::All)
+			context.key_states[KB::index_of(key)] = ButtonState::None;
 		for (auto i : u32xrange{ 0, Mouse::COUNT })
 			context.key_states[i] = ButtonState::None;
 		context.mouse_delta = v2f64(0);
@@ -394,12 +394,12 @@ namespace Input {
 		glfwPollEvents();
 
 		// Read pressed button states
-		for (auto key : Keyboard::All) if (glfwGetKey(context.window, key) == Action::Press)
-			context.key_states[Keyboard::index_of(key)] |= ButtonState::Pressed;
+		for (auto key : KB::All) if (glfwGetKey(context.window, key) == Action::Press)
+			context.key_states[KB::index_of(key)] |= ButtonState::Pressed;
 		for (auto i : u32xrange{ 0, Mouse::COUNT }) if (glfwGetMouseButton(context.window, i))
 			context.mouse_button_states[i] |= ButtonState::Pressed;
 		for (auto id : context.gamepads.indices)
-			Gamepad::poll(id, context.gamepads.states[id]);
+			GP::poll(id, context.gamepads.states[id]);
 	}
 
 	inline auto& get_context() {
@@ -424,20 +424,20 @@ namespace Input {
 		return v3f32(composite(negH, posH), composite(negV, posV), composite(negD, posD));
 	}
 
-	inline ButtonState get_key(Keyboard::Key key) { return get_context().key_states[Keyboard::index_of(key)]; }
+	inline ButtonState get_key(KB::Key key) { return get_context().key_states[KB::index_of(key)]; }
 
-	inline f32 key_axis(Keyboard::Key neg, Keyboard::Key pos) {
+	inline f32 key_axis(KB::Key neg, KB::Key pos) {
 		return composite(get_key(neg), get_key(pos));
 	}
 
-	inline v2f32 key_axis(Keyboard::Key negH, Keyboard::Key posH, Keyboard::Key negV, Keyboard::Key posV) {
+	inline v2f32 key_axis(KB::Key negH, KB::Key posH, KB::Key negV, KB::Key posV) {
 		return composite(
 			get_key(negH), get_key(posH),
 			get_key(negV), get_key(posV)
 		);
 	}
 
-	inline v3f32 key_axis(Keyboard::Key negH, Keyboard::Key posH, Keyboard::Key negV, Keyboard::Key posV, Keyboard::Key negD, Keyboard::Key posD) {
+	inline v3f32 key_axis(KB::Key negH, KB::Key posH, KB::Key negV, KB::Key posV, KB::Key negD, KB::Key posD) {
 		return composite(
 			get_key(negH), get_key(posH),
 			get_key(negV), get_key(posV),
@@ -447,7 +447,7 @@ namespace Input {
 
 	void context_key_callback(
 		GLFWwindow* window,
-		Keyboard::Key key,
+		KB::Key key,
 		int scancode,
 		Action::Type action,
 		int mods
@@ -455,9 +455,9 @@ namespace Input {
 		if (action != Action::Press && action != Action::Release) return;
 		auto& context = get_context();
 		if (action == Action::Press) {
-			context.key_states[Keyboard::index_of(key)] |= ButtonState::Down;
+			context.key_states[KB::index_of(key)] |= ButtonState::Down;
 		} else if (action == Action::Release) {
-			context.key_states[Keyboard::index_of(key)] |= ButtonState::Up;
+			context.key_states[KB::index_of(key)] |= ButtonState::Up;
 		}
 	}
 
@@ -487,9 +487,9 @@ namespace Input {
 	}
 
 	Array<u8>	get_gamepads() {
-		static u8 dest[Gamepad::MaxGamepadCount];
+		static u8 dest[GP::MaxGamepadCount];
 		auto list = List{ larray(dest), 0 };
-		for (u8 i : u8xrange{ 0, Gamepad::MaxGamepadCount }) {
+		for (u8 i : u8xrange{ 0, GP::MaxGamepadCount }) {
 			if (glfwJoystickIsGamepad(i)) {
 				list.push(i);
 			}
@@ -514,6 +514,29 @@ namespace Input {
 			glfwGetGamepadState(id, (GLFWgamepadstate*)&newContext.gamepads.states[id]);
 		return newContext;
 	}
+
+	namespace KB {
+		bool shortcut(Array<const Key> keys, bool* selected = null) {
+			auto downed = false;
+			for (auto key : keys) {
+				auto state = get_key(key);
+				if ((state & Pressed) == 0)
+					return false;
+				if ((state & Down))
+					downed = true;
+			}
+			if (downed && selected)
+				*selected = !(*selected);
+			return downed;
+		}
+
+		bool shortcut(LiteralArray<Key> keys, bool* selected = null) {
+			return shortcut(larray(keys), selected);
+		}
+
+	}
+
+
 }
 
 #endif

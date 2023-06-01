@@ -19,17 +19,12 @@ namespace controls {
 	constexpr auto VECTOR_LENGTH_THRESHOLD = 0.000001f;
 
 	inline auto safe_normalise(auto input) {
-		return glm::length(input) < VECTOR_LENGTH_THRESHOLD ? v2f32(0) : glm::normalize(input);
+		return glm::length2(input) < VECTOR_LENGTH_THRESHOLD ? v2f32(0) : glm::normalize(input);
 	}
 
 	using namespace Input;
 
-	inline v2f32 keyboard_plane(
-		Keyboard::Key up,
-		Keyboard::Key left,
-		Keyboard::Key down,
-		Keyboard::Key right
-	) {
+	inline v2f32 keyboard_plane(KB::Key up, KB::Key left, KB::Key down, KB::Key right) {
 		return safe_normalise(key_axis(left, right, down, up));
 	}
 
@@ -55,11 +50,11 @@ namespace controls {
 		);
 	}
 
-	void move_top_down(RigidBody2D& body, v2f32 input, f32 speed, f32 accel) {
+	void move_top_down(v2f32& velocity, v2f32 input, f32 speed, f32 accel) {
 		auto target_velocity = input * speed;
-		auto target_accel = target_velocity - body.velocity.translation;
+		auto target_accel = target_velocity - velocity;
 		auto effective_accel = safe_normalise(target_accel) * min(accel, glm::length(target_accel));
-		body.velocity.translation += effective_accel;
+		velocity += effective_accel;
 	}
 
 }

@@ -23,15 +23,24 @@ m4x4f32 ortho_project(v3f32	dimensions, v3f32 center) {
 
 struct Transform2D {
 	v2f32 translation = v2f32(0);
-	v2f32 scale = v2f32(1);
+	v2f32 scale = v2f32(0);
 	f32 rotation = .0f;
 };
+constexpr Transform2D identity_2d = {v2f32(0), v2f32(1), 0};
 
 inline Transform2D operator+(const Transform2D& lhs, const Transform2D& rhs) {
 	return {
 		lhs.translation + rhs.translation,
 		lhs.scale + rhs.scale,
 		lhs.rotation + rhs.rotation
+	};
+}
+
+inline Transform2D operator*(const Transform2D& lhs, f32 rhs) {
+	return {
+		lhs.translation * rhs,
+		lhs.scale * rhs,
+		lhs.rotation * rhs
 	};
 }
 
@@ -42,6 +51,18 @@ Transform2D lerp(const Transform2D& a, const Transform2D& b, f32 t) {
 	res.rotation = lerp(a.rotation, b.rotation, t);
 	res.scale = lerp(a.scale, b.scale, t);
 	return res;
+}
+
+struct Spacial2D {
+	Transform2D transform = identity_2d;
+	Transform2D velocity;
+	Transform2D accel;
+};
+
+inline Spacial2D& euler_integrate(Spacial2D& spacial, f32 dt) {
+	spacial.velocity = spacial.velocity + (spacial.accel * dt);
+	spacial.transform = spacial.transform + (spacial.velocity * dt);
+	return spacial;
 }
 
 struct OrthoCamera {
@@ -63,6 +84,17 @@ bool EditorWidget(const char* label, Transform2D& data) {
 		changed |= EditorWidget("Position", data.translation);
 		changed |= EditorWidget("Rotation", data.rotation);
 		changed |= EditorWidget("Scale", data.scale);
+		ImGui::TreePop();
+	}
+	return changed;
+}
+
+bool EditorWidget(const char* label, Spacial2D& data) {
+	bool changed = false;
+	if (ImGui::TreeNode(label)) {
+		changed |= EditorWidget("Transform", data.transform);
+		changed |= EditorWidget("Velocity", data.velocity);
+		changed |= EditorWidget("Acceleration", data.accel);
 		ImGui::TreePop();
 	}
 	return changed;

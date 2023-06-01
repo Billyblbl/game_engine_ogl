@@ -95,6 +95,12 @@ namespace ImGui {
 		return bit_flags(label, flags, larray(bit_names));
 	}
 
+	inline void NewFrame_OGL_GLFW() {
+		ImGui_ImplOpenGL3_NewFrame();
+		ImGui_ImplGlfw_NewFrame();
+		ImGui::NewFrame();
+	}
+
 	template<typename F> inline ImDrawData* RenderNewFrame(F func) {
 		ImGui_ImplOpenGL3_NewFrame();
 		ImGui_ImplGlfw_NewFrame();
@@ -241,6 +247,11 @@ template<typename T> bool EditorWidget(const cstr label, T* data) {
 		change |= EditorWidget("value", *data);
 	}
 	return change;
+}
+
+bool EditorWidget(const cstrp label, auto& unimplemented) {
+	ImGui::Text("Unimplemented Widget for type %s", typeid(decltype(unimplemented)).name());
+	return false;
 }
 
 #endif

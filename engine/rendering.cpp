@@ -51,10 +51,8 @@ GLuint load_shader(const char* path, GLenum type) {
 		file.close();
 		return create_shader(string(buffer, size), type);
 	} else {
-		fprintf(stderr, "failed to open file %s\n", path);
-		return 0;
+		return (fprintf(stderr, "failed to open file %s\n", path), 0);
 	}
-
 }
 
 struct GPUBinding {
@@ -183,15 +181,6 @@ void destroy_pipeline(Pipeline& pipeline) {
 inline GPUBinding bind_to(const TexBuffer& mapping, GLuint target) { return GPUBinding{ GPUBinding::Texture, mapping.id, target, mapping.dimensions.x * mapping.dimensions.y * mapping.dimensions.z * mapping.dimensions.w }; }
 template<typename T> inline GPUBinding bind_to(const MappedObject<T>& mapping, GLuint target) { return GPUBinding{ GPUBinding::UBO, mapping.id, target, sizeof(mapping.obj) }; }
 template<typename T> inline GPUBinding bind_to(const MappedBuffer<T>& mapping, GLuint target) { return GPUBinding{ GPUBinding::SSBO, mapping.id, target, (GLsizeiptr)mapping.content.size_bytes() }; }
-
-template<typename Func> inline void render(GLuint fbf, rtu32 viewport, GLbitfield clear_flags, v4f32 clear_color, Func commands) {
-	GL_GUARD(glBindFramebuffer(GL_FRAMEBUFFER, fbf));
-	GL_GUARD(glViewport(viewport.min.x, viewport.min.x, width(viewport), height(viewport)));
-	GL_GUARD(glClearColor(clear_color.r, clear_color.g, clear_color.b, clear_color.a));
-	GL_GUARD(glClear(clear_flags));
-	commands();
-	GL_GUARD(glBindFramebuffer(GL_FRAMEBUFFER, 0));
-}
 
 void wait_gpu() {
 	GL_GUARD(glFinish());

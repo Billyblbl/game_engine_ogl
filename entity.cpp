@@ -15,227 +15,169 @@
 #define MAX_ENTITIES 100
 #define MAX_DRAW_BATCH MAX_ENTITIES
 
-struct GenRef {
-	u32 index;
+constexpr auto flag_index_count = 32;
+
+struct EntityDescriptor {
 	u32 generation;
+	u32 flags;
+	string name;
+	i16 index_hints[flag_index_count];
 };
 
-template<typename T> u32 get_generation(T& t);
+struct EntityRegistry {
+	List<EntityDescriptor> pool;
+	List<string> flag_names;
+	enum : u8 {
+		AllocatedEntity = 0,
+		PendingRelease = 1,
+		//runtime defined indices 2->flag_index_count-1
+		FlagIndexCount = flag_index_count
+	};
+};
 
-template<typename T> T* try_get(Array<T> arr, GenRef ref) {
-	auto current_gen = get_generation(arr[ref.index]);
-	if (current_gen == ref.generation)
-		return &arr[ref.index];
-	else
-		return null;
+struct EntityHandle {
+	EntityDescriptor* desc;
+	u32 generation;
+	inline bool valid() {
+		return
+			desc != null &&
+			desc->generation <= generation &&
+			(desc->flags & mask<u32>(EntityRegistry::AllocatedEntity)) &&
+			!(desc->flags & mask<u32>(EntityRegistry::PendingRelease)) &&
+			true;
+	}
+};
+
+EntityRegistry create_entity_registry(Alloc allocator, u32 capacity) {
+	EntityRegistry registry;
+	registry.pool = List{ alloc_array<EntityDescriptor>(allocator, capacity), 0 };
+	registry.flag_names = List{ alloc_array<string>(allocator, EntityRegistry::FlagIndexCount), 0 };
+	// Base flags
+	registry.flag_names.insert(EntityRegistry::AllocatedEntity, "Allocated Entity");
+	registry.flag_names.insert(EntityRegistry::PendingRelease, "Pending Release");
+	return registry;
 }
 
-struct Entity {
-	using Controls = controls::TopDownControl;
-	enum FlagIndex : u64 { Allocated, Dynbody, Solid, Sprite, Player, Sound };
-	u64 flags = mask<u64>(Allocated);
-	u32 generation = 0;
-	Transform2D transform;
-	RenderMesh* mesh;
-	SpriteCursor sprite;
-	f32 draw_layer;
-	RigidBody2D body;
-	ShapedCollider2D collider;
-	Controls controls;
-	AudioSource audio_source;
-	string name = "__entity__";
-};
+void delete_registry(Alloc allocator, EntityRegistry& registry) {
+	dealloc_array(allocator, registry.flag_names.capacity);
+	dealloc_array(allocator, registry.pool.capacity);
+	registry.flag_names = { {}, 0 };
+	registry.pool = { {}, 0 };
+}
 
-template<> u32 get_generation<Entity>(Entity& t) { return t.generation; }
-
-inline Entity& create_entity(List<Entity>& pool, const Entity& ent = {}) {
-	Entity* slot = null;
-	for (auto& ent : pool.allocated()) if (ent.flags == 0) {
+inline EntityHandle allocate_entity(EntityRegistry& registry, string name = "__entity__", u64 flags = 0) {
+	EntityDescriptor* slot = null;
+	for (auto& ent : registry.pool.allocated()) if (ent.flags == 0) {
 		slot = &ent;
 		break;
 	}
 	if (slot == null)
-		slot = &pool.push({ 0, 0 });
+		slot = &registry.pool.push(EntityDescriptor{ 0 });
 	slot->generation++;
-	return *slot;
+	slot->name = name;
+	slot->flags = flags | mask<u64>(EntityRegistry::AllocatedEntity);
+	return { slot, slot->generation };
 }
 
-bool EditorWidget(const cstr label, Entity& entity) {
-	bool changed = false;
-	if (ImGui::TreeNode(label)) {
-		changed |= ImGui::bit_flags("flags", entity.flags, { "Allocated", "Dynbody", "Collision", "Sprite", "Player", "Sound" });
-		if (has_one(entity.flags, mask<u64>(Entity::Dynbody, Entity::Solid, Entity::Sprite, Entity::Player)))
-			changed |= EditorWidget("transform", entity.transform);
-		if (has_one(entity.flags, mask<u64>(Entity::Dynbody)))
-			changed |= EditorWidget("body", entity.body);
-		if (has_one(entity.flags, mask<u64>(Entity::Solid)))
-			changed |= EditorWidget("collider", entity.collider);
-		if (has_one(entity.flags, mask<u64>(Entity::Sprite)) && ImGui::TreeNode("sprite")) {
-			defer{ ImGui::TreePop(); };
-			changed |= EditorWidget("cursor", entity.sprite);
-			changed |= EditorWidget("draw layer", entity.draw_layer);
-		}
-		if (has_one(entity.flags, mask<u64>(Entity::Player)))
-			changed |= EditorWidget("controls", entity.controls);
-		if (has_one(entity.flags, mask<u64>(Entity::Sound)))
-			changed |= EditorWidget("audio source", entity.audio_source);
-		ImGui::TreePop();
-	}
-	return changed;
-}
-
-auto& add_sprite(Entity& ent, SpriteCursor sprite, RenderMesh* mesh) {
-	ent.flags |= mask<u64>(Entity::Sprite);
-	ent.sprite = sprite;
-	ent.mesh = mesh;
-	return ent;
-}
-
-auto& add_dynbody(Entity& ent, const RigidBody2D& body) {
-	ent.flags |= mask<u64>(Entity::Dynbody);
-	ent.body = body;
-	ent.body.transform = ent.transform;
-	return ent;
-}
-
-auto& add_collider(Entity& ent, const ShapedCollider2D& collider) {
-	ent.flags |= mask<u64>(Entity::Solid);
-	ent.collider = collider;
-	return ent;
-}
-
-auto& add_sound(Entity& ent, AudioSource source) {
-	ent.flags |= mask<u64>(Entity::Sound);
-	ent.audio_source = source;
-	return ent;
-}
-
-auto& add_controls(Entity& ent, f32 speed, f32 acceleration, f32 walk_cycle) {
-	ent.flags |= mask<u64>(Entity::Player);
-	ent.controls.speed = speed;
-	ent.controls.accel = acceleration;
-	ent.controls.walk_cycle_duration = walk_cycle;
-	return ent;
-}
-
-Array<Entity*> gather(u64 flags, Array<Entity> entities, Array<Entity*> buffer) {
-	auto list = List{ buffer, 0 };
-	for (auto& ent : entities) if (has_all(ent.flags, flags))
-		list.push(&ent);
-	return list.allocated();
-}
-
-void draw_entities(Array<Entity> entities, const RenderMesh& rect, MappedObject<m4x4f32> view_projection, const TexBuffer atlas, SpriteRenderer draw) {
-	auto batch = draw.start_batch();
-	for (auto&& ent : entities) if (has_all(ent.flags, mask<u64>(Entity::Sprite)))
-		batch.push(sprite_data(trs_2d(ent.transform), ent.sprite.uv_rect, ent.sprite.atlas_index, ent.draw_layer));
-	draw(rect, atlas, view_projection, batch.current);
-}
-
-void update_bodies(Array<Entity> entities) {
-	for (auto& ent : entities) if (has_all(ent.flags, mask<u64>(Entity::Dynbody))) {
-		ent.body.transform = ent.transform;
+void clear_pending_releases(EntityRegistry& registry) {
+	for (auto& ent : registry.pool.allocated()) if (has_all(ent.flags, mask<u64>(EntityRegistry::AllocatedEntity, EntityRegistry::PendingRelease))) {
+		ent.flags &= ~mask<u64>(EntityRegistry::AllocatedEntity);
 	}
 }
 
-void interpolate_bodies(Array<Entity> entities, f32 real_time, f32 physics_time, f32 dt) {
-	for (auto& ent : entities) if (has_all(ent.flags, mask<u64>(Entity::Dynbody)))
-		ent.transform = lerp(ent.transform, ent.body.transform, inv_lerp(real_time - dt, physics_time, real_time));
-}
+template<typename T> struct ComponentRegistry {
+	List<T> buffer;
+	List<EntityHandle> handles;
+	u8 flag_index;
 
-using Collision = tuple<u32, u32, rtf32, v2f32, v2f32, v2f32>;
+	auto iter() { return parallel_iter(handles.allocated(), buffer.allocated()); }
 
-void apply_global_force(Array<Entity> entities, f32 dt, v2f32 force) {
-	for (auto& ent : entities) if (has_all(ent.flags, mask<u64>(Entity::Dynbody)))
-		ent.body.velocity.translation += force * dt;;
-}
+	bool has_flag(EntityHandle ent) {
+		return has_all(ent.desc->flags, mask<u32>(flag_index));
+	}
 
-Array<Collision> simulate_collisions(Array<Entity> entities) {
-	auto has_body = [](const Entity& ent) { return has_all(ent.flags, mask<u64>(Entity::Dynbody)); };
+	T& add_to(EntityHandle ent, T&& comp) {
+		ent.desc->index_hints[flag_index] = handles.current;
+		ent.desc->flags |= mask<u32>(flag_index);
+		handles.push(ent);
+		return buffer.push(comp);
+	}
 
-	//! DEBUG
-	static Collision collision_buffer[MAX_ENTITIES * MAX_ENTITIES];
-	auto collisions = List{ larray(collision_buffer), 0 };
-	//!
+	i64 index_of(EntityHandle ent) {
+		if (!ent.valid())
+			return -1;
+		return ent.desc->index_hints[flag_index] = linear_search(handles.allocated(),
+			[&](EntityHandle h) { return h.desc == ent.desc; },
+			ent.desc->index_hints[flag_index]);
+	}
 
-	for (auto i : u64xrange{ 0, entities.size() }) if (has_all(entities[i].flags, mask<u64>(Entity::Solid))) {
-		for (auto j : u64xrange{ i + 1, entities.size() }) if (has_all(entities[j].flags, mask<u64>(Entity::Solid))) {
-			auto& e1 = entities[i];
-			auto& e2 = entities[j];
-			auto t1 = trs_2d(has_body(e1) ? e1.body.transform : e1.transform);
-			auto t2 = trs_2d(has_body(e2) ? e2.body.transform : e2.transform);
-			auto [collided, aabbi, pen] = intersect(e1.collider.shape, e2.collider.shape, t1, t2);
-			if (!collided)
-				continue;
+	void remove_from(EntityHandle ent) {
+		auto index = index_of(ent);
+		if (index < 0)
+			return fail_ret("Failed to remove component : Not found", void{});
+		ent.desc->flags &= ~mask<u32>(flag_index);
+		buffer.remove(index);
+		handles.remove(index);
+	}
 
-			auto desc1 = describe_body(has_body(e1) ? &e1.body : null, t1);
-			auto desc2 = describe_body(has_body(e2) ? &e2.body : null, t2);
+	T* operator[](EntityHandle ent) {
+		auto index = index_of(ent);
+		if (index < 0)
+			return null;
+		else
+			return &buffer.allocated()[index];
+	}
 
-			if (!e1.collider.sensor && !e2.collider.sensor &&
-				glm::length2(pen) > penetration_threshold * penetration_threshold &&
-				can_resolve_collision(desc1, desc2)) { // resolve
-
-				// Correct penetration
-				auto [o1, o2] = correction_offset(pen, desc1.inverse_mass, desc2.inverse_mass);
-				e1.body.transform.translation += o1;
-				e2.body.transform.translation += o2;
-
-				//! TODO physical rotation assumes center of mass = local origin, which requires to not touch the body's center of mass
-				//TODO friction
-				//TODO damping
-				// Compute contact points with new positions
-				auto normal = glm::normalize(pen);
-				auto [ctct1, ctct2] = contacts_points(
-					e1.collider.shape, e2.collider.shape,
-					trs_2d(has_body(e1) ? e1.body.transform : e1.transform),
-					trs_2d(has_body(e2) ? e2.body.transform : e2.transform),
-					normal
-				);
-				v2f32 contacts[2] = { ctct1, ctct2 };
-
-				// Bounce
-				auto [delta1, delta2] = bounce_contacts(desc1, desc2, larray(contacts), normal, min(e1.collider.restitution, e2.collider.restitution));
-				e1.body.velocity = e1.body.velocity + delta1;
-				e2.body.velocity = e2.body.velocity + delta2;
-
-				collisions.push({ i, j, aabbi, pen, ctct1, ctct2 });
-			} else
-				collisions.push({ i, j, aabbi, pen, v2f32(0), v2f32(0) });
+	void clear_stale() {
+		for (isize i = handles.current - 1; i >= 0; i--) if (!handles.allocated()[i].valid()) {
+			buffer.remove(i);
+			handles.remove(i);
 		}
 	}
-	return collisions.allocated();
+};
+
+template<typename... T> void clear_stale(ComponentRegistry<T>&... components) { (..., components.clear_stale()); }
+
+template<typename T> ComponentRegistry<T> create_component_registry(Alloc allocator, u32 capacity) {
+	ComponentRegistry<T> registry;
+	registry.buffer = List{ alloc_array<T>(allocator, capacity), 0 };
+	registry.handles = List{ alloc_array<EntityHandle>(allocator, capacity), 0 };
+	registry.flag_index = -1;
+	return registry;
 }
 
-void update_audio_sources(Array<Entity> entities) {
-	for (auto ent : entities) if (has_all(ent.flags, mask<u64>(Entity::Sound))) {
-		ent.audio_source.set<POSITION>(v3f32(ent.transform.translation, 0));
-		if (has_all(ent.flags, mask<u64>(Entity::Dynbody)))
-			ent.audio_source.set<VELOCITY>(v3f32(ent.body.velocity.translation, 0));
-	}
+template<typename T> void delete_registry(Alloc allocator, ComponentRegistry<T>& registry) {
+	dealloc_array<T>(allocator, registry.buffer.capacity);
+	dealloc_array<EntityHandle>(allocator, registry.handles.capacity);
+	registry.buffer = {};
+	registry.handles = { {}, 0 };
 }
 
-void update_audio_listener(const Entity& listener) {
-	ALListener::set<POSITION>(v3f32(listener.transform.translation, 0));
-	if (has_all(listener.flags, mask<u64>(Entity::Dynbody)))
-		ALListener::set<VELOCITY>(v3f32(listener.body.velocity.translation, 0));
+u8 register_flag_index(EntityRegistry& entities, string name) {
+	defer{ entities.flag_names.push(name); };
+	return entities.flag_names.current;
 }
 
-bool EditorWindow(const cstr label, List<Entity>& entities) {
-	ImGui::Begin(label); defer{ ImGui::End(); };
-	bool changed = false;
-	ImGui::Text("Capacity : %u", entities.capacity.size());
-	int count = entities.current;
-	if (ImGui::InputInt("Current", &count)) {
-		if (entities.current < count) {
-			for (auto i : u64xrange{ 0, count - entities.current }) {
-				if (entities.capacity.size() <= entities.current)
-					break;
-				entities.push({ 0, 0 });
+template<typename... T> bool entity_registry_window(const cstr title, EntityRegistry& entities, ComponentRegistry<T>&... comp) {
+	bool opened = true;
+	if (ImGui::Begin(title, &opened)) {
+		auto flag_names = entities.flag_names.allocated();
+		for (auto& desc : entities.pool.allocated()) {
+			EntityHandle ent = { &desc, desc.generation };
+			if (ent.valid() && ImGui::TreeNode(desc.name.data())) {
+				defer{ ImGui::TreePop(); };
+				ImGui::bit_flags("Flags", desc.flags, entities.flag_names.allocated());
+				ImGui::Text("Slot Generation : %u", desc.generation);
+				(...,
+					[&]() {
+						if (has_all(desc.flags, mask<u32>(comp.flag_index)) && ImGui::CollapsingHeader(flag_names[comp.flag_index].data()))
+							EditorWidget(flag_names[comp.flag_index].data(), *comp[ent]);
+					}
+				());
 			}
-		} else if (count >= 0) entities.current = count;
-		changed = true;
-	}
-	changed |= EditorWidget("Allocated", entities.allocated());
-	return changed;
+		}
+	} ImGui::End();
+	return opened;
 }
+
 #endif

@@ -12,7 +12,9 @@
 #include <string>
 #include <math.cpp>
 
-enum SamplingFilter: GLint {
+#include <imgui_extension.cpp>
+
+enum SamplingFilter : GLint {
 	Nearest = GL_NEAREST,
 	Linear = GL_LINEAR,
 	NearestMipmapNearest = GL_NEAREST_MIPMAP_NEAREST,
@@ -21,7 +23,7 @@ enum SamplingFilter: GLint {
 	LinearMipmapLinear = GL_LINEAR_MIPMAP_LINEAR
 };
 
-enum WrapMode: GLint {
+enum WrapMode : GLint {
 	Clamp = GL_CLAMP_TO_EDGE,
 	MirroredRepeat = GL_MIRRORED_REPEAT,
 	Repeat = GL_REPEAT,
@@ -29,12 +31,12 @@ enum WrapMode: GLint {
 	MirroredClamp = GL_MIRROR_CLAMP_TO_EDGE
 };
 
-enum DSTextureMode: GLint {
+enum DSTextureMode : GLint {
 	Depth = GL_DEPTH_COMPONENT,
 	Stencil = GL_STENCIL_INDEX
 };
 
-enum Comparison: GLint {
+enum Comparison : GLint {
 	None = 0,
 	LEq = GL_LEQUAL,
 	GEq = GL_GEQUAL,
@@ -46,7 +48,7 @@ enum Comparison: GLint {
 	Never = GL_NEVER
 };
 
-enum Swizzle: GLint {
+enum Swizzle : GLint {
 	Red = GL_RED,
 	Green = GL_GREEN,
 	Blue = GL_BLUE,
@@ -55,7 +57,7 @@ enum Swizzle: GLint {
 	Zero = GL_ZERO,
 };
 
-enum TexType: GLenum {
+enum TexType : GLenum {
 	NoType = 0,
 	TX1D = GL_TEXTURE_1D,
 	TX2D = GL_TEXTURE_2D,
@@ -169,12 +171,11 @@ TexBuffer& unload(TexBuffer& texture) {
 }
 
 bool upload_texture_data(TexBuffer& texture, Array<byte> source, SrcFormat format, Area<3> box) {
-	// printf("GPU loading texture data type:%s, id:%u, box.min(%u, %u, %u), box.max(%u, %u, %u)\n", GLtoString(texture.type).data(), texture.id, box.min.x, box.min.y, box.min.z, box.max.x, box.max.y, box.max.z);
 	switch (texture.type) {
 	case TX1D:		GL_GUARD(glTextureSubImage1D(texture.id, 0, box.min.x, width(box), format.channels, format.type, source.data())); break;
-	case TX2D:		GL_GUARD(glTextureSubImage2D(texture.id, 0, box.min.x, box.min.y, width(box), height(box), format.channels, format.type, source.data())); break;
+	case TX2D:
 	case TX1DARR:	GL_GUARD(glTextureSubImage2D(texture.id, 0, box.min.x, box.min.y, width(box), height(box), format.channels, format.type, source.data())); break;
-	case TX3D:		GL_GUARD(glTextureSubImage3D(texture.id, 0, box.min.x, box.min.y, box.min.z, width(box), height(box), depth(box), format.channels, format.type, source.data())); break;
+	case TX3D:
 	case TX2DARR:	GL_GUARD(glTextureSubImage3D(texture.id, 0, box.min.x, box.min.y, box.min.z, width(box), height(box), depth(box), format.channels, format.type, source.data())); break;
 	default: return fail_ret(GLtoString(texture.type).data(), false);
 	}
@@ -185,6 +186,7 @@ template<u32 D> Area<D + 1> slice_to_area(Area<D> slice, u32 index) { return { {
 
 template<typename T, u32 D> bool upload_texture_data(TexBuffer& texture, Array<T> source, Area<D> area) {
 	//TODO proper area fit check
+	//TODO differentiate RGB vs sRGB texture upload https://youtu.be/MzJwiEIGj7k?t=2002
 	// expect(glm::length2(area.max - area.min) <= source.size());
 	return upload_texture_data(texture, cast<byte>(source), Format<T>, area);
 }
@@ -204,6 +206,29 @@ TexBuffer create_texture(Array<byte> source, SrcFormat source_format, TexType ty
 template<typename T> TexBuffer create_texture(Array<T> source, TexType type, v4u32 dimensions, GPUFormat internal_format = RGBA32F) {
 	expect(dimensions.x * dimensions.y * dimensions.z <= source.size());
 	return create_texture(cast<byte>(source), Format<T>, type, dimensions, internal_format);
+}
+
+//TODO Maybe? move this in a  more imgui specific place
+ImVec2 fit_to_area(ImVec2 area, v2f32 dimensions) {
+	auto ratios = ImGui::to_glm(area) / dimensions;
+	return ImGui::from_glm(dimensions * min(ratios.x, ratios.y));
+}
+
+bool EditorWidget(const cstr label, TexBuffer& buffer) {
+	if (ImGui::TreeNode(label)) {
+		defer { ImGui::TreePop(); };
+		ImGui::Text("id : %u", buffer.id);
+		//TODO edit
+		ImGui::Text("Dimensions : ( %u, %u, %u, %u )", buffer.dimensions.x, buffer.dimensions.y, buffer.dimensions.z, buffer.dimensions.w);
+		ImGui::Text("Type : %s", GLtoString(buffer.type).data());
+		ImGui::Text("Format : %s", GLtoString(buffer.format).data());
+		//TODO content preview
+		if (buffer.type == TX2D)
+			ImGui::Image((ImTextureID)(u64)buffer.id, fit_to_area(ImGui::GetContentRegionAvail(), buffer.dimensions), ImVec2(0, 1), ImVec2(1, 0));
+		else
+			ImGui::Text("Unimplemented preview for texture type : %s", GLtoString(buffer.type).data());
+	}
+	return false;
 }
 
 #endif

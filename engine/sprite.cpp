@@ -104,8 +104,8 @@ struct SpriteInstance {
 	v4u32 depths; //x -> altas page, y -> sprite depths, z & w -> padding
 };
 
-auto sprite_data(m4x4f32 matrix, rtf32 uv_rect, u32 atlas_page, f32 depth) {
-	return SpriteInstance { matrix, uv_rect, v4u32(atlas_page, depth, 0, 0) };
+auto sprite_data(m4x4f32 matrix, SpriteCursor sprite, f32 depth) {
+	return SpriteInstance { matrix, sprite.uv_rect, v4u32(sprite.atlas_index, depth, 0, 0) };
 }
 
 struct SpriteRenderer {

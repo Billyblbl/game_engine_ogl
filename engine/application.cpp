@@ -8,6 +8,7 @@
 #include <glutils.cpp>
 #include <blblstd.hpp>
 #include <math.cpp>
+#include <framebuffer.cpp>
 
 const static GLenum OGLLogSeverity[] = {
 	GL_DEBUG_SEVERITY_HIGH,
@@ -64,8 +65,9 @@ auto create_app(const cstr window_title, v2u32 window_dimensions, Scene start_sc
 
 	int display_w, display_h;
 	glfwGetFramebufferSize(window, &display_w, &display_h);
-
-	return App{ window, input_context, v2u32(display_w, display_h), start_scene };
+	default_framebuffer.dimensions = v2u32(display_w, display_h);
+	default_framebuffer.clear_attachement = clear_bit(Color0Attc) | clear_bit(DepthAttc);
+	return App{ window, input_context, default_framebuffer.dimensions, start_scene };
 }
 
 bool init_ogl(App& app, bool debug = true) {

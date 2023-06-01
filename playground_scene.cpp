@@ -26,11 +26,6 @@
 
 #define MAX_SPRITES MAX_ENTITIES
 
-ImVec2 fit_to_area(ImVec2 area, v2f32 dimensions) {
-	auto ratios = ImGui::to_glm(area) / dimensions;
-	return ImGui::from_glm(dimensions * min(ratios.x, ratios.y));
-}
-
 const struct {
 	cstrp test_character_spritesheet_path = "test_character.png";
 	cstrp test_character_anim_path = "test_character.anim";
@@ -38,49 +33,134 @@ const struct {
 	cstrp test_sound = "./audio/file_example_OOG_1MG.ogg";
 } assets;
 
-struct Physics {
+struct ISystem {
+	string name = typeid(decltype(*this)).name();
+	string shortcut_str = "";
+	Input::KB::Key shortcut[2];
+	bool show_window = false;
+	virtual void editor_window() {};
+};
+
+struct Physics : public ISystem {
 	f32 time_point = 0.f;
 	f32 time_step = 1.f / 60.f;
-	bool draw_debug = false;
+	bool debug = false;
 	bool wireframe = true;
-	ShapeRenderer debug_draw = load_collider_renderer();
+	ShapeRenderer debug_draw = load_shape_renderer();
 	v2f32 gravity = v2f32(0);
-	Array<Collision> collisions;
+	struct Collision {
+		v2f32 penetration;
+		rtf32 aabbi;
+		EntityHandle e1;
+		EntityHandle e2;
+	};
+	List<Collision> collisions;
 
-	void operator()(Array<Entity> entities, Time::Clock& clock) {
-		while (Time::metronome(clock.current, time_step, time_point)) { // Advance physics sim until it caught up to real time
-			// controls::move_top_down(player.body, player.controls.input, player.controls.speed, player.controls.accel * time_step);
-			apply_global_force(entities, time_step, gravity);
-			for (auto& ent : entities) if (has_all(ent.flags, mask<u64>(Entity::Dynbody)))
-				ent.body.transform = euler_integrate(ent.body.transform, filter_locks(ent.body.velocity, ent.body.locks), time_step);
-			collisions = simulate_collisions(entities);
-		}
-		interpolate_bodies(entities, clock.current, time_point, clock.dt);
+	Physics() {
+		name = "Physics";
+		shortcut_str = "Alt+P";
+		using namespace Input;
+		using namespace KB;
+		shortcut[0] = K_LEFT_ALT;
+		shortcut[1] = K_P;
 	}
 
-	void editor_window() {
-		ImGui::Begin("Physics"); defer{ ImGui::End(); };
-		EditorWidget("Draw debug", draw_debug);
-		EditorWidget("Wireframe", wireframe);
-		EditorWidget("Sim time", time_point);
-		EditorWidget("Time step", time_step);
-		EditorWidget("Gravity", gravity);
-		if (ImGui::TreeNode("Collisions")) {
-			for (auto [i, j, aabbi, penetration, ctct1, ctct2] : collisions) {
-				ImGui::PushID(i * MAX_ENTITIES + j);
-				ImGui::Text("%u:%u", i, j);
-				EditorWidget("aabbi", aabbi);
-				EditorWidget("Penetration", penetration);
-				EditorWidget("Contact 1", ctct1);
-				EditorWidget("Contact 2", ctct2);
-				ImGui::PopID();
-			}
-			ImGui::TreePop();
+	void operator()(
+		ComponentRegistry<Collider2D>& colliders,
+		ComponentRegistry<Spacial2D>& spacials,
+		const Time::Clock& clock) {
+
+		for (auto [_, sp] : spacials.iter())
+			euler_integrate(*sp, clock.dt);
+
+		collisions.current = 0;
+		for (auto [i, j] : self_combinatronic_idx(colliders.handles.current)) {
+			auto ent1 = colliders.handles.allocated()[i];
+			auto ent2 = colliders.handles.allocated()[j];
+
+			auto col1 = colliders[ent1];
+			auto col2 = colliders[ent2];
+			auto sp1 = spacials[ent1];
+			auto sp2 = spacials[ent2];
+
+			auto [collided, aabbi, pen] = intersect(col1->shape, col2->shape, trs_2d(sp1->transform), trs_2d(sp2->transform));
+			if (collided)
+				collisions.push({ pen, aabbi, ent1, ent2 });
+
+			if (glm::length2(pen) < penetration_threshold * penetration_threshold || !can_resolve_collision(col1->material.inverse_mass, col2->material.inverse_mass, col1->material.inverse_inertia, col2->material.inverse_inertia))
+				continue;
+
+			// Correct penetration
+			auto [o1, o2] = correction_offset(pen, col1->material.inverse_mass, col2->material.inverse_mass);
+			sp1->transform.translation += o1;
+			sp2->transform.translation += o2;
+
+			//TODO friction
+			// Compute contact points with corrected positions
+			auto normal = glm::normalize(pen);
+			auto [ctct1, ctct2] = contacts_points(col1->shape, col2->shape, trs_2d(sp1->transform), trs_2d(sp2->transform), normal);
+			v2f32 contacts[2] = { ctct1, ctct2 };
+
+			// Bounce
+			PhysicalDescriptor desc1 = { sp1->velocity, sp1->transform.translation, col1->material.inverse_mass, col1->material.inverse_inertia };
+			PhysicalDescriptor desc2 = { sp2->velocity, sp2->transform.translation, col2->material.inverse_mass, col2->material.inverse_inertia };
+			auto [delta1, delta2] = bounce_contacts(desc1, desc2, larray(contacts), normal, min(col1->material.restitution, col2->material.restitution));
+			sp1->velocity = sp1->velocity + delta1;
+			sp2->velocity = sp2->velocity + delta2;
 		}
+	}
+
+	void draw_debug(
+		ComponentRegistry<Collider2D>& colliders,
+		ComponentRegistry<Spacial2D>& spacials,
+		MappedObject<m4x4f32>& view_projection_matrix
+	) {
+		for (auto [ent, col] : colliders.iter()) {
+			auto spacial = spacials[*ent];
+			auto mat = trs_2d(spacial->transform);
+			debug_draw(col->shape, mat, view_projection_matrix, v4f32(1, 0, 0, 1), wireframe);
+			v2f32 local_vel = glm::transpose(mat) * v4f32(spacial->velocity.translation, 0, 1);
+
+			sync(debug_draw.render_info, { mat, v4f32(1, 1, 0, 1) });
+			debug_draw.draw_line(
+				Segment<v2f32>{v2f32(0), local_vel},
+				view_projection_matrix,
+				wireframe
+			);
+		}
+
+		for (auto [pen, aabbi, ent1, ent2] : collisions.allocated()) {
+			v2f32 verts[4];
+			sync(debug_draw.render_info, { m4x4f32(1), v4f32(0, 1, 0, 1) });
+			debug_draw.draw_polygon(make_box_poly(larray(verts), dims_p2(aabbi), (aabbi.max + aabbi.min) / 2.f), view_projection_matrix, wireframe);
+			// debug_draw(make_shape_2d<Shape2D::Line>(Segment<v2f32>{ctct1, ctct2}), m4x4f32(1), view_projection_matrix, v4f32(0, 1, 1, 1), wireframe);
+		}
+
+	}
+
+	void editor_window() override {
+		if (ImGui::Begin("Physics", &show_window)) {
+			EditorWidget("Draw debug", debug);
+			EditorWidget("Wireframe", wireframe);
+			EditorWidget("Sim time", time_point);
+			EditorWidget("Time step", time_step);
+			EditorWidget("Gravity", gravity);
+			if (ImGui::TreeNode("Collisions")) {
+				for (auto [penetration, aabbi, i, j] : collisions.allocated()) {
+					char buffer[999];
+					snprintf(buffer, sizeof(buffer), "%s:%s", i.desc->name.data(), j.desc->name.data());
+					if (ImGui::TreeNode(buffer)) {
+						EditorWidget("aabbi", aabbi);
+						EditorWidget("Penetration", penetration);
+					}
+				}
+				ImGui::TreePop();
+			}
+		} ImGui::End();
 	}
 };
 
-struct Rendering {
+struct Rendering : public ISystem {
 	OrthoCamera camera = { v3f32(16.f, 9.f, 1000.f) / 2.f, v3f32(0) };
 	MappedObject<m4x4f32> view_projection_matrix = map_object(m4x4f32(1));
 	SpriteRenderer draw = load_sprite_renderer(assets.draw_pipeline, MAX_DRAW_BATCH);
@@ -90,6 +170,12 @@ struct Rendering {
 
 	Rendering() {
 		atlas.conf_sampling({ Nearest, Nearest });
+		name = "Rendering";
+		shortcut_str = "Alt+R";
+		using namespace Input;
+		using namespace KB;
+		shortcut[0] = K_LEFT_ALT;
+		shortcut[1] = K_R;
 	}
 
 	~Rendering() {
@@ -100,48 +186,45 @@ struct Rendering {
 		unmap(view_projection_matrix);
 	}
 
-	void operator()(Array<Entity> entities, GLuint framebuffer, v2f32 dimensions, Transform2D& viewpoint, const Physics& physics) {
-		render(framebuffer, { v2u32(0), dimensions }, clear_bit(Color0Attc) | clear_bit(DepthAttc), v4f32(v3f32(0.3), 1),
-			[&]() {
-				*view_projection_matrix.obj = view_project(project(camera), trs_2d(viewpoint));
-				draw_entities(entities, rect, view_projection_matrix, atlas, draw);
-				if (physics.draw_debug) {
-					for (auto& ent : entities) if (has_all(ent.flags, mask<u64>(Entity::Solid))) {
-						physics.debug_draw(
-							ent.collider.shape,
-							trs_2d(ent.transform),
-							view_projection_matrix,
-							v4f32(1, 0, 0, 1),
-							physics.wireframe
-						);
+	void operator()(
+		ComponentRegistry<SpriteCursor>& sprites,
+		ComponentRegistry<Spacial2D>& spacials,
+		FrameBuffer& fbf, const Transform2D& viewpoint) {
 
-						v2f32 local_vel = glm::transpose(trs_2d(ent.body.transform)) * v4f32(ent.body.velocity.translation, 0, 1);
-						physics.debug_draw(
-							make_shape_2d<Shape2D::Line>(Segment<v2f32>{v2f32(0), local_vel}),
-							trs_2d(ent.transform),
-							view_projection_matrix,
-							v4f32(1, 0, 1, 1),
-							physics.wireframe
-						);
+		begin_render(fbf);
+		clear(fbf, v4f32(v3f32(0.3), 1));
+		*view_projection_matrix.obj = view_project(project(camera), trs_2d(viewpoint));
+		auto batch = draw.start_batch();
+		for (auto [ent, sprite] : sprites.iter())
+			batch.push(sprite_data(trs_2d(spacials[*ent]->transform), *sprite, 0/*draw layer*/));
+		draw(rect, atlas, view_projection_matrix, batch.current);
+	}
 
-					}
-					for (auto [_1, _2, aabbi, pen, ctct1, ctct2] : physics.collisions) {
-						v2f32 verts[4];
-						auto box = make_box_shape(larray(verts), dims_p2(aabbi), (aabbi.max + aabbi.min) / 2.f);
-						physics.debug_draw(box, m4x4f32(1), view_projection_matrix, v4f32(0, 1, 0, 1), physics.wireframe);
-						physics.debug_draw(make_shape_2d<Shape2D::Line>(Segment<v2f32>{ctct1, ctct2}), m4x4f32(1), view_projection_matrix, v4f32(0, 1, 1, 1), physics.wireframe);
-					}
-				}
-			}
-		);
-
+	void editor_window() override {
+		if (ImGui::Begin("Rendering", &show_window)) {
+			EditorWidget("Camera", camera);
+			if (ImGui::Button("Reset Camera"))
+				camera = { v3f32(16.f, 9.f, 1000.f) / 2.f, v3f32(0) };
+			EditorWidget("Atlas", atlas);
+		}; ImGui::End();
 	}
 };
 
-struct Audio {
+struct Audio : public ISystem {
 	static constexpr auto MAX_AUDIO_BUFFER_COUNT = 10;
 	AudioData data = init_audio();
 	List<AudioBuffer> buffers = { alloc_array<AudioBuffer>(std_allocator, MAX_AUDIO_BUFFER_COUNT), 0 };
+	bool show_window = false;
+
+	Audio() {
+		name = "Audio";
+		shortcut_str = "Alt+A";
+		using namespace Input;
+		using namespace KB;
+		shortcut[0] = K_LEFT_ALT;
+		shortcut[1] = K_A;
+	}
+
 
 	~Audio() {
 		for (auto&& buffer : buffers.allocated())
@@ -149,9 +232,109 @@ struct Audio {
 		deinit_audio(data);
 	}
 
-	void operator()(Array<Entity> entities, const Entity& pov) {
-		update_audio_sources(entities);
-		update_audio_listener(pov);
+	void operator()(ComponentRegistry<AudioSource>& audio, ComponentRegistry<Spacial2D>& spacial, Spacial2D* pov) {
+		for (auto&& [ent, source] : audio.iter()) {
+			source->set<POSITION>(v3f32(spacial[*ent]->transform.translation, 0));
+			source->set<VELOCITY>(v3f32(spacial[*ent]->velocity.translation, 0));
+		}
+		if (pov) {
+			ALListener::set<POSITION>(v3f32(pov->transform.translation, 0));
+			ALListener::set<VELOCITY>(v3f32(pov->velocity.translation, 0));
+		}
+	}
+
+	void editor_window() override {
+		if (ImGui::Begin("Audio", &show_window)) {
+			ImGui::Text("Device : %p", data.device);
+			if (data.extensions.size() > 0) {
+				ImGui::Text("%u", data.extensions.size()); ImGui::SameLine(); EditorWidget("Extensions", data.extensions);
+			} else {
+				ImGui::Text("No extensions");
+			}
+			ALListener::EditorWidget("Listener");
+		} ImGui::End();
+	}
+};
+
+struct Editor : public ISystem {
+	TexBuffer scene_texture;
+	TexBuffer scene_texture_depth;
+	FrameBuffer scene_panel;
+	bool scene_window = true;
+	bool entities_window = true;
+	bool misc_window = true;
+
+	Editor(v2u32 scene_dimensions = v2u32(1920, 1080)) {
+		scene_texture = create_texture(TX2D, v4u32(scene_dimensions, 1, 1));
+		scene_texture_depth = create_texture(TX2D, v4u32(scene_dimensions, 1, 1), DEPTH_COMPONENT32);
+		scene_panel = create_framebuffer({ bind_to_fb(Color0Attc, scene_texture, 0, 0), bind_to_fb(DepthAttc, scene_texture_depth, 0, 0) });
+		name = "Editor";
+		shortcut_str = "Alt+E";
+		using namespace Input;
+		using namespace KB;
+		shortcut[0] = K_LEFT_ALT;
+		shortcut[1] = K_E;
+	}
+
+	~Editor() {
+		destroy_fb(scene_panel);
+		unload(scene_texture_depth);
+		unload(scene_texture);
+	}
+
+	template<typename... T> bool operator()(EntityRegistry& entities, LiteralArray<ISystem*> systems, const App& app, const Time::Clock& clock, ComponentRegistry<T>&... components) {
+		using namespace Input;
+		using namespace KB;
+		Input::KB::shortcut({ K_LEFT_ALT, K_S }, &scene_window);
+		Input::KB::shortcut({ K_LEFT_ALT, K_M }, &misc_window);
+		Input::KB::shortcut({ K_LEFT_ALT, K_E }, &entities_window);
+		for (auto&& system : systems)
+			Input::KB::shortcut(larray(system->shortcut), &system->show_window);
+
+		if (show_window) {
+			ImGui::NewFrame_OGL_GLFW();
+			ImGui::BeginMainMenuBar();
+			if (ImGui::BeginMenu("Windows")) {
+				defer{ ImGui::EndMenu(); };
+				ImGui::MenuItem("Misc", "Alt+M", &misc_window);
+				ImGui::MenuItem("Entities", "Alt+E", &entities_window);
+				ImGui::MenuItem("Scene", "Alt+S", &scene_window);
+				for (auto&& system : systems)
+					ImGui::MenuItem(system->name.data(), system->shortcut_str.data(), &system->show_window);
+			}
+			ImGui::EndMainMenuBar();
+			ImGui::DockSpaceOverViewport(ImGui::GetMainViewport());
+
+			if (scene_window) {
+				if (ImGui::Begin("Scene", &scene_window))
+					EditorWidget("Texture", scene_texture);
+				ImGui::End();
+			}
+
+			if (misc_window) {
+				if (ImGui::Begin("Misc", &misc_window)) {
+					ImGui::Text("Time = %f", clock.current);
+					if (ImGui::Button("Break"))
+						printf("Breaking\n");
+					if (ImGui::Button("Restart"))
+						return true;
+				} ImGui::End();
+			}
+
+			if (entities_window) {
+				entities_window = entity_registry_window("Entities", entities, components...);
+			}
+
+			for (auto&& system : systems)
+				if (system->show_window) system->editor_window();
+
+			ImGui::Render();
+			begin_render(default_framebuffer);
+			clear(default_framebuffer, v4f32(v3f32(0), 1));
+			ImGui::Draw();
+			end_render();
+		}
+		return false;
 	}
 };
 
@@ -160,118 +343,43 @@ bool playground(App& app) {
 	Rendering rendering;
 	Physics physics;
 	Audio audio;
-
-	struct {
-		TexBuffer scene_texture;
-		TexBuffer scene_texture_depth;
-		GLuint scene_panel;
-		ImDrawData* draw_data = null;
-		bool active = true;
-	} editor;
-	editor.scene_texture = create_texture(TX2D, v4u32(app.pixel_dimensions, 1, 1)); defer{ unload(editor.scene_texture); };
-	editor.scene_texture_depth = create_texture(TX2D, v4u32(app.pixel_dimensions, 1, 1), DEPTH_COMPONENT32); defer{ unload(editor.scene_texture_depth); };
-	editor.scene_panel = create_framebuffer({
-		bind_to_fb(Color0Attc, editor.scene_texture, 0, 0),
-		bind_to_fb(DepthAttc, editor.scene_texture_depth, 0, 0)
-		}); defer{ destroy_fb(editor.scene_panel); };
+	Editor editor = Editor(app.pixel_dimensions);
 
 	auto clock = Time::start();
-	auto entities = List{ alloc_array<Entity>(std_allocator, MAX_ENTITIES), 0 }; defer{ dealloc_array(std_allocator, entities.capacity); };
+	auto entities = create_entity_registry(std_allocator, MAX_ENTITIES); defer{ delete_registry(std_allocator, entities); };
+	auto spacials = create_component_registry<Spacial2D>(std_allocator, MAX_ENTITIES / 2); defer{ delete_registry(std_allocator, spacials); };
+	auto audio_sources = create_component_registry<AudioSource>(std_allocator, MAX_ENTITIES / 2); defer{ delete_registry(std_allocator, audio_sources); };
+	auto sprites = create_component_registry<SpriteCursor>(std_allocator, MAX_ENTITIES / 2); defer{ delete_registry(std_allocator, sprites); };
+	auto colliders = create_component_registry<Collider2D>(std_allocator, MAX_ENTITIES / 2); defer{ delete_registry(std_allocator, colliders); };
+
+	spacials.flag_index = register_flag_index(entities, "Spacial");
+	audio_sources.flag_index = register_flag_index(entities, "Audio source");
+	sprites.flag_index = register_flag_index(entities, "Sprite");
+	colliders.flag_index = register_flag_index(entities, "Collider");
 
 	v2f32 player_polygon[] = { v2f32(-1, -1) / 2.f, v2f32(+1, -1) / 2.f, v2f32(+1, +1) / 2.f, v2f32(-1, +1) / 2.f };
-	v2f32 ground_polygon[] = { v2f32(-10, -1), v2f32(+10, -1), v2f32(+10, +1), v2f32(-10, +1), };
-	auto clip = load_clip_file(assets.test_sound); defer{ unload_clip(clip); };
-
-	auto& player = entities.push(
+	auto player = (
 		[&]() {
-			Entity ent;
-			ent.name = "player";
-			ent.transform.translation = v2f32(1.5f);
-			add_sprite(ent, load_into(assets.test_character_spritesheet_path, rendering.atlas, v2u32(0), 0), &rendering.rect);
-			add_dynbody(ent, {});
-			add_collider(ent, { make_shape_2d<Shape2D::Polygon>(larray(player_polygon)), 0, 1, false });
-			auto abuff = audio.buffers.push(create_audio_buffer());
-			write_audio_clip(abuff, clip);
-			add_sound(ent, create_audio_source().set<BUFFER>(abuff.id));
-			add_controls(ent, 10, 100, 2);
+			auto ent = allocate_entity(entities, "player");
+			spacials.add_to(ent, {});
+			sprites.add_to(ent, load_into(assets.test_character_spritesheet_path, rendering.atlas, v2u32(0), 0));
+			colliders.add_to(ent, { {}, make_shape_2d<Shape2D::Polygon>(larray(player_polygon)) });
+			assert(ent.valid());
 			return ent;
-		}());
-	defer{ destroy(player.audio_source); };
+		}
+	());
 
-	entities.push(
-		[&]() {
-			Entity ent;
-			ent.name = "line";
-			ent.transform.translation = v2f32(-1.5f, 1.5f);
-			add_collider(ent, { make_shape_2d<Shape2D::Line>(Segment<v2f32> { v2f32(-1), v2f32(1) }), 1, 1, false });
-			return ent;
-		}());
-
-	entities.push(
-		[&]() {
-			Entity ent;
-			ent.name = "box";
-			ent.transform.translation = v2f32(0, -3.f);
-			add_collider(ent, { make_shape_2d<Shape2D::Polygon>(larray(ground_polygon)), 0.1, 1, false });
-			return ent;
-		}());
-
-	update_bodies(entities.allocated());
-	printf("Finished loading scene with %lu entities\n", entities.current);
 	fflush(stdout);
 	wait_gpu();
-
 	while (update(app, playground)) {
 		update(clock);
-
-		if (Input::get_key(Input::Keyboard::K_LEFT_CONTROL) & Input::Down)
-			editor.active = !editor.active;
-
-		physics(entities.allocated(), clock);
-		audio(entities.allocated(), player);
-		rendering(entities.allocated(), editor.active ? editor.scene_panel : 0, editor.scene_texture.dimensions, player.transform, physics);
-
-		// UI
-		if (editor.active) {
-			bool should_exit = false;
-			editor.draw_data = ImGui::RenderNewFrame(
-				[&]() {
-					ImGui::DockSpaceOverViewport(ImGui::GetMainViewport());
-
-					{
-						ImGui::Begin("Scene"); defer{ ImGui::End(); };
-						ImGui::Image((ImTextureID)(u64)editor.scene_texture.id, fit_to_area(ImGui::GetWindowContentSize(), editor.scene_texture.dimensions), ImVec2(0, 1), ImVec2(1, 0));
-					}
-
-					{
-						ImGui::Begin("Misc"); defer{ ImGui::End(); };
-						EditorWidget("Camera", rendering.camera);
-						ImGui::Text("Real Time = %f", clock.current);
-						ImGui::Text("Physics Time = %f", physics.time_point);
-						ImGui::Text("Physics advance = %f", physics.time_point - clock.current);
-						if (ImGui::Button("Break"))
-							printf("Breaking\n");
-						if (ImGui::Button("Restart"))
-							should_exit = true;
-					}
-
-					physics.editor_window();
-
-					{
-						ImGui::Begin("Audio"); defer{ ImGui::End(); };
-						ImGui::Text("Device : %p", audio.data.device);
-						ImGui::Text("%u", audio.data.extensions.size()); ImGui::SameLine(); EditorWidget("Extensions", audio.data.extensions);
-						ALListener::EditorWidget("Listener");
-					}
-
-					EditorWindow("Entities", entities);
-				}
-			);
-
-			if (should_exit)
-				return true;
-			render(0, { v2u32(0), app.pixel_dimensions }, clear_bit(Color0Attc) | clear_bit(DepthAttc), v4f32(v3f32(0), 1), [&]() { ImGui::Draw(editor.draw_data); });
-		}
+		clear_stale(colliders, audio_sources, sprites, spacials);
+		physics(colliders, spacials, clock);
+		audio(audio_sources, spacials, spacials[player]);
+		rendering(sprites, spacials, editor.show_window ? editor.scene_panel : default_framebuffer, (player.valid() ? spacials[player]->transform : identity_2d));
+		physics.draw_debug(colliders, spacials, rendering.view_projection_matrix);
+		if (editor(entities, { &rendering, &physics, &audio, &editor }, app, clock, spacials, audio_sources, sprites, colliders))
+			return true;
 	}
 	return true;
 }

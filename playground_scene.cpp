@@ -33,21 +33,18 @@ const struct {
 	cstrp test_sound = "./audio/file_example_OOG_1MG.ogg";
 } assets;
 
-struct ISystem {
-	string name = typeid(decltype(*this)).name();
+struct System {
+	string name = "";
 	string shortcut_str = "";
 	Input::KB::Key shortcut[2];
 	bool show_window = false;
 	virtual void editor_window() {};
 };
 
-struct Physics : public ISystem {
-	f32 time_point = 0.f;
-	f32 time_step = 1.f / 60.f;
+struct Physics : public System {
 	bool debug = false;
 	bool wireframe = true;
 	ShapeRenderer debug_draw = load_shape_renderer();
-	v2f32 gravity = v2f32(0);
 	struct Collision {
 		v2f32 penetration;
 		rtf32 aabbi;
@@ -133,7 +130,6 @@ struct Physics : public ISystem {
 			v2f32 verts[4];
 			sync(debug_draw.render_info, { m4x4f32(1), v4f32(0, 1, 0, 1) });
 			debug_draw.draw_polygon(make_box_poly(larray(verts), dims_p2(aabbi), (aabbi.max + aabbi.min) / 2.f), view_projection_matrix, wireframe);
-			// debug_draw(make_shape_2d<Shape2D::Line>(Segment<v2f32>{ctct1, ctct2}), m4x4f32(1), view_projection_matrix, v4f32(0, 1, 1, 1), wireframe);
 		}
 
 	}
@@ -142,9 +138,6 @@ struct Physics : public ISystem {
 		if (ImGui::Begin("Physics", &show_window)) {
 			EditorWidget("Draw debug", debug);
 			EditorWidget("Wireframe", wireframe);
-			EditorWidget("Sim time", time_point);
-			EditorWidget("Time step", time_step);
-			EditorWidget("Gravity", gravity);
 			if (ImGui::TreeNode("Collisions")) {
 				for (auto [penetration, aabbi, i, j] : collisions.allocated()) {
 					char buffer[999];
@@ -160,7 +153,7 @@ struct Physics : public ISystem {
 	}
 };
 
-struct Rendering : public ISystem {
+struct Rendering : public System {
 	OrthoCamera camera = { v3f32(16.f, 9.f, 1000.f) / 2.f, v3f32(0) };
 	MappedObject<m4x4f32> view_projection_matrix = map_object(m4x4f32(1));
 	SpriteRenderer draw = load_sprite_renderer(assets.draw_pipeline, MAX_DRAW_BATCH);
@@ -210,7 +203,7 @@ struct Rendering : public ISystem {
 	}
 };
 
-struct Audio : public ISystem {
+struct Audio : public System {
 	static constexpr auto MAX_AUDIO_BUFFER_COUNT = 10;
 	AudioData data = init_audio();
 	List<AudioBuffer> buffers = { alloc_array<AudioBuffer>(std_allocator, MAX_AUDIO_BUFFER_COUNT), 0 };
@@ -256,7 +249,7 @@ struct Audio : public ISystem {
 	}
 };
 
-struct Editor : public ISystem {
+struct Editor : public System {
 	TexBuffer scene_texture;
 	TexBuffer scene_texture_depth;
 	FrameBuffer scene_panel;
@@ -282,7 +275,7 @@ struct Editor : public ISystem {
 		unload(scene_texture);
 	}
 
-	template<typename... T> bool operator()(EntityRegistry& entities, LiteralArray<ISystem*> systems, const App& app, const Time::Clock& clock, ComponentRegistry<T>&... components) {
+	template<typename... T> bool operator()(EntityRegistry& entities, LiteralArray<System*> systems, const App& app, const Time::Clock& clock, ComponentRegistry<T>&... components) {
 		using namespace Input;
 		using namespace KB;
 		Input::KB::shortcut({ K_LEFT_ALT, K_S }, &scene_window);
@@ -343,19 +336,13 @@ bool playground(App& app) {
 	Rendering rendering;
 	Physics physics;
 	Audio audio;
-	Editor editor = Editor(app.pixel_dimensions);
+	Editor editor;
 
-	auto clock = Time::start();
 	auto entities = create_entity_registry(std_allocator, MAX_ENTITIES); defer{ delete_registry(std_allocator, entities); };
-	auto spacials = create_component_registry<Spacial2D>(std_allocator, MAX_ENTITIES / 2); defer{ delete_registry(std_allocator, spacials); };
-	auto audio_sources = create_component_registry<AudioSource>(std_allocator, MAX_ENTITIES / 2); defer{ delete_registry(std_allocator, audio_sources); };
-	auto sprites = create_component_registry<SpriteCursor>(std_allocator, MAX_ENTITIES / 2); defer{ delete_registry(std_allocator, sprites); };
-	auto colliders = create_component_registry<Collider2D>(std_allocator, MAX_ENTITIES / 2); defer{ delete_registry(std_allocator, colliders); };
-
-	spacials.flag_index = register_flag_index(entities, "Spacial");
-	audio_sources.flag_index = register_flag_index(entities, "Audio source");
-	sprites.flag_index = register_flag_index(entities, "Sprite");
-	colliders.flag_index = register_flag_index(entities, "Collider");
+	auto spacials = register_new_component<Spacial2D>(entities, std_allocator, MAX_ENTITIES / 2, "Spacial"); defer { delete_registry(std_allocator, spacials); };
+	auto audio_sources = register_new_component<AudioSource>(entities, std_allocator, MAX_ENTITIES / 2, "Audio Source"); defer { delete_registry(std_allocator, audio_sources); };
+	auto sprites = register_new_component<SpriteCursor>(entities, std_allocator, MAX_ENTITIES / 2, "Sprite"); defer { delete_registry(std_allocator, sprites); };
+	auto colliders = register_new_component<Collider2D>(entities, std_allocator, MAX_ENTITIES / 2, "Collider"); defer { delete_registry(std_allocator, colliders); };
 
 	v2f32 player_polygon[] = { v2f32(-1, -1) / 2.f, v2f32(+1, -1) / 2.f, v2f32(+1, +1) / 2.f, v2f32(-1, +1) / 2.f };
 	auto player = (
@@ -371,6 +358,7 @@ bool playground(App& app) {
 
 	fflush(stdout);
 	wait_gpu();
+	auto clock = Time::start();
 	while (update(app, playground)) {
 		update(clock);
 		clear_stale(colliders, audio_sources, sprites, spacials);

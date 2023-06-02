@@ -158,6 +158,12 @@ u8 register_flag_index(EntityRegistry& entities, string name) {
 	return entities.flag_names.current;
 }
 
+template<typename T> auto register_new_component(EntityRegistry& entities, Alloc allocator, u64 capacity, string name) {
+	auto registry = create_component_registry<T>(allocator, capacity);
+	registry.flag_index = register_flag_index(entities, name);
+	return registry;
+}
+
 template<typename... T> bool entity_registry_window(const cstr title, EntityRegistry& entities, ComponentRegistry<T>&... comp) {
 	bool opened = true;
 	if (ImGui::Begin(title, &opened)) {

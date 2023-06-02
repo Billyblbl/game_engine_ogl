@@ -16,7 +16,6 @@ APP_SRC = $(APP_ROOT)
 APP_SRC += $(BLBLGAME_SRC)
 APP_SRC += playground_scene.cpp
 APP_SRC += top_down_controls.cpp
-APP_SRC += entity.cpp
 
 APP_NAME=test_app
 APP=$(BUILD_DIR)/$(APP_NAME)

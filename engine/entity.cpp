@@ -176,8 +176,11 @@ template<typename... T> bool entity_registry_window(const cstr title, EntityRegi
 				ImGui::Text("Slot Generation : %u", desc.generation);
 				(...,
 					[&]() {
-						if (has_all(desc.flags, mask<u32>(comp.flag_index)) && ImGui::CollapsingHeader(flag_names[comp.flag_index].data()))
-							EditorWidget(flag_names[comp.flag_index].data(), *comp[ent]);
+						if (has_all(desc.flags, mask<u32>(comp.flag_index)) && ImGui::CollapsingHeader(flag_names[comp.flag_index].data())) {
+							auto c = comp[ent];
+							if (c)
+								EditorWidget(flag_names[comp.flag_index].data(), *c);
+						}
 					}
 				());
 			}

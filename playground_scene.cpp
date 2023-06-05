@@ -33,18 +33,22 @@ const struct {
 	cstrp test_sound = "./audio/file_example_OOG_1MG.ogg";
 } assets;
 
-struct System {
+struct SystemEditor {
 	string name = "";
 	string shortcut_str = "";
 	Input::KB::Key shortcut[2];
 	bool show_window = false;
-	virtual void editor_window() {};
+	virtual void operator()() {};
+	SystemEditor() = default;
+	SystemEditor(string n, string sc_s, LiteralArray<Input::KB::Key> sc) {
+		name = n;
+		shortcut_str = sc_s;
+		shortcut[0] = *sc.begin();
+		shortcut[1] = *(sc.begin() + 1);
+	}
 };
 
-struct Physics : public System {
-	bool debug = false;
-	bool wireframe = true;
-	ShapeRenderer debug_draw = load_shape_renderer();
+struct Physics {
 	struct Collision {
 		v2f32 penetration;
 		rtf32 aabbi;
@@ -52,15 +56,6 @@ struct Physics : public System {
 		EntityHandle e2;
 	};
 	List<Collision> collisions;
-
-	Physics() {
-		name = "Physics";
-		shortcut_str = "Alt+P";
-		using namespace Input;
-		using namespace KB;
-		shortcut[0] = K_LEFT_ALT;
-		shortcut[1] = K_P;
-	}
 
 	void operator()(
 		ComponentRegistry<Collider2D>& colliders,
@@ -107,53 +102,65 @@ struct Physics : public System {
 		}
 	}
 
-	void draw_debug(
-		ComponentRegistry<Collider2D>& colliders,
-		ComponentRegistry<Spacial2D>& spacials,
-		MappedObject<m4x4f32>& view_projection_matrix
-	) {
-		for (auto [ent, col] : colliders.iter()) {
-			auto spacial = spacials[*ent];
-			auto mat = trs_2d(spacial->transform);
-			debug_draw(col->shape, mat, view_projection_matrix, v4f32(1, 0, 0, 1), wireframe);
-			v2f32 local_vel = glm::transpose(mat) * v4f32(spacial->velocity.translation, 0, 1);
+	struct Editor : public SystemEditor {
+		ShapeRenderer debug_draw = load_shape_renderer();
+		Physics* system = null;
+		bool debug = false;
+		bool wireframe = true;
 
-			sync(debug_draw.render_info, { mat, v4f32(1, 1, 0, 1) });
-			debug_draw.draw_line(
-				Segment<v2f32>{v2f32(0), local_vel},
-				view_projection_matrix,
-				wireframe
-			);
+		Editor(Physics* s) : SystemEditor("Physics", "Alt+P", { Input::KB::K_LEFT_ALT, Input::KB::K_P }) {
+			system = s;
 		}
 
-		for (auto [pen, aabbi, ent1, ent2] : collisions.allocated()) {
-			v2f32 verts[4];
-			sync(debug_draw.render_info, { m4x4f32(1), v4f32(0, 1, 0, 1) });
-			debug_draw.draw_polygon(make_box_poly(larray(verts), dims_p2(aabbi), (aabbi.max + aabbi.min) / 2.f), view_projection_matrix, wireframe);
-		}
+		void draw_debug(
+			ComponentRegistry<Collider2D>& colliders,
+			ComponentRegistry<Spacial2D>& spacials,
+			MappedObject<m4x4f32>& view_projection_matrix
+		) {
+			for (auto [ent, col] : colliders.iter()) {
+				auto spacial = spacials[*ent];
+				auto mat = trs_2d(spacial->transform);
+				debug_draw(col->shape, mat, view_projection_matrix, v4f32(1, 0, 0, 1), wireframe);
+				v2f32 local_vel = glm::transpose(mat) * v4f32(spacial->velocity.translation, 0, 1);
 
-	}
-
-	void editor_window() override {
-		if (ImGui::Begin("Physics", &show_window)) {
-			EditorWidget("Draw debug", debug);
-			EditorWidget("Wireframe", wireframe);
-			if (ImGui::TreeNode("Collisions")) {
-				for (auto [penetration, aabbi, i, j] : collisions.allocated()) {
-					char buffer[999];
-					snprintf(buffer, sizeof(buffer), "%s:%s", i.desc->name.data(), j.desc->name.data());
-					if (ImGui::TreeNode(buffer)) {
-						EditorWidget("aabbi", aabbi);
-						EditorWidget("Penetration", penetration);
-					}
-				}
-				ImGui::TreePop();
+				sync(debug_draw.render_info, { mat, v4f32(1, 1, 0, 1) });
+				debug_draw.draw_line(
+					Segment<v2f32>{v2f32(0), local_vel},
+					view_projection_matrix,
+					wireframe
+				);
 			}
-		} ImGui::End();
-	}
+
+			for (auto [pen, aabbi, ent1, ent2] : system->collisions.allocated()) {
+				v2f32 verts[4];
+				sync(debug_draw.render_info, { m4x4f32(1), v4f32(0, 1, 0, 1) });
+				debug_draw.draw_polygon(make_box_poly(larray(verts), dims_p2(aabbi), (aabbi.max + aabbi.min) / 2.f), view_projection_matrix, wireframe);
+			}
+		}
+
+		virtual void operator()() override {
+			if (ImGui::Begin("Physics", &show_window)) {
+				EditorWidget("Draw debug", debug);
+				if (debug)
+					EditorWidget("Wireframe", wireframe);
+				if (ImGui::TreeNode("Collisions")) {
+					for (auto [penetration, aabbi, i, j] : system->collisions.allocated()) {
+						char buffer[999];
+						snprintf(buffer, sizeof(buffer), "%s:%s", i.desc->name.data(), j.desc->name.data());
+						if (ImGui::TreeNode(buffer)) {
+							EditorWidget("aabbi", aabbi);
+							EditorWidget("Penetration", penetration);
+						}
+					}
+					ImGui::TreePop();
+				}
+			} ImGui::End();
+		}
+	};
+
 };
 
-struct Rendering : public System {
+struct Rendering {
 	OrthoCamera camera = { v3f32(16.f, 9.f, 1000.f) / 2.f, v3f32(0) };
 	MappedObject<m4x4f32> view_projection_matrix = map_object(m4x4f32(1));
 	SpriteRenderer draw = load_sprite_renderer(assets.draw_pipeline, MAX_DRAW_BATCH);
@@ -161,15 +168,7 @@ struct Rendering : public System {
 	AnimationGrid<rtf32, 2> player_character_animation = load_animation_grid<rtf32, 2>(assets.test_character_anim_path, std_allocator);
 	RenderMesh rect = create_rect_mesh(v2f32(1));
 
-	Rendering() {
-		atlas.conf_sampling({ Nearest, Nearest });
-		name = "Rendering";
-		shortcut_str = "Alt+R";
-		using namespace Input;
-		using namespace KB;
-		shortcut[0] = K_LEFT_ALT;
-		shortcut[1] = K_R;
-	}
+	Rendering() { atlas.conf_sampling({ Nearest, Nearest }); }
 
 	~Rendering() {
 		delete_mesh(rect);
@@ -193,31 +192,29 @@ struct Rendering : public System {
 		draw(rect, atlas, view_projection_matrix, batch.current);
 	}
 
-	void editor_window() override {
-		if (ImGui::Begin("Rendering", &show_window)) {
-			EditorWidget("Camera", camera);
-			if (ImGui::Button("Reset Camera"))
-				camera = { v3f32(16.f, 9.f, 1000.f) / 2.f, v3f32(0) };
-			EditorWidget("Atlas", atlas);
-		}; ImGui::End();
-	}
+	struct Editor : public SystemEditor {
+		Rendering* system = null;
+
+		Editor(Rendering* s) : SystemEditor("Rendering", "Alt+R", { Input::KB::K_LEFT_ALT, Input::KB::K_R }) {
+			system = s;
+		}
+
+		virtual void operator()() override {
+			if (ImGui::Begin("Rendering", &show_window)) {
+				EditorWidget("Camera", system->camera);
+				if (ImGui::Button("Reset Camera"))
+					system->camera = { v3f32(16.f, 9.f, 1000.f) / 2.f, v3f32(0) };
+				EditorWidget("Atlas", system->atlas);
+			}; ImGui::End();
+		}
+	};
+
 };
 
-struct Audio : public System {
+struct Audio {
 	static constexpr auto MAX_AUDIO_BUFFER_COUNT = 10;
 	AudioData data = init_audio();
 	List<AudioBuffer> buffers = { alloc_array<AudioBuffer>(std_allocator, MAX_AUDIO_BUFFER_COUNT), 0 };
-	bool show_window = false;
-
-	Audio() {
-		name = "Audio";
-		shortcut_str = "Alt+A";
-		using namespace Input;
-		using namespace KB;
-		shortcut[0] = K_LEFT_ALT;
-		shortcut[1] = K_A;
-	}
-
 
 	~Audio() {
 		for (auto&& buffer : buffers.allocated())
@@ -236,66 +233,84 @@ struct Audio : public System {
 		}
 	}
 
-	void editor_window() override {
-		if (ImGui::Begin("Audio", &show_window)) {
-			ImGui::Text("Device : %p", data.device);
-			if (data.extensions.size() > 0) {
-				ImGui::Text("%u", data.extensions.size()); ImGui::SameLine(); EditorWidget("Extensions", data.extensions);
-			} else {
-				ImGui::Text("No extensions");
-			}
-			ALListener::EditorWidget("Listener");
-		} ImGui::End();
-	}
+	struct Editor : public SystemEditor {
+		Audio* system;
+		Editor(Audio* s) : SystemEditor("Audio", "Alt+A", { Input::KB::K_LEFT_ALT,Input::KB::K_A }) {
+			system = s;
+		}
+
+		virtual void operator()() override {
+			if (ImGui::Begin("Audio", &show_window)) {
+				ImGui::Text("Device : %p", system->data.device);
+				if (system->data.extensions.size() > 0) {
+					ImGui::Text("%u", system->data.extensions.size()); ImGui::SameLine(); EditorWidget("Extensions", system->data.extensions);
+				} else {
+					ImGui::Text("No extensions");
+				}
+				ALListener::EditorWidget("Listener");
+			} ImGui::End();
+		}
+	};
 };
 
-struct Editor : public System {
+struct Editor {
 	TexBuffer scene_texture;
 	TexBuffer scene_texture_depth;
 	FrameBuffer scene_panel;
 	bool scene_window = true;
 	bool entities_window = true;
-	bool misc_window = true;
+	SystemEditor desc = SystemEditor("Editor", "Alt+E", { Input::KB::K_LEFT_ALT, Input::KB::K_X });
 
-	Editor(v2u32 scene_dimensions = v2u32(1920, 1080)) {
+	Editor(GLFWwindow* window, v2u32 scene_dimensions = v2u32(1920, 1080)) {
+		ImGui::init_ogl_glfw(window);
 		scene_texture = create_texture(TX2D, v4u32(scene_dimensions, 1, 1));
 		scene_texture_depth = create_texture(TX2D, v4u32(scene_dimensions, 1, 1), DEPTH_COMPONENT32);
 		scene_panel = create_framebuffer({ bind_to_fb(Color0Attc, scene_texture, 0, 0), bind_to_fb(DepthAttc, scene_texture_depth, 0, 0) });
-		name = "Editor";
-		shortcut_str = "Alt+E";
-		using namespace Input;
-		using namespace KB;
-		shortcut[0] = K_LEFT_ALT;
-		shortcut[1] = K_E;
 	}
 
 	~Editor() {
 		destroy_fb(scene_panel);
 		unload(scene_texture_depth);
 		unload(scene_texture);
+		ImGui::shutdown_ogl_glfw();
 	}
 
-	template<typename... T> bool operator()(EntityRegistry& entities, LiteralArray<System*> systems, const App& app, const Time::Clock& clock, ComponentRegistry<T>&... components) {
-		using namespace Input;
-		using namespace KB;
-		Input::KB::shortcut({ K_LEFT_ALT, K_S }, &scene_window);
-		Input::KB::shortcut({ K_LEFT_ALT, K_M }, &misc_window);
-		Input::KB::shortcut({ K_LEFT_ALT, K_E }, &entities_window);
-		for (auto&& system : systems)
-			Input::KB::shortcut(larray(system->shortcut), &system->show_window);
+	void render_to(FrameBuffer& fbf) {
+		ImGui::Render();
+		begin_render(fbf);
+		clear(fbf, v4f32(v3f32(0), 1));
+		ImGui::Draw();
+		end_render();
+	}
 
-		if (show_window) {
-			ImGui::NewFrame_OGL_GLFW();
-			ImGui::BeginMainMenuBar();
-			if (ImGui::BeginMenu("Windows")) {
-				defer{ ImGui::EndMenu(); };
-				ImGui::MenuItem("Misc", "Alt+M", &misc_window);
-				ImGui::MenuItem("Entities", "Alt+E", &entities_window);
-				ImGui::MenuItem("Scene", "Alt+S", &scene_window);
-				for (auto&& system : systems)
-					ImGui::MenuItem(system->name.data(), system->shortcut_str.data(), &system->show_window);
+	template<typename... T> bool operator()(EntityRegistry& entities, LiteralArray<SystemEditor*> sub_editors, ComponentRegistry<T>&... components) {
+		// shortcuts
+		using namespace Input::KB;
+		shortcut({ K_LEFT_ALT, K_S }, &scene_window);
+		shortcut({ K_LEFT_ALT, K_E }, &entities_window);
+		for (auto&& sub_ed : sub_editors)
+			shortcut(larray(sub_ed->shortcut), &sub_ed->show_window);
+
+		if (!desc.show_window) return false;
+		ImGui::NewFrame_OGL_GLFW(); {
+			defer{ render_to(default_framebuffer); };
+			// Menus
+			ImGui::BeginMainMenuBar(); {
+				defer{ ImGui::EndMainMenuBar(); };
+				if (ImGui::BeginMenu("Windows")) {
+					defer{ ImGui::EndMenu(); };
+					ImGui::MenuItem("Entities", "Alt+E", &entities_window);
+					ImGui::MenuItem("Scene", "Alt+S", &scene_window);
+					for (auto&& sub_ed : sub_editors)
+						ImGui::MenuItem(sub_ed->name.data(), sub_ed->shortcut_str.data(), &sub_ed->show_window);
+				}
+				if (ImGui::BeginMenu("Actions")) {
+					defer{ ImGui::EndMenu(); };
+					if (ImGui::MenuItem("Break"))
+						printf("breaking!");
+					if (ImGui::MenuItem("Restart")) return true;
+				}
 			}
-			ImGui::EndMainMenuBar();
 			ImGui::DockSpaceOverViewport(ImGui::GetMainViewport());
 
 			if (scene_window) {
@@ -304,45 +319,33 @@ struct Editor : public System {
 				ImGui::End();
 			}
 
-			if (misc_window) {
-				if (ImGui::Begin("Misc", &misc_window)) {
-					ImGui::Text("Time = %f", clock.current);
-					if (ImGui::Button("Break"))
-						printf("Breaking\n");
-					if (ImGui::Button("Restart"))
-						return true;
-				} ImGui::End();
-			}
-
 			if (entities_window) {
 				entities_window = entity_registry_window("Entities", entities, components...);
 			}
 
-			for (auto&& system : systems)
-				if (system->show_window) system->editor_window();
-
-			ImGui::Render();
-			begin_render(default_framebuffer);
-			clear(default_framebuffer, v4f32(v3f32(0), 1));
-			ImGui::Draw();
-			end_render();
+			for (auto sub_ed : sub_editors) if (sub_ed->show_window) {
+				(*sub_ed)();
+			}
 		}
 		return false;
 	}
 };
 
 bool playground(App& app) {
-	ImGui::init_ogl_glfw(app.window); defer{ ImGui::shutdown_ogl_glfw(); };
 	Rendering rendering;
 	Physics physics;
 	Audio audio;
-	Editor editor;
+
+	Editor editor(app.window);
+	auto rendering_ed = Rendering::Editor(&rendering);
+	auto physics_ed = Physics::Editor(&physics);
+	auto audio_ed = Audio::Editor(&audio);
 
 	auto entities = create_entity_registry(std_allocator, MAX_ENTITIES); defer{ delete_registry(std_allocator, entities); };
-	auto spacials = register_new_component<Spacial2D>(entities, std_allocator, MAX_ENTITIES / 2, "Spacial"); defer { delete_registry(std_allocator, spacials); };
-	auto audio_sources = register_new_component<AudioSource>(entities, std_allocator, MAX_ENTITIES / 2, "Audio Source"); defer { delete_registry(std_allocator, audio_sources); };
-	auto sprites = register_new_component<SpriteCursor>(entities, std_allocator, MAX_ENTITIES / 2, "Sprite"); defer { delete_registry(std_allocator, sprites); };
-	auto colliders = register_new_component<Collider2D>(entities, std_allocator, MAX_ENTITIES / 2, "Collider"); defer { delete_registry(std_allocator, colliders); };
+	auto spacials = register_new_component<Spacial2D>(entities, std_allocator, MAX_ENTITIES / 2, "Spacial"); defer{ delete_registry(std_allocator, spacials); };
+	auto audio_sources = register_new_component<AudioSource>(entities, std_allocator, MAX_ENTITIES / 2, "Audio Source"); defer{ delete_registry(std_allocator, audio_sources); };
+	auto sprites = register_new_component<SpriteCursor>(entities, std_allocator, MAX_ENTITIES / 2, "Sprite"); defer{ delete_registry(std_allocator, sprites); };
+	auto colliders = register_new_component<Collider2D>(entities, std_allocator, MAX_ENTITIES / 2, "Collider"); defer{ delete_registry(std_allocator, colliders); };
 
 	v2f32 player_polygon[] = { v2f32(-1, -1) / 2.f, v2f32(+1, -1) / 2.f, v2f32(+1, +1) / 2.f, v2f32(-1, +1) / 2.f };
 	auto player = (
@@ -362,11 +365,15 @@ bool playground(App& app) {
 	while (update(app, playground)) {
 		update(clock);
 		clear_stale(colliders, audio_sources, sprites, spacials);
+
 		physics(colliders, spacials, clock);
 		audio(audio_sources, spacials, spacials[player]);
-		rendering(sprites, spacials, editor.show_window ? editor.scene_panel : default_framebuffer, (player.valid() ? spacials[player]->transform : identity_2d));
-		physics.draw_debug(colliders, spacials, rendering.view_projection_matrix);
-		if (editor(entities, { &rendering, &physics, &audio, &editor }, app, clock, spacials, audio_sources, sprites, colliders))
+		rendering(sprites, spacials, editor.desc.show_window ? editor.scene_panel : default_framebuffer, (player.valid() ? spacials[player]->transform : identity_2d));
+
+		if (physics_ed.debug)
+			physics_ed.draw_debug(colliders, spacials, rendering.view_projection_matrix);
+
+		if (editor(entities, { &rendering_ed, &physics_ed, &audio_ed, &editor.desc }, spacials, audio_sources, sprites, colliders))
 			return true;
 	}
 	return true;

@@ -18,9 +18,9 @@ IMGUI_SRC += $(IMGUI)/backends/imgui_impl_glfw.cpp
 INC += $(IMGUI)
 INC += $(IMGUI)/backends
 
-imgui: $(IMGUI_MODULE)
-
 IMGUI_MODULE=$(BUILD_DIR)/imgui.o
+
+imgui: $(IMGUI_MODULE)
 
 $(IMGUI_MODULE): $(BUILD_DIR) $(IMGUI_SRC)
 	@echo -e "Building $(COLOR)imgui$(NOCOLOR)"

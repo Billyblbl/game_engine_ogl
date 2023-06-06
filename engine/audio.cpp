@@ -4,7 +4,8 @@
 #include <alutils.cpp>
 #include <audio_source.cpp>
 #include <audio_buffer.cpp>
-// #define STB_VORBIS_HEADER_ONLY
+#define STB_VORBIS_HEADER_ONLY
+// #define STB_VORBIS_NO_INTEGER_CONVERSION
 #include <stb_vorbis.c>
 
 #include <blblstd.hpp>

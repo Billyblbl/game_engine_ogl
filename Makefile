@@ -26,6 +26,7 @@ default: app
 include imgui.mk
 include engine.mk
 include editor.mk
+include vorbis.mk
 include app.mk
 
 $(BUILD_DIR):

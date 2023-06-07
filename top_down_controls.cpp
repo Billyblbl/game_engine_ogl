@@ -2,7 +2,6 @@
 # define GTOP_DOWN_CONTROLS
 
 #include <inputs.cpp>
-// #include <physics2D.cpp>
 #include <physics_2d.cpp>
 #include <animation.cpp>
 #include <imgui_extension.cpp>
@@ -50,10 +49,10 @@ namespace controls {
 		);
 	}
 
-	void move_top_down(v2f32& velocity, v2f32 input, f32 speed, f32 accel) {
+	void move_top_down(v2f32& velocity, v2f32 input, f32 speed, f32 accel, f32 time) {
 		auto target_velocity = input * speed;
 		auto target_accel = target_velocity - velocity;
-		auto effective_accel = safe_normalise(target_accel) * min(accel, glm::length(target_accel));
+		auto effective_accel = safe_normalise(target_accel) * min(accel * time, glm::length(target_accel));
 		velocity += effective_accel;
 	}
 

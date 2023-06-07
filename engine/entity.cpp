@@ -164,29 +164,25 @@ template<typename T> auto register_new_component(EntityRegistry& entities, Alloc
 	return registry;
 }
 
-template<typename... T> bool entity_registry_window(const cstr title, EntityRegistry& entities, ComponentRegistry<T>&... comp) {
-	bool opened = true;
-	if (ImGui::Begin(title, &opened)) {
-		auto flag_names = entities.flag_names.allocated();
-		for (auto& desc : entities.pool.allocated()) {
-			EntityHandle ent = { &desc, desc.generation };
-			if (ent.valid() && ImGui::TreeNode(desc.name.data())) {
-				defer{ ImGui::TreePop(); };
-				ImGui::bit_flags("Flags", desc.flags, entities.flag_names.allocated());
-				ImGui::Text("Slot Generation : %u", desc.generation);
-				(...,
-					[&]() {
-						if (has_all(desc.flags, mask<u32>(comp.flag_index)) && ImGui::CollapsingHeader(flag_names[comp.flag_index].data())) {
-							auto c = comp[ent];
-							if (c)
-								EditorWidget(flag_names[comp.flag_index].data(), *c);
-						}
+template<typename... T> void entity_registry_editor(EntityRegistry& entities, ComponentRegistry<T>&... comp) {
+	auto flag_names = entities.flag_names.allocated();
+	for (auto& desc : entities.pool.allocated()) {
+		EntityHandle ent = { &desc, desc.generation };
+		if (ent.valid() && ImGui::TreeNode(desc.name.data())) {
+			defer{ ImGui::TreePop(); };
+			ImGui::bit_flags("Flags", desc.flags, entities.flag_names.allocated());
+			ImGui::Text("Slot Generation : %u", desc.generation);
+			(...,
+				[&]() {
+					if (has_all(desc.flags, mask<u32>(comp.flag_index)) && ImGui::CollapsingHeader(flag_names[comp.flag_index].data())) {
+						auto c = comp[ent];
+						if (c)
+							EditorWidget(flag_names[comp.flag_index].data(), *c);
 					}
-				());
-			}
+				}
+			());
 		}
-	} ImGui::End();
-	return opened;
+	}
 }
 
 #endif

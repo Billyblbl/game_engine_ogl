@@ -50,6 +50,11 @@ template<typename Keyframe, i32 D> AnimationGrid<Keyframe, D> load_animation_gri
 	return parse_animation_grid<Keyframe, D>(file, allocator);
 }
 
+template<typename Keyframe, i32 D> void unload(AnimationGrid<Keyframe, D>& animation, Alloc allocator) {
+	dealloc_array(allocator, animation.keyframes);
+	animation.keyframes = {};
+	animation.dimensions = v2f32(0);
+}
 
 // Index = ∑(i=0 to D-1)(coordinates[i] * ∏(j=i+1 to D-1)(dimensions[j]))
 template<i32 D> u32 coord_to_index(glm::vec<D, u32> dimensions, glm::vec<D, u32> coord) {

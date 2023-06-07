@@ -31,6 +31,7 @@ BLBLGAME_SRC += engine/audio.cpp
 BLBLGAME_SRC += engine/audio_source.cpp
 BLBLGAME_SRC += engine/audio_buffer.cpp
 BLBLGAME_SRC += engine/entity.cpp
+BLBLGAME_SRC += engine/system_editor.cpp
 
 INC += $(PWD)/engine
 INC += $(IMGUI)

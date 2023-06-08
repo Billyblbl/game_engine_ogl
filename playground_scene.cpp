@@ -1,29 +1,19 @@
 #ifndef GPLAYGROUND_SCENE
 # define GPLAYGROUND_SCENE
 
-#include <GL/glew.h>
-#include <GLFW/glfw3.h> // Will drag system OpenGL headers
-
-#include <imgui/imgui.h>
-#include <imgui/backends/imgui_impl_glfw.h>
-#include <imgui/backends/imgui_impl_opengl3.h>
-
+#include <imgui_extension.cpp>
 #include <application.cpp>
-#include <glutils.cpp>
 #include <rendering.cpp>
 #include <time.cpp>
 #include <transform.cpp>
 #include <physics_2d.cpp>
-#include <physics_2d_debug.cpp>
 #include <blblstd.hpp>
 #include <math.cpp>
 #include <animation.cpp>
-
 #include <top_down_controls.cpp>
 #include <entity.cpp>
 #include <sprite.cpp>
 #include <audio.cpp>
-
 #include <system_editor.cpp>
 
 /*

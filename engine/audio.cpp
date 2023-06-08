@@ -125,4 +125,41 @@ namespace ALListener {
 
 }
 
+struct Audio {
+	static constexpr auto MAX_AUDIO_BUFFER_COUNT = 10;
+	AudioData data = init_audio();
+	List<AudioBuffer> buffers = { alloc_array<AudioBuffer>(std_allocator, MAX_AUDIO_BUFFER_COUNT), 0 };
+
+	~Audio() {
+		for (auto&& buffer : buffers.allocated())
+			destroy(buffer);
+		deinit_audio(data);
+	}
+
+	void operator()(ComponentRegistry<AudioSource>& audio, ComponentRegistry<Spacial2D>& spacial, Spacial2D* pov) {
+		for (auto&& [ent, source] : audio.iter()) {
+			source->set<POSITION>(v3f32(spacial[*ent]->transform.translation, 0));
+			source->set<VELOCITY>(v3f32(spacial[*ent]->velocity.translation, 0));
+		}
+		if (pov) {
+			ALListener::set<POSITION>(v3f32(pov->transform.translation, 0));
+			ALListener::set<VELOCITY>(v3f32(pov->velocity.translation, 0));
+		}
+	}
+
+	static auto default_editor() { return SystemEditor("Audio", "Alt+A", { Input::KB::K_LEFT_ALT,Input::KB::K_A }); }
+
+	void editor_window() {
+		ImGui::Text("Device : %p", data.device);
+		if (data.extensions.size() > 0) {
+			ImGui::Text("%u", data.extensions.size());
+			ImGui::SameLine();
+			EditorWidget("Extensions", data.extensions);
+		} else {
+			ImGui::Text("No extensions");
+		}
+		ALListener::EditorWidget("Listener");
+	};
+};
+
 #endif

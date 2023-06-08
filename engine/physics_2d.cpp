@@ -468,5 +468,122 @@ bool EditorWidget(const cstr label, PhysicsConfig& config) {
 	return changed;
 }
 
+#include <system_editor.cpp>
+#include <entity.cpp>
+#include <physics_2d_debug.cpp>
+
+struct Physics2D {
+	struct Collision {
+		v2f32 penetration;
+		rtf32 aabbi;
+		EntityHandle e1;
+		EntityHandle e2;
+	};
+	List<Collision> collisions;
+
+	void operator()(
+		ComponentRegistry<Collider2D>& colliders,
+		ComponentRegistry<Spacial2D>& spacials,
+		f32 dt) {
+
+		//TODO chose another way for this buffer
+		static Collision _buff[MAX_ENTITIES * MAX_ENTITIES];
+
+		for (auto [_, sp] : spacials.iter())
+			euler_integrate(*sp, dt);
+
+		collisions = List {larray(_buff), 0};
+		for (auto [i, j] : self_combinatronic_idx(colliders.handles.current)) {
+			auto ent1 = colliders.handles.allocated()[i];
+			auto ent2 = colliders.handles.allocated()[j];
+
+			auto col1 = colliders[ent1];
+			auto col2 = colliders[ent2];
+			auto sp1 = spacials[ent1];
+			auto sp2 = spacials[ent2];
+
+			auto [collided, aabbi, pen] = intersect(col1->shape, col2->shape, trs_2d(sp1->transform), trs_2d(sp2->transform));
+			if (collided)
+				collisions.push({ pen, aabbi, ent1, ent2 });
+
+			if (glm::length2(pen) < penetration_threshold * penetration_threshold || !can_resolve_collision(col1->material.inverse_mass, col2->material.inverse_mass, col1->material.inverse_inertia, col2->material.inverse_inertia))
+				continue;
+
+			// Correct penetration
+			auto [o1, o2] = correction_offset(pen, col1->material.inverse_mass, col2->material.inverse_mass);
+			sp1->transform.translation += o1;
+			sp2->transform.translation += o2;
+
+			//TODO friction
+			// Compute contact points with corrected positions
+			auto normal = glm::normalize(pen);
+			auto [ctct1, ctct2] = contacts_points(col1->shape, col2->shape, trs_2d(sp1->transform), trs_2d(sp2->transform), normal);
+			v2f32 contacts[2] = { ctct1, ctct2 };
+
+			// Bounce
+			PhysicalDescriptor desc1 = { sp1->velocity, sp1->transform.translation, col1->material.inverse_mass, col1->material.inverse_inertia };
+			PhysicalDescriptor desc2 = { sp2->velocity, sp2->transform.translation, col2->material.inverse_mass, col2->material.inverse_inertia };
+			auto [delta1, delta2] = bounce_contacts(desc1, desc2, larray(contacts), normal, min(col1->material.restitution, col2->material.restitution));
+			sp1->velocity = sp1->velocity + delta1;
+			sp2->velocity = sp2->velocity + delta2;
+		}
+	}
+
+	struct Editor : public SystemEditor {
+		ShapeRenderer debug_draw = load_shape_renderer();
+		bool debug = false;
+		bool wireframe = true;
+
+		Editor() : SystemEditor("Physics2D", "Alt+P", { Input::KB::K_LEFT_ALT, Input::KB::K_P }) {}
+
+		void draw_debug(
+			Array<Collision> collisions,
+			ComponentRegistry<Collider2D>& colliders,
+			ComponentRegistry<Spacial2D>& spacials,
+			MappedObject<m4x4f32>& view_projection_matrix
+		) {
+			for (auto [ent, col] : colliders.iter()) {
+				auto spacial = spacials[*ent];
+				auto mat = trs_2d(spacial->transform);
+				debug_draw(col->shape, mat, view_projection_matrix, v4f32(1, 0, 0, 1), wireframe);
+				v2f32 local_vel = glm::transpose(mat) * v4f32(spacial->velocity.translation, 0, 1);
+
+				sync(debug_draw.render_info, { mat, v4f32(1, 1, 0, 1) });
+				debug_draw.draw_line(
+					Segment<v2f32>{v2f32(0), local_vel},
+					view_projection_matrix,
+					wireframe
+				);
+			}
+
+			for (auto [pen, aabbi, ent1, ent2] : collisions) {
+				v2f32 verts[4];
+				sync(debug_draw.render_info, { m4x4f32(1), v4f32(0, 1, 0, 1) });
+				debug_draw.draw_polygon(make_box_poly(larray(verts), dims_p2(aabbi), (aabbi.max + aabbi.min) / 2.f), view_projection_matrix, wireframe);
+			}
+		}
+
+		void editor_window(Physics2D& system) {
+			EditorWidget("Draw debug", debug);
+			if (debug)
+				EditorWidget("Wireframe", wireframe);
+			if (ImGui::TreeNode("Collisions")) {
+				defer{ ImGui::TreePop(); };
+				for (auto [penetration, aabbi, i, j] : system.collisions.allocated()) {
+					char buffer[999];
+					snprintf(buffer, sizeof(buffer), "%s:%s", i.desc->name.data(), j.desc->name.data());
+					if (ImGui::TreeNode(buffer)) {
+						EditorWidget("aabbi", aabbi);
+						EditorWidget("Penetration", penetration);
+					}
+				}
+			}
+		}
+	};
+
+	static auto default_editor() { return Editor(); }
+
+};
+
 
 #endif

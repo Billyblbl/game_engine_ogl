@@ -9,6 +9,8 @@
 #include <model.cpp>
 #include <math.cpp>
 #include <framebuffer.cpp>
+#include <transform.cpp>
+#include <entity.cpp>
 
 //TODO remove fstream dependency
 
@@ -64,7 +66,7 @@ struct GPUBinding {
 
 void inline bind(const GPUBinding& binding) {
 	switch (binding.type) {
-	// case GPUBinding::Texture: printf("Binding texture %u to %u\n", binding.id, binding.target); GL_GUARD(glBindTextureUnit(binding.target, binding.id)); break;
+		// case GPUBinding::Texture: printf("Binding texture %u to %u\n", binding.id, binding.target); GL_GUARD(glBindTextureUnit(binding.target, binding.id)); break;
 	case GPUBinding::Texture: GL_GUARD(glBindTextureUnit(binding.target, binding.id)); break;
 	case GPUBinding::UBO: GL_GUARD(glBindBufferRange(GL_UNIFORM_BUFFER, binding.target, binding.id, 0, binding.size)); break;
 	case GPUBinding::SSBO: GL_GUARD(glBindBufferRange(GL_SHADER_STORAGE_BUFFER, binding.target, binding.id, 0, binding.size)); break;
@@ -115,19 +117,23 @@ struct Pipeline {
 		const RenderMesh& mesh,
 		u32 instance_count = 1,
 		Array<const GPUBinding> bindings = {}
-	) const { draw(id, mesh, instance_count, bindings); }
+		) const {
+		draw(id, mesh, instance_count, bindings);
+	}
 
 	void operator()(
 		const RenderMesh& mesh,
 		u32 instance_count,
 		LiteralArray<GPUBinding> bindings
-	) const { draw(id, mesh, instance_count, larray(bindings)); }
+		) const {
+		draw(id, mesh, instance_count, larray(bindings));
+	}
 };
 
 Pipeline create_render_pipeline(GLuint vertex_shader, GLuint fragment_shader) {
 	if (vertex_shader == 0 || fragment_shader == 0) {
 		fprintf(stderr, "Failed to build render pipeline, invalid shader\n");
-		return {0};
+		return { 0 };
 	}
 
 	auto program = GL_GUARD(glCreateProgram());
@@ -148,9 +154,9 @@ Pipeline create_render_pipeline(GLuint vertex_shader, GLuint fragment_shader) {
 		log[logLength] = '\0';
 		GL_GUARD(glGetProgramInfoLog(program, logLength, nullptr, log));
 		fprintf(stderr, "Failed to build render pipeline %u, pipeline program log : %s\n", program, log);
-		return {0};
+		return { 0 };
 	} else
-		return {program};
+		return { program };
 }
 
 Pipeline load_pipeline(const char* path) {
@@ -168,7 +174,7 @@ Pipeline load_pipeline(const char* path) {
 		);
 	} else {
 		fprintf(stderr, "failed to open file %s\n", path);
-		return {0};
+		return { 0 };
 	}
 
 }
@@ -185,5 +191,61 @@ template<typename T> inline GPUBinding bind_to(const MappedBuffer<T>& mapping, G
 void wait_gpu() {
 	GL_GUARD(glFinish());
 }
+
+#include <sprite.cpp>
+#include <system_editor.cpp>
+
+struct Rendering {
+	OrthoCamera camera;
+	MappedObject<m4x4f32> view_projection_matrix;
+	SpriteRenderer draw;
+	TexBuffer atlas;
+	RenderMesh rect;
+	// AnimationGrid<rtf32, 2> player_character_animation
+
+	Rendering(string pipeline = "./shaders/sprite.glsl", u32 max_draw_batch = 256, v4u32 atlas_dimensions = v4u32(256, 256, 256, 1)) {
+		camera = { v3f32(16.f, 9.f, 1000.f) / 2.f, v3f32(0) };
+		view_projection_matrix = map_object(m4x4f32(1));
+		draw = load_sprite_renderer(pipeline.data(), max_draw_batch);
+		atlas = create_texture(TX2DARR, atlas_dimensions);
+		rect = create_rect_mesh(v2f32(1));
+		// player_character_animation = load_animation_grid<rtf32, 2>(assets.test_character_anim_path, std_allocator);
+		atlas.conf_sampling({ Nearest, Nearest });
+	}
+
+	~Rendering() {
+		// dealloc_array(std_allocator, player_character_animation.keyframes);
+		delete_mesh(rect);
+		unload(atlas);
+		unload(draw);
+		unmap(view_projection_matrix);
+	}
+
+	void operator()(
+		ComponentRegistry<SpriteCursor>& sprites,
+		ComponentRegistry<Spacial2D>& spacials,
+		FrameBuffer& fbf, const Transform2D& viewpoint) {
+
+		begin_render(fbf);
+		clear(fbf, v4f32(v3f32(0.3), 1));
+		*view_projection_matrix.obj = view_project(project(camera), trs_2d(viewpoint));
+		auto batch = draw.start_batch();
+		for (auto [ent, sprite] : sprites.iter())
+			batch.push(sprite_data(trs_2d(spacials[*ent]->transform), *sprite, 0/*draw layer*/));
+		draw(rect, atlas, view_projection_matrix, batch.current);
+	}
+
+	static auto default_editor() {
+		return SystemEditor("Rendering", "Alt+R", { Input::KB::K_LEFT_ALT, Input::KB::K_R });
+	}
+
+	void editor_window() {
+		EditorWidget("Camera", camera);
+		if (ImGui::Button("Reset Camera"))
+			camera = { v3f32(16.f, 9.f, 1000.f) / 2.f, v3f32(0) };
+		EditorWidget("Atlas", atlas);
+	}
+
+};
 
 #endif

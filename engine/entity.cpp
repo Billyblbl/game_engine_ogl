@@ -5,12 +5,6 @@
 #include <imgui/imgui.h>
 #include <imgui/backends/imgui_impl_glfw.h>
 #include <imgui/backends/imgui_impl_opengl3.h>
-#include <transform.cpp>
-#include <rendering.cpp>
-#include <physics_2d.cpp>
-#include <sprite.cpp>
-#include <top_down_controls.cpp>
-#include <audio.cpp>
 
 #define MAX_ENTITIES 100
 #define MAX_DRAW_BATCH MAX_ENTITIES

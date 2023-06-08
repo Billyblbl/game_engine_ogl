@@ -62,12 +62,12 @@ void sub_editor_menu(const cstr label, Array<SystemEditor*> editors) {
 	}
 }
 
-template<typename... T, u64... indices> void add_editors_helper(List<SystemEditor*>& list, tuple<T...> eds, std::integer_sequence<u64, indices...>) {
+template<typename... T, u64... indices> void add_editors_helper(List<SystemEditor*>& list, tuple<T...>& eds, std::integer_sequence<u64, indices...>) {
 	(..., list.push(&std::get<indices>(eds)));
 }
 
 template<typename... T> void add_editors(List<SystemEditor*>& list, tuple<T...>& eds) {
-	add_editors_helper(list, eds, std::make_integer_sequence < u64, sizeof...(T));
+	add_editors_helper(list, eds, std::make_integer_sequence<u64, sizeof...(T)>{});
 }
 
 #endif

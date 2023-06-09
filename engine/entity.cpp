@@ -160,8 +160,10 @@ template<typename T> auto register_new_component(EntityRegistry& entities, Alloc
 
 template<typename... T> void entity_registry_editor(EntityRegistry& entities, ComponentRegistry<T>&... comp) {
 	auto flag_names = entities.flag_names.allocated();
+	auto i = 0;
 	for (auto& desc : entities.pool.allocated()) {
 		EntityHandle ent = { &desc, desc.generation };
+		ImGui::PushID(i++);
 		if (ent.valid() && ImGui::TreeNode(desc.name.data())) {
 			defer{ ImGui::TreePop(); };
 			ImGui::bit_flags("Flags", desc.flags, entities.flag_names.allocated());
@@ -176,6 +178,7 @@ template<typename... T> void entity_registry_editor(EntityRegistry& entities, Co
 				}
 			());
 		}
+		ImGui::PopID();
 	}
 }
 

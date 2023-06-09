@@ -45,7 +45,7 @@ struct PlaygroundScene {
 	ComponentRegistry<Spacial2D> spacials;
 	ComponentRegistry<AudioSource> audio_sources;
 	ComponentRegistry<SpriteCursor> sprites;
-	ComponentRegistry<Collider2D> colliders;
+	ComponentRegistry<Body2D> bodies;
 
 	AnimationGrid<rtf32, 2> anim;
 	controls::TopDownControl ctrl;
@@ -58,7 +58,7 @@ struct PlaygroundScene {
 		spacials = register_new_component<Spacial2D>(entities, std_allocator, MAX_ENTITIES / 2, "Spacial");
 		audio_sources = register_new_component<AudioSource>(entities, std_allocator, MAX_ENTITIES / 2, "Audio Source");
 		sprites = register_new_component<SpriteCursor>(entities, std_allocator, MAX_ENTITIES / 2, "Sprite");
-		colliders = register_new_component<Collider2D>(entities, std_allocator, MAX_ENTITIES / 2, "Collider");
+		bodies = register_new_component<Body2D>(entities, std_allocator, MAX_ENTITIES / 2, "Body");
 
 		anim = load_animation_grid<rtf32, 2>(assets.test_character_anim_path, std_allocator);
 		ctrl = { 1, 1, 1, v2f32(0), 0 };
@@ -69,7 +69,7 @@ struct PlaygroundScene {
 				auto ent = allocate_entity(entities, "player");
 				spacials.add_to(ent, {});
 				sprites.add_to(ent, load_into(assets.test_character_spritesheet_path, rendering.atlas, v2u32(0), 0));
-				colliders.add_to(ent, { {}, make_shape_2d<Shape2D::Polygon>(larray(player_polygon)) });
+				bodies.add_to(ent, { {}, make_shape_2d<Shape2D::Polygon>(larray(player_polygon)) });
 				assert(ent.valid());
 				return ent;
 			}
@@ -84,13 +84,13 @@ struct PlaygroundScene {
 		defer{ delete_registry(std_allocator, spacials); };
 		defer{ delete_registry(std_allocator, audio_sources); };
 		defer{ delete_registry(std_allocator, sprites); };
-		defer{ delete_registry(std_allocator, colliders); };
+		defer{ delete_registry(std_allocator, bodies); };
 		defer{ unload(anim, std_allocator); };
 	}
 
 	bool operator()() {
 		update(clock);
-		clear_stale(colliders, audio_sources, sprites, spacials);
+		clear_stale(bodies, audio_sources, sprites, spacials);
 
 		{// player controller
 			ctrl.input = controls::keyboard_plane(Input::KB::K_W, Input::KB::K_A, Input::KB::K_S, Input::KB::K_D);
@@ -102,7 +102,7 @@ struct PlaygroundScene {
 				controls::move_top_down(pl_spacial->velocity.translation, ctrl.input, ctrl.speed, ctrl.accel, clock.dt);
 		}
 
-		physics(colliders, spacials, clock.dt);
+		physics(bodies, spacials, clock.dt);
 		audio(audio_sources, spacials, spacials[player]);
 		rendering(sprites, spacials, fbf, (player.valid() ? spacials[player]->transform : identity_2d));
 		return true;
@@ -120,7 +120,7 @@ struct PlaygroundScene {
 	void editor(tuple<SystemEditor, SystemEditor, Physics2D::Editor, SystemEditor>& ed) {
 		auto& [rd, au, ph, ent] = ed;
 		if (ph.debug)
-			ph.draw_debug(physics.collisions.allocated(), colliders, spacials, rendering.view_projection_matrix);
+			ph.draw_debug(physics.collisions.allocated(), bodies, spacials, rendering.view_projection_matrix);
 
 		if (rd.show_window) {
 			if (begin_editor(rd)) {
@@ -142,12 +142,110 @@ struct PlaygroundScene {
 
 		if (ent.show_window) {
 			if (begin_editor(ent)) {
-				entity_registry_editor(entities, spacials, audio_sources, sprites, colliders);
+				entity_registry_editor(entities, spacials, audio_sources, sprites, bodies);
 			} end_editor();
 		}
 	}
 
 };
+
+struct PhysicsTestBed {
+	OrthoCamera camera;
+	Transform2D view = identity_2d;
+	MappedObject<m4x4f32> view_projection_matrix;
+	Physics2D physics;
+
+	FrameBuffer fbf;
+
+	EntityRegistry entities;
+	ComponentRegistry<Spacial2D> spacials;
+	ComponentRegistry<Body2D> bodies;
+
+	Time::Clock clock;
+
+	PhysicsTestBed(FrameBuffer _fbf = default_framebuffer) {
+		camera = { v3f32(16.f, 9.f, 1000.f) / 2.f, v3f32(0) };
+		view_projection_matrix = map_object(m4x4f32(1));
+		fbf = _fbf;
+		entities = create_entity_registry(std_allocator, MAX_ENTITIES);
+		spacials = register_new_component<Spacial2D>(entities, std_allocator, MAX_ENTITIES / 2, "Spacial");
+		bodies = register_new_component<Body2D>(entities, std_allocator, MAX_ENTITIES / 2, "Body");
+
+		clock = Time::start();
+		static v2f32 test_polygon[] = { v2f32(-1, -1) / 2.f, v2f32(+1, -1) / 2.f, v2f32(+1, +1) / 2.f, v2f32(-1, +1) / 2.f, v2f32(-2, +.5f) / 2.f };
+		static v2f32 test_polygon2[] = { v2f32(-5, -1) / 2.f, v2f32(+5, -1) / 2.f, v2f32(+5, +1) / 2.f, v2f32(-5, +1) / 2.f };
+		for (auto i : u64xrange{ 0, 4 }) {
+			auto ent = allocate_entity(entities, "body");
+			spacials.add_to(ent, {}).transform.translation = test_polygon[i] * 2.f;
+			Body2D body;
+			body.material.inverse_inertia = 1;
+			body.material.inverse_mass = 1.f / 10.f;
+			body.shape = make_shape_2d<Shape2D::Polygon>(larray(test_polygon));
+			bodies.add_to(ent, std::move(body));
+			assert(ent.valid());
+		}
+
+		{
+			auto ent = allocate_entity(entities, "static");
+			spacials.add_to(ent, {}).transform.translation = v2f32(0, -2.5);
+			bodies.add_to(ent, { {}, make_shape_2d<Shape2D::Polygon>(larray(test_polygon2)) });
+			assert(ent.valid());
+		}
+
+		fflush(stdout);
+		wait_gpu();
+	}
+
+	~PhysicsTestBed() {
+		defer{ delete_registry(std_allocator, entities); };
+		defer{ delete_registry(std_allocator, spacials); };
+		defer{ delete_registry(std_allocator, bodies); };
+	}
+
+	v2f32 gravity = v2f32(0);
+	bool operator()() {
+		update(clock);
+		clear_stale(bodies, spacials);
+
+		for (auto [ent, body] : bodies.iter()) if (body->material.inverse_mass > 0) if (auto sp = spacials[*ent])
+			sp->velocity.translation += gravity * clock.dt;
+
+		physics(bodies, spacials, clock.dt);
+		sync(view_projection_matrix, view_project(project(camera), trs_2d(view)));
+		begin_render(fbf);
+		clear(fbf, v4f32(v3f32(0.3), 1));
+		return true;
+	}
+
+	static auto default_editor() {
+		auto ph = Physics2D::default_editor();
+		ph.debug = true;
+		return tuple(ph, SystemEditor("Entities", "Alt+E", { Input::KB::K_LEFT_ALT, Input::KB::K_E }));
+	}
+
+	void editor(tuple<Physics2D::Editor, SystemEditor>& ed) {
+		auto& [ph, ent] = ed;
+		if (ph.debug)
+			ph.draw_debug(physics.collisions.allocated(), bodies, spacials, view_projection_matrix);
+
+		if (ph.show_window) {
+			if (begin_editor(ph)) {
+				EditorWidget("Gravity", gravity);
+				EditorWidget("View", view);
+				EditorWidget("Camera", camera);
+				ph.editor_window(physics);
+			} end_editor();
+		}
+
+		if (ent.show_window) {
+			if (begin_editor(ent)) {
+				entity_registry_editor(entities, spacials, bodies);
+			} end_editor();
+		}
+	}
+
+};
+
 
 bool editor_test(App& app) {
 	ImGui::init_ogl_glfw(app.window); defer{ ImGui::shutdown_ogl_glfw(); };
@@ -161,13 +259,13 @@ bool editor_test(App& app) {
 	sub_editors.push(&editor);
 	sub_editors.push(&scene_window);
 
-	PlaygroundScene pg;
-	auto pg_ed = pg.default_editor();
+	PhysicsTestBed scene;
+	auto pg_ed = scene.default_editor();
 	add_editors(sub_editors, pg_ed);
 
 	while (update(app, editor_test)) {
-		pg.fbf = editor.show_window ? scene_panel : default_framebuffer;
-		pg();
+		scene.fbf = editor.show_window ? scene_panel : default_framebuffer;
+		scene();
 		shortcut_sub_editors(sub_editors.allocated());
 		if (!editor.show_window) continue;
 		ImGui::NewFrame_OGL_GLFW(); defer{ render_to(default_framebuffer); };
@@ -188,7 +286,7 @@ bool editor_test(App& app) {
 				EditorWidget("Texture", scene_texture);
 			} end_editor();
 		}
-		pg.editor(pg_ed);
+		scene.editor(pg_ed);
 	}
 	return true;
 }

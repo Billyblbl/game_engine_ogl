@@ -398,17 +398,17 @@ bool EditorWidget(const cstr label, Shape2D& shape) {
 	return changed;
 }
 
-struct Collider2D {
+struct Body2D {
 	struct {
 		f32 inverse_mass = 0.f;
 		f32 inverse_inertia = 0.f;
 		f32 restitution = 0.f;
 		f32 friction = 0.f;
 	} material;
-	Shape2D shape;
+	Shape2D shape = {};
 };
 
-bool EditorWidget(const cstr label, Collider2D& collider) {
+bool EditorWidget(const cstr label, Body2D& collider) {
 	bool changed = false;
 	if (ImGui::TreeNode(label)) {
 		defer{ ImGui::TreePop(); };
@@ -482,7 +482,7 @@ struct Physics2D {
 	List<Collision> collisions;
 
 	void operator()(
-		ComponentRegistry<Collider2D>& colliders,
+		ComponentRegistry<Body2D>& bodies,
 		ComponentRegistry<Spacial2D>& spacials,
 		f32 dt) {
 
@@ -493,12 +493,12 @@ struct Physics2D {
 			euler_integrate(*sp, dt);
 
 		collisions = List {larray(_buff), 0};
-		for (auto [i, j] : self_combinatronic_idx(colliders.handles.current)) {
-			auto ent1 = colliders.handles.allocated()[i];
-			auto ent2 = colliders.handles.allocated()[j];
+		for (auto [i, j] : self_combinatronic_idx(bodies.handles.current)) {
+			auto ent1 = bodies.handles.allocated()[i];
+			auto ent2 = bodies.handles.allocated()[j];
 
-			auto col1 = colliders[ent1];
-			auto col2 = colliders[ent2];
+			auto col1 = bodies[ent1];
+			auto col2 = bodies[ent2];
 			auto sp1 = spacials[ent1];
 			auto sp2 = spacials[ent2];
 
@@ -538,11 +538,11 @@ struct Physics2D {
 
 		void draw_debug(
 			Array<Collision> collisions,
-			ComponentRegistry<Collider2D>& colliders,
+			ComponentRegistry<Body2D>& bodies,
 			ComponentRegistry<Spacial2D>& spacials,
 			MappedObject<m4x4f32>& view_projection_matrix
 		) {
-			for (auto [ent, col] : colliders.iter()) {
+			for (auto [ent, col] : bodies.iter()) {
 				auto spacial = spacials[*ent];
 				auto mat = trs_2d(spacial->transform);
 				debug_draw(col->shape, mat, view_projection_matrix, v4f32(1, 0, 0, 1), wireframe);
@@ -569,13 +569,17 @@ struct Physics2D {
 				EditorWidget("Wireframe", wireframe);
 			if (ImGui::TreeNode("Collisions")) {
 				defer{ ImGui::TreePop(); };
+				auto id = 0;
 				for (auto [penetration, aabbi, i, j] : system.collisions.allocated()) {
 					char buffer[999];
-					snprintf(buffer, sizeof(buffer), "%s:%s", i.desc->name.data(), j.desc->name.data());
+					snprintf(buffer, sizeof(buffer), "%u:%s:%s", id, i.desc->name.data(), j.desc->name.data());
+					ImGui::PushID(id++);
 					if (ImGui::TreeNode(buffer)) {
 						EditorWidget("aabbi", aabbi);
 						EditorWidget("Penetration", penetration);
+						ImGui::TreePop();
 					}
+					ImGui::PopID();
 				}
 			}
 		}

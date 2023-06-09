@@ -221,14 +221,18 @@ struct Rendering {
 		unmap(view_projection_matrix);
 	}
 
+	void set_viewpoint(const Transform2D viewpoint) {
+		*view_projection_matrix.obj = view_project(project(camera), trs_2d(viewpoint));
+	}
+
 	void operator()(
 		ComponentRegistry<SpriteCursor>& sprites,
 		ComponentRegistry<Spacial2D>& spacials,
 		FrameBuffer& fbf, const Transform2D& viewpoint) {
 
+		set_viewpoint(viewpoint);
 		begin_render(fbf);
 		clear(fbf, v4f32(v3f32(0.3), 1));
-		*view_projection_matrix.obj = view_project(project(camera), trs_2d(viewpoint));
 		auto batch = draw.start_batch();
 		for (auto [ent, sprite] : sprites.iter())
 			batch.push(sprite_data(trs_2d(spacials[*ent]->transform), *sprite, 0/*draw layer*/));

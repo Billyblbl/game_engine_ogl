@@ -42,17 +42,9 @@ bool sub_editor_menu_item(SystemEditor& ed) {
 	return ImGui::MenuItem(ed.name.data(), ed.shortcut_str.data(), &ed.show_window);
 }
 
-bool begin_editor(SystemEditor& ed) { return ImGui::Begin(ed.name.data(), &ed.show_window); }
+bool begin_editor(SystemEditor& ed, ImGuiWindowFlags flags = 0) { return ImGui::Begin(ed.name.data(), &ed.show_window, flags); }
 
 void end_editor() { ImGui::End(); }
-
-void render_to(FrameBuffer& fbf) {
-	ImGui::Render();
-	begin_render(fbf);
-	clear(fbf, v4f32(v3f32(0), 1));
-	ImGui::Draw();
-	end_render();
-}
 
 void sub_editor_menu(const cstr label, Array<SystemEditor*> editors) {
 	if (ImGui::BeginMenu(label)) {

@@ -80,7 +80,7 @@ template<typename P> struct reg_polytope {
 	P min;
 	P max;
 	template<typename OP> operator reg_polytope<OP>() { return { OP(min), OP(max) }; }
-	Segment<P> diagonal() { return {min, max}; }
+	Segment<P> diagonal() { return { min, max }; }
 };
 
 template<typename P> auto width(reg_polytope<P> p) { return p.max.x - p.min.x; }
@@ -99,6 +99,14 @@ template<typename P> inline reg_polytope<P> intersect(const reg_polytope<P> a, c
 
 template<typename T> T lerp(T a, T b, f32 t) { return a + t * (b - a); }
 template<typename T> f32 inv_lerp(T a, T b, T v) { return (b == a) ? 0 : (v - a) / (b - a); }
+
+template<typename T> T average(Array<T> elements) {
+	auto sum = T(0);
+	for (auto&& e : elements)
+		sum += e;
+	return sum / f32(elements.size());
+}
+template<typename T> T average(LiteralArray<T> elements) { return average(larray(elements)); }
 
 inline v2f32 perpendicular(v2f32 v) { return v2f32(-v.y, v.x); }
 

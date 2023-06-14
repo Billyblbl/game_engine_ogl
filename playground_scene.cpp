@@ -164,7 +164,7 @@ struct PhysicsTestBed {
 	Time::Clock clock;
 
 	PhysicsTestBed(FrameBuffer _fbf = default_framebuffer) {
-		camera = { v3f32(16.f, 9.f, 1000.f) / 2.f, v3f32(0) };
+		camera = { v3f32(16.f, 9.f, 1000.f) * 2.f, v3f32(0) };
 		view_projection_matrix = map_object(m4x4f32(1));
 		fbf = _fbf;
 		entities = create_entity_registry(std_allocator, MAX_ENTITIES);
@@ -172,23 +172,78 @@ struct PhysicsTestBed {
 		bodies = register_new_component<Body2D>(entities, std_allocator, MAX_ENTITIES / 2, "Body");
 
 		clock = Time::start();
-		static v2f32 test_polygon[] = { v2f32(-1, -1) / 2.f, v2f32(+1, -1) / 2.f, v2f32(+1, +1) / 2.f, v2f32(-1, +1) / 2.f, v2f32(-2, +.5f) / 2.f };
-		static v2f32 test_polygon2[] = { v2f32(-5, -1) / 2.f, v2f32(+5, -1) / 2.f, v2f32(+5, +1) / 2.f, v2f32(-5, +1) / 2.f };
-		for (auto i : u64xrange{ 0, 4 }) {
-			auto ent = allocate_entity(entities, "body");
-			spacials.add_to(ent, {}).transform.translation = test_polygon[i] * 2.f;
+		static v2f32 test_polygon[] = { v2f32(-1, -1), v2f32(+1, -1), v2f32(+1, +1), v2f32(-1, +1) };
+		static v2f32 test_polygon2[] = { v2f32(-20, -1), v2f32(+20, -1), v2f32(+20, +1), v2f32(-20, +1) };
+
+		{
+			auto ent = allocate_entity(entities, "body1");
+			spacials.add_to(ent, {}).transform.translation = test_polygon[0] * 2.f + v2f32(0, 10);
 			Body2D body;
 			body.material.inverse_inertia = 1;
-			body.material.inverse_mass = 1.f / 10.f;
+			body.material.inverse_mass = 1.f;
+			body.material.restitution = .5f;
 			body.shape = make_shape_2d<Shape2D::Polygon>(larray(test_polygon));
 			bodies.add_to(ent, std::move(body));
 			assert(ent.valid());
 		}
 
 		{
-			auto ent = allocate_entity(entities, "static");
+			auto ent = allocate_entity(entities, "body2");
+			spacials.add_to(ent, {}).transform.translation = test_polygon[1] * 2.f + v2f32(0, 10);
+			Body2D body;
+			body.material.inverse_inertia = 1;
+			body.material.inverse_mass = 1.f;
+			body.material.restitution = .5f;
+			body.shape = make_shape_2d<Shape2D::Circle>(v3f32(0, 0, 1));
+			bodies.add_to(ent, std::move(body));
+			assert(ent.valid());
+		}
+
+		{
+			auto ent = allocate_entity(entities, "body3");
+			spacials.add_to(ent, {}).transform.translation = test_polygon[2] * 2.f + v2f32(0, 10);
+			Body2D body;
+			body.material.inverse_inertia = 1;
+			body.material.inverse_mass = 1.f;
+			body.material.restitution = .5f;
+			body.shape = make_shape_2d<Shape2D::Polygon>(larray(test_polygon));
+			bodies.add_to(ent, std::move(body));
+			assert(ent.valid());
+		}
+
+		{
+			auto ent = allocate_entity(entities, "body4");
+			spacials.add_to(ent, {}).transform.translation = test_polygon[3] * 2.f + v2f32(0, 10);
+			Body2D body;
+			body.material.inverse_inertia = 1;
+			body.material.inverse_mass = 1.f;
+			body.material.restitution = .5f;
+			body.shape = make_shape_2d<Shape2D::Polygon>(larray(test_polygon));
+			bodies.add_to(ent, std::move(body));
+			assert(ent.valid());
+		}
+
+		{
+			auto ent = allocate_entity(entities, "static1");
 			spacials.add_to(ent, {}).transform.translation = v2f32(0, -2.5);
-			bodies.add_to(ent, { {}, make_shape_2d<Shape2D::Polygon>(larray(test_polygon2)) });
+			Body2D body;
+			body.material.inverse_inertia = 0;
+			body.material.inverse_mass = 0;
+			body.material.restitution = 1.f;
+			body.shape = make_shape_2d<Shape2D::Polygon>(larray(test_polygon2));
+			bodies.add_to(ent, std::move(body));
+			assert(ent.valid());
+		}
+
+		{
+			auto ent = allocate_entity(entities, "static2");
+			spacials.add_to(ent, {}).transform.translation = v2f32(1, 0);
+			Body2D body;
+			body.material.inverse_inertia = 0;
+			body.material.inverse_mass = 0;
+			body.material.restitution = 1.f;
+			body.shape = make_shape_2d<Shape2D::Line>(Segment<v2f32> { v2f32(-1), v2f32(1) });
+			bodies.add_to(ent, std::move(body));
 			assert(ent.valid());
 		}
 
@@ -220,7 +275,11 @@ struct PhysicsTestBed {
 	static auto default_editor() {
 		auto ph = Physics2D::default_editor();
 		ph.debug = true;
-		return tuple(ph, SystemEditor("Entities", "Alt+E", { Input::KB::K_LEFT_ALT, Input::KB::K_E }));
+		ph.wireframe = false;
+		ph.show_window = true;
+		auto ent = create_editor("Entities", "Alt+E", { Input::KB::K_LEFT_ALT, Input::KB::K_E });
+		ent.show_window = true;
+		return tuple(ph, ent);
 	}
 
 	void editor(tuple<Physics2D::Editor, SystemEditor>& ed) {
@@ -246,47 +305,40 @@ struct PhysicsTestBed {
 
 };
 
-
 bool editor_test(App& app) {
 	ImGui::init_ogl_glfw(app.window); defer{ ImGui::shutdown_ogl_glfw(); };
-	auto scene_texture = create_texture(TX2D, v4u32(v2f32(1920, 1080), 1, 1)); defer{ unload(scene_texture); };
-	auto scene_texture_depth = create_texture(TX2D, v4u32(v2f32(1920, 1080), 1, 1), DEPTH_COMPONENT32); defer{ unload(scene_texture_depth); };
-	auto scene_panel = create_framebuffer({ bind_to_fb(Color0Attc, scene_texture, 0, 0), bind_to_fb(DepthAttc, scene_texture_depth, 0, 0) }); defer{ destroy_fb(scene_panel); };
-	auto scene_window = create_editor("Scene", "Alt+S", { Input::KB::K_LEFT_ALT, Input::KB::K_S });
 	auto editor = create_editor("Editor", "Alt+X", { Input::KB::K_LEFT_ALT, Input::KB::K_X });
+	editor.show_window = true;
 
-	auto sub_editors = List{ alloc_array<SystemEditor*>(std_allocator, 10), 0 };
+	auto sub_editors = List{ alloc_array<SystemEditor*>(std_allocator, 10), 0 }; defer{ dealloc_array(std_allocator, sub_editors.capacity); };
 	sub_editors.push(&editor);
-	sub_editors.push(&scene_window);
 
 	PhysicsTestBed scene;
 	auto pg_ed = scene.default_editor();
 	add_editors(sub_editors, pg_ed);
 
 	while (update(app, editor_test)) {
-		scene.fbf = editor.show_window ? scene_panel : default_framebuffer;
 		scene();
 		shortcut_sub_editors(sub_editors.allocated());
-		if (!editor.show_window) continue;
-		ImGui::NewFrame_OGL_GLFW(); defer{ render_to(default_framebuffer); };
-		if (ImGui::BeginMainMenuBar()) {
-			defer{ ImGui::EndMainMenuBar(); };
-			sub_editor_menu("Windows", sub_editors.allocated());
-			if (ImGui::BeginMenu("Actions")) {
-				defer{ ImGui::EndMenu(); };
-				if (ImGui::MenuItem("Break"))
-					fprintf(stderr, "breaking!\n");
-				if (ImGui::MenuItem("Restart"))
-					return true;
+		if (editor.show_window) {
+			ImGui::NewFrame_OGL_GLFW(); defer{
+				ImGui::Render();
+				ImGui::Draw();
+			};
+			if (ImGui::BeginMainMenuBar()) {
+				defer{ ImGui::EndMainMenuBar(); };
+				sub_editor_menu("Windows", sub_editors.allocated());
+				if (ImGui::BeginMenu("Actions")) {
+					defer{ ImGui::EndMenu(); };
+					if (ImGui::MenuItem("Break"))
+						fprintf(stderr, "breaking!\n");
+					if (ImGui::MenuItem("Restart"))
+						return true;
+				}
 			}
+			ImGui::DockSpaceOverViewport(ImGui::GetWindowViewport(), ImGuiDockNodeFlags_PassthruCentralNode);
+			scene.editor(pg_ed);
 		}
-		ImGui::DockSpaceOverViewport(ImGui::GetMainViewport());
-		if (scene_window.show_window) {
-			if (begin_editor(scene_window)) {
-				EditorWidget("Texture", scene_texture);
-			} end_editor();
-		}
-		scene.editor(pg_ed);
 	}
 	return true;
 }

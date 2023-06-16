@@ -21,6 +21,13 @@ struct Shape2D {
 	};
 };
 
+struct Body {
+	f32 inverse_mass = 0.f;
+	f32 inverse_inertia = 0.f;
+	f32 restitution = 0.f;
+	f32 friction = 0.f;
+};
+
 template<Shape2D::Type type> struct shape_mapping {};
 template<> struct shape_mapping<Shape2D::Circle> { static constexpr auto member = &Shape2D::circle; };
 template<> struct shape_mapping<Shape2D::Polygon> { static constexpr auto member = &Shape2D::polygon; };
@@ -281,10 +288,10 @@ tuple<bool, rtf32, v2f32> intersect(const Shape2D& s1, const Shape2D& s2, m4x4f3
 	return { collided, aabb_intersection, (collided ? EPA(f1, f2, triangle) : v2f32(0)) };
 }
 
-bool can_resolve_collision(f32 im1, f32 im2, f32 ii1, f32 ii2) {
-	return
-		(im1 > 0 || im2 > 0) &&// can move
-		(ii1 > 0 || ii2 > 0); // can turn
+bool can_resolve_collision(Body* b1, Body* b2) {
+	return (b1 && b2) && // has bodies
+		(b1->inverse_mass > 0 || b2->inverse_mass > 0) &&// can move
+		(b1->inverse_inertia > 0 || b2->inverse_inertia > 0); // can turn
 }
 
 v2f32 velocity_at_point(const Transform2D& velocity, v2f32 point) {
@@ -302,7 +309,7 @@ template<support_function F1, support_function F2> inline Segment<v2f32> contact
 	//* assumes normal is in general direction s1 -> s2, aka normal is in direction of the penetration of s1 into s2
 	Segment<v2f32> supports[] = { f1(+normal), f2(-normal) };
 	for (auto [a, b] : supports) if (a == b)
-		return {a, b};
+		return { a, b };
 
 	return Segment<v2f32>{// overlap of segments
 		glm::min(glm::max(supports[0].A, supports[0].B), glm::max(supports[1].A, supports[1].B)),
@@ -376,35 +383,22 @@ bool EditorWidget(const cstr label, Shape2D& shape) {
 	return changed;
 }
 
-struct Body2D {
-	struct {
-		f32 inverse_mass = 0.f;
-		f32 inverse_inertia = 0.f;
-		f32 restitution = 0.f;
-		f32 friction = 0.f;
-	} material;
-	Shape2D shape = {};
-};
 
-bool EditorWidget(const cstr label, Body2D& collider) {
+bool EditorWidget(const cstr label, Body& body) {
 	bool changed = false;
 	if (ImGui::TreeNode(label)) {
 		defer{ ImGui::TreePop(); };
-		changed |= EditorWidget("Shape", collider.shape);
-		if (ImGui::TreeNode("Material")) {
-			defer{ ImGui::TreePop(); };
-			changed |= EditorWidget("Restitution", collider.material.restitution);
-			changed |= EditorWidget("Friction", collider.material.friction);
-			f32 mass = (collider.material.inverse_mass != 0) ? 1 / collider.material.inverse_mass : 0;
-			if (EditorWidget("Mass", mass)) {
-				collider.material.inverse_mass = mass != 0 ? 1 / mass : 0;
-				changed = true;
-			}
-			f32 inertia = (collider.material.inverse_inertia != 0) ? 1 / collider.material.inverse_inertia : 0;
-			if (EditorWidget("Inertia", inertia)) {
-				collider.material.inverse_inertia = inertia != 0 ? 1 / inertia : 0;
-				changed = true;
-			}
+		changed |= EditorWidget("Restitution", body.restitution);
+		changed |= EditorWidget("Friction", body.friction);
+		f32 mass = (body.inverse_mass != 0) ? 1 / body.inverse_mass : 0;
+		if (EditorWidget("Mass", mass)) {
+			body.inverse_mass = mass != 0 ? 1 / mass : 0;
+			changed = true;
+		}
+		f32 inertia = (body.inverse_inertia != 0) ? 1 / body.inverse_inertia : 0;
+		if (EditorWidget("Inertia", inertia)) {
+			body.inverse_inertia = inertia != 0 ? 1 / inertia : 0;
+			changed = true;
 		}
 	}
 	return changed;
@@ -456,13 +450,15 @@ struct Physics2D {
 		rtf32 aabbi;
 		EntityHandle e1;
 		EntityHandle e2;
+		bool physical;
 		v2f32 contacts[2];
 		Transform2D bounce_deltas[2];
 	};
 	List<Collision> collisions;
 
 	void operator()(
-		ComponentRegistry<Body2D>& bodies,
+		ComponentRegistry<Body>& bodies,
+		ComponentRegistry<Shape2D>& shapes,
 		ComponentRegistry<Spacial2D>& spacials,
 		f32 dt) {
 
@@ -473,34 +469,37 @@ struct Physics2D {
 			euler_integrate(*sp, dt);
 
 		collisions = List{ larray(_buff), 0 };
-		for (auto i : u64xrange{ 0, bodies.handles.current - 1 }) {
-			for (auto j : u64xrange{ i + 1, bodies.handles.current }) {
-				auto ent1 = bodies.handles.allocated()[i];
-				auto ent2 = bodies.handles.allocated()[j];
+		for (auto i : u64xrange{ 0, shapes.handles.current - 1 }) {
+			for (auto j : u64xrange{ i + 1, shapes.handles.current }) {
+				auto ent1 = shapes.handles.allocated()[i];
+				auto ent2 = shapes.handles.allocated()[j];
 
-				auto body1 = bodies[ent1];
-				auto body2 = bodies[ent2];
+				auto shape1 = shapes[ent1];
+				auto shape2 = shapes[ent2];
 				auto sp1 = spacials[ent1];
 				auto sp2 = spacials[ent2];
 
-				auto [collided, aabbi, pen] = intersect(body1->shape, body2->shape, trs_2d(sp1->transform), trs_2d(sp2->transform));
+				auto [collided, aabbi, pen] = intersect(*shape1, *shape2, trs_2d(sp1->transform), trs_2d(sp2->transform));
 				if (collided)
-					collisions.push({ pen, aabbi, ent1, ent2, {v2f32(0), {}} });
+					collisions.push({ pen, aabbi, ent1, ent2, false, {v2f32(0), {}} });
 				else continue;
 
-				if (!can_resolve_collision(body1->material.inverse_mass, body2->material.inverse_mass, body1->material.inverse_inertia, body2->material.inverse_inertia))
+				auto body1 = bodies[ent1];
+				auto body2 = bodies[ent2];
+				if (!can_resolve_collision(body1, body2))
 					continue;
+				collisions.allocated().back().physical = true;
 
 				// Correct penetration
-				auto [o1, o2] = correction_offset(pen, body1->material.inverse_mass, body2->material.inverse_mass);
+				auto [o1, o2] = correction_offset(pen, body1->inverse_mass, body2->inverse_mass);
 				sp1->transform.translation += o1;
 				sp2->transform.translation += o2;
 				auto normal = glm::normalize(pen);
 
 				// Compute contact points with corrected positions
 				auto [ctct1, ctct2] = contacts_segment(
-					support_function_of(body1->shape, trs_2d(sp1->transform)),
-					support_function_of(body2->shape, trs_2d(sp2->transform)),
+					support_function_of(*shape1, trs_2d(sp1->transform)),
+					support_function_of(*shape2, trs_2d(sp2->transform)),
 					normal
 				);
 				collisions.allocated().back().contacts[0] = ctct1;
@@ -508,12 +507,12 @@ struct Physics2D {
 
 				// Bounce
 				auto [delta1, delta2] = bounce_contact(
-					{ { sp1->velocity, sp1->transform.translation, body1->material.inverse_mass, body1->material.inverse_inertia },
-						{ sp2->velocity, sp2->transform.translation, body2->material.inverse_mass, body2->material.inverse_inertia } },
+					{ { sp1->velocity, sp1->transform.translation, body1->inverse_mass, body1->inverse_inertia },
+						{ sp2->velocity, sp2->transform.translation, body2->inverse_mass, body2->inverse_inertia } },
 					average({ ctct1, ctct2 }),
 					normal,
-					min(body1->material.restitution, body2->material.restitution),
-					average({ body1->material.friction, body2->material.friction })
+					min(body1->restitution, body2->restitution),
+					average({ body1->friction, body2->friction })
 				);
 				collisions.allocated().back().bounce_deltas[0] = delta1;
 				collisions.allocated().back().bounce_deltas[1] = delta2;
@@ -522,7 +521,6 @@ struct Physics2D {
 			}
 		}
 	}
-
 	struct Editor : public SystemEditor {
 		ShapeRenderer debug_draw = load_shape_renderer();
 		bool debug = false;
@@ -532,14 +530,14 @@ struct Physics2D {
 
 		void draw_debug(
 			Array<Collision> collisions,
-			ComponentRegistry<Body2D>& bodies,
+			ComponentRegistry<Shape2D>& shapes,
 			ComponentRegistry<Spacial2D>& spacials,
 			MappedObject<m4x4f32>& view_projection_matrix
 		) {
-			for (auto [ent, col] : bodies.iter()) {
+			for (auto [ent, shape] : shapes.iter()) {
 				auto spacial = spacials[*ent];
 				auto mat = trs_2d(spacial->transform);
-				debug_draw(col->shape, mat, view_projection_matrix, v4f32(1, 0, 0, 1), wireframe);
+				debug_draw(*shape, mat, view_projection_matrix, v4f32(1, 0, 0, 1), wireframe);
 				v2f32 local_vel = glm::transpose(mat) * v4f32(spacial->velocity.translation, 0, 1);
 
 				sync(debug_draw.render_info, { mat, v4f32(1, 1, 0, 1) });
@@ -550,12 +548,14 @@ struct Physics2D {
 				);
 			}
 
-			for (auto [pen, aabbi, ent1, ent2, contacts, _] : collisions) {
+			for (auto [pen, aabbi, ent1, ent2, physical, contacts, _] : collisions) {
 				v2f32 verts[4];
 				sync(debug_draw.render_info, { m4x4f32(1), v4f32(0, 1, 0, 1) });
 				debug_draw.draw_polygon(make_box_poly(larray(verts), dims_p2(aabbi), (aabbi.max + aabbi.min) / 2.f), view_projection_matrix, wireframe);
-				sync(debug_draw.render_info, { m4x4f32(1), v4f32(0, 1, 1, 1) });
-				debug_draw.draw_line({ contacts[0], contacts[1] }, view_projection_matrix, wireframe);
+				if (physical) {
+					sync(debug_draw.render_info, { m4x4f32(1), v4f32(0, 1, 1, 1) });
+					debug_draw.draw_line({ contacts[0], contacts[1] }, view_projection_matrix, wireframe);
+				}
 			}
 		}
 
@@ -566,15 +566,17 @@ struct Physics2D {
 			if (ImGui::TreeNode("Collisions")) {
 				defer{ ImGui::TreePop(); };
 				auto id = 0;
-				for (auto [penetration, aabbi, ent1, ent2, contacts, deltas] : system.collisions.allocated()) {
+				for (auto [penetration, aabbi, ent1, ent2, physical, contacts, deltas] : system.collisions.allocated()) {
 					char buffer[999];
 					snprintf(buffer, sizeof(buffer), "%u:%s:%s", id, ent1.desc->name.data(), ent2.desc->name.data());
 					ImGui::PushID(id++);
 					if (ImGui::TreeNode(buffer)) {
 						EditorWidget("aabbi", aabbi);
 						EditorWidget("Penetration", penetration);
-						EditorWidget("Contacts", larray(contacts));
-						EditorWidget("Deltas", larray(deltas));
+						if (physical) {
+							EditorWidget("Contacts", larray(contacts));
+							EditorWidget("Deltas", larray(deltas));
+						}
 						ImGui::TreePop();
 					}
 					ImGui::PopID();

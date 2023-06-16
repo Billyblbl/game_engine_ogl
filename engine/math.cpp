@@ -108,7 +108,8 @@ template<typename T> T average(Array<T> elements) {
 }
 template<typename T> T average(LiteralArray<T> elements) { return average(larray(elements)); }
 
-inline v2f32 perpendicular(v2f32 v) { return v2f32(-v.y, v.x); }
+inline v2f32 orthogonal_axis(v2f32 v) { return v2f32(-v.y, v.x); }
+inline v2f32 orthogonal(v2f32 v, f32 direction = 1) { return glm::rotate(v, direction * glm::radians(90.f)); }
 
 using axf32 = reg_polytope<v1f32>;
 using axf64 = reg_polytope<v1f64>;

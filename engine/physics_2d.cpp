@@ -162,8 +162,6 @@ inline rtf32 aabb_shape(const Shape2D& shape, m4x4f32 transform) {
 	}
 }
 
-using Triangle = tuple<v2f32, v2f32, v2f32>;
-
 template<support_function F1, support_function F2> Segment<v2f32> minkowski_diff_support(const F1& f1, const F2& f2, v2f32 direction) {
 	auto p = f1(direction).A - f2(-direction).A;
 	return { p, p };
@@ -172,8 +170,8 @@ template<support_function F1, support_function F2> Segment<v2f32> minkowski_diff
 // https://www.youtube.com/watch?v=ajv46BSqcK4&ab_channel=Reducible
 // Gilbert-Johnson-Keerthi
 // TODO continuous collision -> support function only selects point, should sample from the convex hull of the shapes at time t & t+dt
-template<support_function F1, support_function F2> tuple<bool, Triangle> GJK(const F1& f1, const F2& f2, v2f32 start_direction = glm::normalize(v2f32(1))) {
-	constexpr tuple<bool, Triangle> no_collision = { false, {{}, {}, {}} };
+template<support_function F1, support_function F2> tuple<bool, tuple<v2f32, v2f32, v2f32>> GJK(const F1& f1, const F2& f2, v2f32 start_direction = glm::normalize(v2f32(1))) {
+	constexpr tuple<bool, tuple<v2f32, v2f32, v2f32>> no_collision = { false, {{}, {}, {}} };
 
 	v2f32 triangle_vertices[3];
 	auto triangle = List{ larray(triangle_vertices), 0 };
@@ -218,7 +216,6 @@ template<support_function F1, support_function F2> tuple<bool, Triangle> GJK(con
 				triangle.remove(1);//B
 				direction = ACperp;
 			} else { // Inside triangle ABC
-				//! wrong
 				return { true, to_tuple<3>(triangle.allocated()) };
 			}
 		}
@@ -229,8 +226,8 @@ template<support_function F1, support_function F2> tuple<bool, Triangle> GJK(con
 
 // Expanding Polytope algorithm
 // https://www.youtube.com/watch?v=0XQ2FSz3EK8&ab_channel=Winterdev
-template<support_function F1, support_function F2> v2f32 EPA(const F1& f1, const F2& f2, Triangle t, u32 max_iteration = 64, f32 iteration_threshold = 0.05f) {
-	auto [A, B, C] = t;
+template<support_function F1, support_function F2> v2f32 EPA(const F1& f1, const F2& f2, tuple<v2f32, v2f32, v2f32> triangle, u32 max_iteration = 64, f32 iteration_threshold = 0.05f) {
+	auto [A, B, C] = triangle;
 	v2f32 points_buffer[max_iteration + 3] = { A, B, C };
 	auto points = List{ carray(points_buffer, max_iteration + 3), 3 };
 
@@ -243,7 +240,7 @@ template<support_function F1, support_function F2> v2f32 EPA(const F1& f1, const
 			auto j = (i + 1) % points.current;
 			auto vi = points.allocated()[i];
 			auto vj = points.allocated()[j];
-			auto normal = glm::normalize(perpendicular(vj - vi));
+			auto normal = glm::normalize(orthogonal(vj - vi));
 			auto dist = glm::dot(normal, vj);
 
 			if (dist < 0) {
@@ -284,23 +281,33 @@ tuple<bool, rtf32, v2f32> intersect(const Shape2D& s1, const Shape2D& s2, m4x4f3
 	return { collided, aabb_intersection, (collided ? EPA(f1, f2, triangle) : v2f32(0)) };
 }
 
-constexpr auto max_contact_points_convex_2d = 2;
-
 bool can_resolve_collision(f32 im1, f32 im2, f32 ii1, f32 ii2) {
 	return
 		(im1 > 0 || im2 > 0) &&// can move
 		(ii1 > 0 || ii2 > 0); // can turn
 }
 
-struct PhysicalDescriptor {
-	Transform2D velocity;
-	v2f32 world_cmass;
-	f32 inverse_mass;
-	f32 inverse_inertia;
-};
-
 v2f32 velocity_at_point(const Transform2D& velocity, v2f32 point) {
-	return velocity.translation + perpendicular(point) * glm::radians(velocity.rotation);
+	return velocity.translation + orthogonal(point) * glm::radians(velocity.rotation);
+}
+
+inline tuple<v2f32, v2f32> correction_offset(v2f32 penetration, f32 im1, f32 im2) {
+	return {
+		-penetration * inv_lerp(0.f, im1 + im2, im1),
+		+penetration * inv_lerp(0.f, im1 + im2, im2)
+	};
+}
+
+template<support_function F1, support_function F2> inline Segment<v2f32> contacts_segment(const F1& f1, const F2& f2, v2f32 normal) {
+	//* assumes normal is in general direction s1 -> s2, aka normal is in direction of the penetration of s1 into s2
+	Segment<v2f32> supports[] = { f1(+normal), f2(-normal) };
+	for (auto [a, b] : supports) if (a == b)
+		return {a, b};
+
+	return Segment<v2f32>{// overlap of segments
+		glm::min(glm::max(supports[0].A, supports[0].B), glm::max(supports[1].A, supports[1].B)),
+			glm::max(glm::min(supports[0].A, supports[0].B), glm::min(supports[1].A, supports[1].B))
+	};
 }
 
 Transform2D push_at_point(v2f32 impulse, v2f32 point, f32 inverse_mass, f32 inverse_inertia) {
@@ -310,44 +317,42 @@ Transform2D push_at_point(v2f32 impulse, v2f32 point, f32 inverse_mass, f32 inve
 	return delta_v;
 }
 
+struct PhysicalDescriptor {
+	Transform2D velocity;
+	v2f32 world_cmass;
+	f32 inverse_mass;
+	f32 inverse_inertia;
+};
+
 //linear + angular momentum -> https://www.youtube.com/watch?v=VbvdoLQQUPs&ab_channel=Two-BitCoding
 //? modified to take in the average contact point -> convex only
 tuple<Transform2D, Transform2D> bounce_contact(
-	PhysicalDescriptor ent1, PhysicalDescriptor ent2,
+	LiteralArray<PhysicalDescriptor> ents,
 	v2f32 contact,
 	v2f32 normal,
-	f32 elasticity
+	f32 elasticity,
+	f32 kinetic_friction // kinetic only for now
+	//TODO static friction
 ) {
-	auto lever1 = contact - ent1.world_cmass;
-	auto lever2 = contact - ent2.world_cmass;
-	auto ctc_rvel = velocity_at_point(ent2.velocity, lever2) - velocity_at_point(ent1.velocity, lever1);
+	auto lever1 = contact - larray(ents)[0].world_cmass;
+	auto lever2 = contact - larray(ents)[1].world_cmass;
+	auto ctc_rvel = velocity_at_point(larray(ents)[1].velocity, lever2) - velocity_at_point(larray(ents)[0].velocity, lever1);
+	auto tangent = orthogonal_axis(normal) * glm::sign(glm::dot(orthogonal_axis(normal), ctc_rvel));
 
-	auto impulse = normal *
-		-(1.f + elasticity) * glm::dot(ctc_rvel, normal) /
-		f32(ent1.inverse_mass + ent2.inverse_mass +
-			glm::pow(glm::dot(perpendicular(lever1), normal), 2) * ent1.inverse_inertia +
-			glm::pow(glm::dot(perpendicular(lever2), normal), 2) * ent2.inverse_inertia);
+	auto normal_impulse = glm::dot(ctc_rvel, normal) /
+		f32(larray(ents)[0].inverse_mass + larray(ents)[1].inverse_mass +
+			glm::pow(glm::dot(orthogonal_axis(lever1), normal), 2) * larray(ents)[0].inverse_inertia +
+			glm::pow(glm::dot(orthogonal_axis(lever2), normal), 2) * larray(ents)[1].inverse_inertia);
 
-	return {
-		push_at_point(-impulse, lever1, ent1.inverse_mass, ent1.inverse_inertia),
-		push_at_point(+impulse, lever2, ent2.inverse_mass, ent2.inverse_inertia)
-	};
-}
+	auto impulse =
+		normal * -(1.f + elasticity) * normal_impulse + //contact elastic bounce
+		tangent * kinetic_friction * normal_impulse +// kinetic friction resistance
+		v2f32(0);
 
-template<support_function F1, support_function F2> inline Segment<v2f32> contacts_segment(const F1& f1, const F2& f2, v2f32 normal) {
-	//* assumes normal is in general direction s1 -> s2, aka normal is in direction of the penetration of s1 into s2
-	Segment<v2f32> supports[] = { f1(+normal), f2(-normal) };
-	return Segment<v2f32>{// overlap of segments
-		glm::min(glm::max(supports[0].A, supports[0].B), glm::max(supports[1].A, supports[1].B)),
-		glm::max(glm::min(supports[0].A, supports[0].B), glm::min(supports[1].A, supports[1].B))
-	};
-}
+	auto delta1 = push_at_point(-impulse, lever1, larray(ents)[0].inverse_mass, larray(ents)[0].inverse_inertia);
+	auto delta2 = push_at_point(+impulse, lever2, larray(ents)[1].inverse_mass, larray(ents)[1].inverse_inertia);
 
-inline tuple<v2f32, v2f32> correction_offset(v2f32 penetration, f32 im1, f32 im2) {
-	return {
-		penetration * inv_lerp(0.f, im1 + im2, im1),
-		penetration * inv_lerp(0.f, im1 + im2, im2)
-	};
+	return { delta1, delta2 };
 }
 
 #ifndef DEFAULT_GRAVITY
@@ -465,8 +470,7 @@ struct Physics2D {
 		static Collision _buff[MAX_ENTITIES * MAX_ENTITIES];
 
 		for (auto [_, sp] : spacials.iter())
-			// euler_integrate(*sp, dt);
-			euler_integrate(*sp, 1.f / 600.f);
+			euler_integrate(*sp, dt);
 
 		collisions = List{ larray(_buff), 0 };
 		for (auto i : u64xrange{ 0, bodies.handles.current - 1 }) {
@@ -474,48 +478,45 @@ struct Physics2D {
 				auto ent1 = bodies.handles.allocated()[i];
 				auto ent2 = bodies.handles.allocated()[j];
 
-				auto col1 = bodies[ent1];
-				auto col2 = bodies[ent2];
+				auto body1 = bodies[ent1];
+				auto body2 = bodies[ent2];
 				auto sp1 = spacials[ent1];
 				auto sp2 = spacials[ent2];
 
-				auto [collided, aabbi, pen] = intersect(col1->shape, col2->shape, trs_2d(sp1->transform), trs_2d(sp2->transform));
-				if (collided) {
+				auto [collided, aabbi, pen] = intersect(body1->shape, body2->shape, trs_2d(sp1->transform), trs_2d(sp2->transform));
+				if (collided)
 					collisions.push({ pen, aabbi, ent1, ent2, {v2f32(0), {}} });
-					// printf("%u:%u\n", i, j);
-				}
+				else continue;
 
-				if (!collided || !can_resolve_collision(col1->material.inverse_mass, col2->material.inverse_mass, col1->material.inverse_inertia, col2->material.inverse_inertia))
+				if (!can_resolve_collision(body1->material.inverse_mass, body2->material.inverse_mass, body1->material.inverse_inertia, body2->material.inverse_inertia))
 					continue;
 
 				// Correct penetration
-				auto [o1, o2] = correction_offset(pen, col1->material.inverse_mass, col2->material.inverse_mass);
-				sp1->transform.translation -= o1;
+				auto [o1, o2] = correction_offset(pen, body1->material.inverse_mass, body2->material.inverse_mass);
+				sp1->transform.translation += o1;
 				sp2->transform.translation += o2;
 				auto normal = glm::normalize(pen);
 
-				// sp1->transform.translation += o1 * glm::sign(glm::dot(sp1->transform.translation - sp2->transform.translation, o1));
-				// sp2->transform.translation += o2 * glm::sign(glm::dot(sp2->transform.translation - sp1->transform.translation, o2));
-				// auto normal = glm::normalize(pen) * glm::sign(glm::dot(sp2->transform.translation - sp1->transform.translation, glm::normalize(pen)));
-
 				// Compute contact points with corrected positions
 				auto [ctct1, ctct2] = contacts_segment(
-					support_function_of(col1->shape, trs_2d(sp1->transform)),
-					support_function_of(col2->shape, trs_2d(sp2->transform)),
+					support_function_of(body1->shape, trs_2d(sp1->transform)),
+					support_function_of(body2->shape, trs_2d(sp2->transform)),
 					normal
 				);
 				collisions.allocated().back().contacts[0] = ctct1;
 				collisions.allocated().back().contacts[1] = ctct2;
 
 				// Bounce
-				// TODO friction
-				// TODO refactor this, its weird that we have this many arguments leading to the need for PhysicalDescriptor
-				PhysicalDescriptor desc1 = { sp1->velocity, sp1->transform.translation, col1->material.inverse_mass, col1->material.inverse_inertia };
-				PhysicalDescriptor desc2 = { sp2->velocity, sp2->transform.translation, col2->material.inverse_mass, col2->material.inverse_inertia };
-				auto [delta1, delta2] = bounce_contact(desc1, desc2, average({ ctct1, ctct2 }), normal, min(col1->material.restitution, col2->material.restitution));
+				auto [delta1, delta2] = bounce_contact(
+					{ { sp1->velocity, sp1->transform.translation, body1->material.inverse_mass, body1->material.inverse_inertia },
+						{ sp2->velocity, sp2->transform.translation, body2->material.inverse_mass, body2->material.inverse_inertia } },
+					average({ ctct1, ctct2 }),
+					normal,
+					min(body1->material.restitution, body2->material.restitution),
+					average({ body1->material.friction, body2->material.friction })
+				);
 				collisions.allocated().back().bounce_deltas[0] = delta1;
 				collisions.allocated().back().bounce_deltas[1] = delta2;
-
 				sp1->velocity = sp1->velocity + delta1;
 				sp2->velocity = sp2->velocity + delta2;
 			}

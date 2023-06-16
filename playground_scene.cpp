@@ -164,7 +164,7 @@ struct PhysicsTestBed {
 	Time::Clock clock;
 
 	PhysicsTestBed(FrameBuffer _fbf = default_framebuffer) {
-		camera = { v3f32(16.f, 9.f, 1000.f) * 2.f, v3f32(0) };
+		camera = { v3f32(16.f, 9.f, 1000.f) * 4.f, v3f32(0) };
 		view_projection_matrix = map_object(m4x4f32(1));
 		fbf = _fbf;
 		entities = create_entity_registry(std_allocator, MAX_ENTITIES);
@@ -173,7 +173,7 @@ struct PhysicsTestBed {
 
 		clock = Time::start();
 		static v2f32 test_polygon[] = { v2f32(-1, -1), v2f32(+1, -1), v2f32(+1, +1), v2f32(-1, +1) };
-		static v2f32 test_polygon2[] = { v2f32(-20, -1), v2f32(+20, -1), v2f32(+20, +1), v2f32(-20, +1) };
+		static v2f32 test_polygon2[] = { v2f32(-1000, -1), v2f32(+1000, -1), v2f32(+1000, +1), v2f32(-1000, +1) };
 
 		{
 			auto ent = allocate_entity(entities, "body1");
@@ -182,6 +182,7 @@ struct PhysicsTestBed {
 			body.material.inverse_inertia = 1;
 			body.material.inverse_mass = 1.f;
 			body.material.restitution = .5f;
+			body.material.friction = .5f;
 			body.shape = make_shape_2d<Shape2D::Polygon>(larray(test_polygon));
 			bodies.add_to(ent, std::move(body));
 			assert(ent.valid());
@@ -194,6 +195,7 @@ struct PhysicsTestBed {
 			body.material.inverse_inertia = 1;
 			body.material.inverse_mass = 1.f;
 			body.material.restitution = .5f;
+			body.material.friction = .5f;
 			body.shape = make_shape_2d<Shape2D::Circle>(v3f32(0, 0, 1));
 			bodies.add_to(ent, std::move(body));
 			assert(ent.valid());
@@ -206,6 +208,7 @@ struct PhysicsTestBed {
 			body.material.inverse_inertia = 1;
 			body.material.inverse_mass = 1.f;
 			body.material.restitution = .5f;
+			body.material.friction = .5f;
 			body.shape = make_shape_2d<Shape2D::Polygon>(larray(test_polygon));
 			bodies.add_to(ent, std::move(body));
 			assert(ent.valid());
@@ -218,6 +221,7 @@ struct PhysicsTestBed {
 			body.material.inverse_inertia = 1;
 			body.material.inverse_mass = 1.f;
 			body.material.restitution = .5f;
+			body.material.friction = .5f;
 			body.shape = make_shape_2d<Shape2D::Polygon>(larray(test_polygon));
 			bodies.add_to(ent, std::move(body));
 			assert(ent.valid());
@@ -229,7 +233,8 @@ struct PhysicsTestBed {
 			Body2D body;
 			body.material.inverse_inertia = 0;
 			body.material.inverse_mass = 0;
-			body.material.restitution = 1.f;
+			body.material.restitution = .5f;
+			body.material.friction = .5f;
 			body.shape = make_shape_2d<Shape2D::Polygon>(larray(test_polygon2));
 			bodies.add_to(ent, std::move(body));
 			assert(ent.valid());
@@ -237,14 +242,37 @@ struct PhysicsTestBed {
 
 		{
 			auto ent = allocate_entity(entities, "static2");
-			spacials.add_to(ent, {}).transform.translation = v2f32(1, 0);
+			Transform2D transform;
+			transform.translation = v2f32(10, 3);
+			transform.rotation = 0;
+			transform.scale = v2f32(3);
+			spacials.add_to(ent, {}).transform = transform;
 			Body2D body;
 			body.material.inverse_inertia = 0;
 			body.material.inverse_mass = 0;
-			body.material.restitution = 1.f;
+			body.material.restitution = .5f;
+			body.material.friction = .5f;
 			body.shape = make_shape_2d<Shape2D::Line>(Segment<v2f32> { v2f32(-1), v2f32(1) });
 			bodies.add_to(ent, std::move(body));
 			assert(ent.valid());
+		}
+
+		{
+			auto ent = allocate_entity(entities, "static3");
+			Transform2D transform;
+			transform.translation = v2f32(-10, 3);
+			transform.rotation = -90;
+			transform.scale = v2f32(3);
+			spacials.add_to(ent, {}).transform = transform;
+			Body2D body;
+			body.material.inverse_inertia = 0;
+			body.material.inverse_mass = 0;
+			body.material.restitution = .5f;
+			body.material.friction = .5f;
+			body.shape = make_shape_2d<Shape2D::Line>(Segment<v2f32> { v2f32(-1), v2f32(1) });
+			bodies.add_to(ent, std::move(body));
+			assert(ent.valid());
+			spacials[ent]->transform.rotation = -90;
 		}
 
 		fflush(stdout);
@@ -275,7 +303,7 @@ struct PhysicsTestBed {
 	static auto default_editor() {
 		auto ph = Physics2D::default_editor();
 		ph.debug = true;
-		ph.wireframe = false;
+		// ph.wireframe = false;
 		ph.show_window = true;
 		auto ent = create_editor("Entities", "Alt+E", { Input::KB::K_LEFT_ALT, Input::KB::K_E });
 		ent.show_window = true;

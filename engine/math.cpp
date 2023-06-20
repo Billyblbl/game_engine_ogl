@@ -106,6 +106,21 @@ template<typename T> T average(Array<T> elements) {
 		sum += e;
 	return sum / f32(elements.size());
 }
+
+template<typename T, typename U> U average(Array<T*> elements, U T::* member) {
+	auto sum = U(0);
+	for (T* e : elements)
+		sum += e->*member;
+	return sum / f32(elements.size());
+}
+
+template<typename T, typename U> U average(Array<T> elements, U T::* member) {
+	auto sum = U(0);
+	for (auto&& e : elements)
+		sum += e.*member;
+	return sum / f32(elements.size());
+}
+
 template<typename T> T average(LiteralArray<T> elements) { return average(larray(elements)); }
 
 inline v2f32 orthogonal_axis(v2f32 v) { return v2f32(-v.y, v.x); }

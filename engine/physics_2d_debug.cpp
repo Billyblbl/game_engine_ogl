@@ -80,7 +80,8 @@ struct ShapeRenderer {
 		case Shape2D::Circle: return draw_circle(shape.circle, view_matrix, wireframe);
 		case Shape2D::Line: return draw_line(shape.line, view_matrix, wireframe);
 		case Shape2D::Point: return draw_point(shape.point, view_matrix, wireframe);
-		case Shape2D::Composite:
+		case Shape2D::CompositeHull:
+		case Shape2D::Concave:
 			for (auto&& sub_shape : shape.composite)
 				(*this)(sub_shape, model_matrix, view_matrix, color, wireframe);
 		}

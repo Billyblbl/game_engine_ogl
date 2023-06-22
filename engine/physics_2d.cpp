@@ -13,7 +13,7 @@ static const auto shape_type_names = larray(shape_type_names_array);
 struct Shape2D {
 	enum Type : u32 { None, Circle, Polygon, Line, Point, CompositeHull, Concave, TypeCount } type = None;
 	union {
-		Array<v2f32> polygon = {};
+		Array<v2f32> polygon;
 		Array<Shape2D> composite;
 		v3f32 circle;//xy center, z radius
 		Segment<v2f32> line;
@@ -369,7 +369,7 @@ Transform2D push_at_point(v2f32 impulse, v2f32 point, f32 inverse_mass, f32 inve
 }
 
 //linear + angular momentum -> https://www.youtube.com/watch?v=VbvdoLQQUPs&ab_channel=Two-BitCoding
-//? modified to take in the average contact point -> convex only
+//* heavily modified since first written from this video
 tuple<Transform2D, Transform2D> bounce_contact(
 	LiteralArray<Body*> bodies,
 	LiteralArray<Transform2D*> velocities,
@@ -402,8 +402,6 @@ tuple<Transform2D, Transform2D> bounce_contact(
 #define DEFAULT_GRAVITY v2f32(0, -9.81f)
 #endif
 
-constexpr auto GRAVITY = DEFAULT_GRAVITY;
-
 bool EditorWidget(const cstr label, Shape2D& shape) {
 	bool changed = false;
 	if (ImGui::TreeNode(label)) {
@@ -414,6 +412,8 @@ bool EditorWidget(const cstr label, Shape2D& shape) {
 		case Shape2D::Polygon: changed |= EditorWidget("Polygon", shape.polygon);break;
 		case Shape2D::Line: changed |= EditorWidget("Line", shape.line);break;
 		case Shape2D::Point: changed |= EditorWidget("Point", shape.point);break;
+		case Shape2D::CompositeHull: changed |= EditorWidget("Composite Hull", shape.composite);break;
+		case Shape2D::Concave: changed |= EditorWidget("Concave Manifold", shape.composite);break;
 		}
 	}
 	return changed;
@@ -457,23 +457,110 @@ usize write_polygon(FILE* file, Array<v2f32> polygon) {
 	return wrote;
 }
 
-struct PhysicsConfig {
-	f32 time_step = 1.f / 60.f;
-	u8 velocity_iterations = 8;
-	u8 position_iterations = 3;
+using Polygon = Array<v2f32>;
+
+enum WindingOrder : i8 {
+	Clockwise = 1,
+	AntiClockwise = -1
 };
 
-bool EditorWidget(const cstr label, PhysicsConfig& config) {
-	auto changed = false;
-	if (ImGui::TreeNode(label)) {
-		changed |= EditorWidget("Physics time step", config.time_step);
-		changed |= EditorWidget("Velocity iterations", config.velocity_iterations);
-		changed |= EditorWidget("Position iterations", config.position_iterations);
-		ImGui::TreePop();
+bool is_convex(Polygon poly) {
+	if (poly.size() < 3)
+		return false;
+
+	bool clockwise = false;
+	bool anti_clockwise = false;
+
+	for (auto i : u64xrange{ 0, poly.size() }) {
+		v2f32 verts[] = { poly[i], poly[(i + 1) % poly.size()], poly[(i + 2) % poly.size()] };
+		v2f32 edges[] = { verts[1] - verts[0], verts[2] - verts[1] };
+		auto cross = glm::cross(v3f32(edges[0], 0), v3f32(edges[1], 0)).z;
+
+		if (cross < 0)
+			clockwise = true;
+		else if (cross > 0)
+			anti_clockwise = true;
+
+		if (clockwise && anti_clockwise)
+			return false;
 	}
-	if (config.time_step <= 0.0000f)
-		config.time_step = 0.0001f;
-	return changed;
+	return true;
+
+}
+
+bool intersect_poly_poly(Array<v2f32> p1, Array<v2f32> p2) {
+	auto s1 = make_shape_2d<Shape2D::Polygon>(p1);
+	auto s2 = make_shape_2d<Shape2D::Polygon>(p2);
+
+	auto f1 = support_function_of(s1, m4x4f32(1));
+	auto f2 = support_function_of(s2, m4x4f32(1));
+
+	auto [i, _] = intersect_convex(f1, f2);
+	return i;
+}
+
+tuple<Array<Polygon>, Array<v2f32>> decompose_concave_poly(Polygon polygon, Alloc allocator = std_allocator) {
+
+	if (polygon.size() < 4) {
+		auto p = duplicate_array(allocator, polygon);
+		auto dec = alloc_array<Polygon>(allocator, 1);
+		dec[0] = p;
+		return { dec, p };
+	}
+
+	List<v2f32> vertices = { alloc_array<v2f32>(allocator, polygon.size()), 0 };
+	List<u64range> sub_poly_indices = { alloc_array<u64range>(allocator, polygon.size() - 2), 0 }; defer{ dealloc_array(allocator, sub_poly_indices.capacity); }; // exclusive ranges
+	u64 poly_start = 0;
+
+	auto to_decompose = List{ alloc_array<u64range>(allocator, polygon.size()), 0 }; // inclusive ranges
+	to_decompose.push(array_indices(polygon));
+
+	while (to_decompose.current > 0) {
+		assert(sub_poly_indices.current < polygon.size());
+		auto poly = to_decompose.pop();
+		u64range ear_poly = { 0, 0 }; // inclusive range
+		for (auto i : u64xrange{ poly.min, poly.max + 1 }) {
+			auto index = i % polygon.size();
+			vertices.push_growing(allocator, polygon[index]);
+			u64range leftover = { i + 1, poly.max };
+
+			//* Need to copy from polygon because the indices we have need to be wrapped around with % size, and we need an actual Array<v2f32> out of it
+			v2f32 leftover_vertices[leftover.size() + 1];
+			auto leftover_poly = List{ carray(leftover_vertices, leftover.size() + 1), 0 };
+			for (auto j : u64xrange{ leftover.min, leftover.max + 1 })
+				leftover_poly.push(polygon[j % polygon.size()]);
+
+			auto current_poly = vertices.allocated().subspan(poly_start, vertices.current - poly_start);
+			if (current_poly.size() < 3) continue;
+			if (!is_convex(current_poly) || intersect_poly_poly(current_poly, leftover_poly.allocated())) {//* breaks convex -> start ear poly
+				vertices.pop();
+				if (ear_poly.min == ear_poly.max)
+					ear_poly.min = index - 1;
+				ear_poly.max = index + 1;
+			} else if (ear_poly.min != ear_poly.max) {// *finished ear polygon
+				to_decompose.push_growing(allocator, ear_poly);
+				assert(to_decompose.allocated().back().size() + 1 > 2);
+				ear_poly = { 0, 0 };
+			}
+		}
+		if (ear_poly.min != ear_poly.max)// *finished ear polygon
+			to_decompose.push_growing(allocator, ear_poly);
+		sub_poly_indices.push_growing(allocator, { poly_start, vertices.current });
+		poly_start = vertices.current;
+	}
+
+
+	//* Build the polygon array from the indices ranges
+	//* Need this index & rebuild system because when vertices grows it would invalidate Array<v2f32>s referencing its content
+	vertices.shrink_to_content(allocator);
+	auto sub_polys = List{ alloc_array<Polygon>(allocator, sub_poly_indices.current), 0 };
+	for (auto range : sub_poly_indices.allocated())
+		sub_polys.push(vertices.allocated().subspan(range.min, range.max - range.min));
+
+	for (auto p : sub_polys.allocated())
+		assert(is_convex(p));
+
+	return { sub_polys.allocated(), vertices.allocated() };
 }
 
 #include <system_editor.cpp>
@@ -501,8 +588,8 @@ struct Physics2D {
 		static Contact2D _contact_buff[MAX_ENTITIES * MAX_ENTITIES * 10];
 
 		for (auto [_, sp] : spacials.iter())
-			euler_integrate(*sp, 1.f/60.f);
-			// euler_integrate(*sp, dt);
+			euler_integrate(*sp, 1.f / 60.f);
+		// euler_integrate(*sp, dt);
 
 		collisions_pool = List{ larray(_buff), 0 };
 		auto contact_pool = List{ larray(_contact_buff), 0 };

@@ -180,22 +180,56 @@ struct PhysicsTestBed {
 		static v2f32 test_polygon3[] = { v2f32(-10, -1) / 3.f, v2f32(+10, -1) / 3.f, v2f32(+10, +1) / 3.f, v2f32(-10, +1) / 3.f };
 		static v2f32 test_polygon4[] = { v2f32(-1, -10) / 3.f, v2f32(+1, -10) / 3.f, v2f32(+1, +10) / 3.f, v2f32(-1, +10) / 3.f };
 
+		static v2f32 test_polygon5[] = { v2f32(-1, -1), v2f32(+1, -1), v2f32(+1, +1), v2f32(-1, +1), v2f32(-.5, 0) };
+		auto [test_poly_decomposed, test_poly_decomposed_vertices] = decompose_concave_poly(larray(test_polygon5));
+		static List<Shape2D> test_poly_decomposed_shapes = { alloc_array<Shape2D>(std_allocator, test_poly_decomposed.size()), 0 };
+
+		for (auto sub_poly : test_poly_decomposed)
+			test_poly_decomposed_shapes.push(make_shape_2d<Shape2D::Polygon>(sub_poly));
+
 		static Shape2D subshapes[] = {
 			make_shape_2d<Shape2D::Circle>(v3f32(0, 0, 5) / 3.f),
 			make_shape_2d<Shape2D::Polygon>(larray(test_polygon3)),
 			make_shape_2d<Shape2D::Polygon>(larray(test_polygon4))
 		};
 
+		// {
+		// 	auto ent = allocate_entity(entities, "concave1");
+		// 	spacials.add_to(ent, {}).transform.translation = v2f32(0, 3);
+		// 	Body body;
+		// 	body.inverse_inertia = .1f;
+		// 	body.inverse_mass = 1.f;
+		// 	body.restitution = .5f;
+		// 	body.friction = .5f;
+		// 	bodies.add_to(ent, std::move(body));
+		// 	shapes.add_to(ent, make_shape_2d<Shape2D::Concave>(larray(subshapes)));
+		// 	assert(ent.valid());
+		// }
+
 		{
-			auto ent = allocate_entity(entities, "concave1");
-			spacials.add_to(ent, {}).transform.translation = v2f32(0, 3);
-			Body body;
-			body.inverse_inertia = .1f;
-			body.inverse_mass = 1.f;
-			body.restitution = .5f;
-			body.friction = .5f;
-			bodies.add_to(ent, std::move(body));
-			shapes.add_to(ent, make_shape_2d<Shape2D::Concave>(larray(subshapes)));
+			auto ent = allocate_entity(entities, "concave_undecomposed");
+			spacials.add_to(ent, {}).transform.translation = v2f32(2, 3);
+			// Body body;
+			// body.inverse_inertia = .1f;
+			// body.inverse_mass = 1.f;
+			// body.restitution = .5f;
+			// body.friction = .5f;
+			// bodies.add_to(ent, std::move(body));
+			shapes.add_to(ent, make_shape_2d<Shape2D::Polygon>(larray(test_polygon5)));
+			assert(ent.valid());
+		}
+
+
+		{
+			auto ent = allocate_entity(entities, "concave_decomposed");
+			spacials.add_to(ent, {}).transform.translation = v2f32(-2, 3);
+			// Body body;
+			// body.inverse_inertia = .1f;
+			// body.inverse_mass = 1.f;
+			// body.restitution = .5f;
+			// body.friction = .5f;
+			// bodies.add_to(ent, std::move(body));
+			shapes.add_to(ent, make_shape_2d<Shape2D::Concave>(test_poly_decomposed_shapes.allocated()));
 			assert(ent.valid());
 		}
 

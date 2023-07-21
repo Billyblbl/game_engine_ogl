@@ -32,7 +32,7 @@ GLuint create_shader(string source, GLenum type) {
 	if (!is_compiled) {
 		GLint log_length;
 		GL_GUARD(glGetShaderiv(shader, GL_INFO_LOG_LENGTH, &log_length));
-		GLchar log[log_length + 1];
+		char log[log_length + 1];
 		memset(log, 0, log_length + 1);
 		GL_GUARD(glGetShaderInfoLog(shader, log_length, nullptr, log));
 		fprintf(stderr, "Failed to build %s shader - Shader log : %s\n", GLtoString(type).data(), log);
@@ -234,7 +234,7 @@ struct Rendering {
 		begin_render(fbf);
 		clear(fbf, v4f32(v3f32(0.3), 1));
 		auto batch = draw.start_batch();
-		for (auto [ent, sprite] : sprites.iter())
+		for (auto [ent, sprite] : sprites.iter()) if (ent->valid())
 			batch.push(sprite_data(trs_2d(spacials[*ent]->transform), *sprite, 0/*draw layer*/));
 		draw(rect, atlas, view_projection_matrix, batch.current);
 	}

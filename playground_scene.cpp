@@ -177,58 +177,22 @@ struct PhysicsTestBed {
 		static v2f32 test_polygon[] = { v2f32(-1, -1), v2f32(+1, -1), v2f32(+1, +1), v2f32(-1, +1) };
 		static v2f32 test_polygon2[] = { v2f32(-1000, -1), v2f32(+1000, -1), v2f32(+1000, +1), v2f32(-1000, +1) };
 
-		static v2f32 test_polygon3[] = { v2f32(-10, -1) / 3.f, v2f32(+10, -1) / 3.f, v2f32(+10, +1) / 3.f, v2f32(-10, +1) / 3.f };
-		static v2f32 test_polygon4[] = { v2f32(-1, -10) / 3.f, v2f32(+1, -10) / 3.f, v2f32(+1, +10) / 3.f, v2f32(-1, +10) / 3.f };
-
-		static v2f32 test_polygon5[] = { v2f32(-1, -1), v2f32(+1, -1), v2f32(+1, +1), v2f32(-1, +1), v2f32(-.5, 0) };
-		auto [test_poly_decomposed, test_poly_decomposed_vertices] = decompose_concave_poly(larray(test_polygon5));
+		static v2f32 test_polygon_concave[] = { v2f32(-1, -1), v2f32(+1, -1), v2f32(+1, +1), v2f32(-1, +1), v2f32(-.5, 0) };
+		auto [test_poly_decomposed, test_poly_decomposed_vertices] = decompose_concave_poly(larray(test_polygon_concave));
 		static List<Shape2D> test_poly_decomposed_shapes = { alloc_array<Shape2D>(std_allocator, test_poly_decomposed.size()), 0 };
 
 		for (auto sub_poly : test_poly_decomposed)
 			test_poly_decomposed_shapes.push(make_shape_2d<Shape2D::Polygon>(sub_poly));
 
-		static Shape2D subshapes[] = {
-			make_shape_2d<Shape2D::Circle>(v3f32(0, 0, 5) / 3.f),
-			make_shape_2d<Shape2D::Polygon>(larray(test_polygon3)),
-			make_shape_2d<Shape2D::Polygon>(larray(test_polygon4))
-		};
-
-		// {
-		// 	auto ent = allocate_entity(entities, "concave1");
-		// 	spacials.add_to(ent, {}).transform.translation = v2f32(0, 3);
-		// 	Body body;
-		// 	body.inverse_inertia = .1f;
-		// 	body.inverse_mass = 1.f;
-		// 	body.restitution = .5f;
-		// 	body.friction = .5f;
-		// 	bodies.add_to(ent, std::move(body));
-		// 	shapes.add_to(ent, make_shape_2d<Shape2D::Concave>(larray(subshapes)));
-		// 	assert(ent.valid());
-		// }
-
 		{
-			auto ent = allocate_entity(entities, "concave_undecomposed");
-			spacials.add_to(ent, {}).transform.translation = v2f32(2, 3);
-			// Body body;
-			// body.inverse_inertia = .1f;
-			// body.inverse_mass = 1.f;
-			// body.restitution = .5f;
-			// body.friction = .5f;
-			// bodies.add_to(ent, std::move(body));
-			shapes.add_to(ent, make_shape_2d<Shape2D::Polygon>(larray(test_polygon5)));
-			assert(ent.valid());
-		}
-
-
-		{
-			auto ent = allocate_entity(entities, "concave_decomposed");
-			spacials.add_to(ent, {}).transform.translation = v2f32(-2, 3);
-			// Body body;
-			// body.inverse_inertia = .1f;
-			// body.inverse_mass = 1.f;
-			// body.restitution = .5f;
-			// body.friction = .5f;
-			// bodies.add_to(ent, std::move(body));
+			auto ent = allocate_entity(entities, "concave1");
+			spacials.add_to(ent, {}).transform.translation = v2f32(0, 3);
+			Body body;
+			body.inverse_inertia = .1f;
+			body.inverse_mass = 1.f;
+			body.restitution = .3f;
+			body.friction = .8f;
+			bodies.add_to(ent, std::move(body));
 			shapes.add_to(ent, make_shape_2d<Shape2D::Concave>(test_poly_decomposed_shapes.allocated()));
 			assert(ent.valid());
 		}
@@ -353,13 +317,20 @@ struct PhysicsTestBed {
 
 	v2f32 gravity = v2f32(0);
 	bool operator()() {
+		constexpr auto SCRATCH_SIZE = (1 << 16) * sizeof(void*);
+		static auto scratch = create_virtual_arena(SCRATCH_SIZE);
+
 		update(clock);
-		clear_stale(shapes, spacials);
+		clear_stale(shapes, spacials, bodies);
 
 		for (auto [ent, body] : bodies.iter()) if (body->inverse_mass > 0) if (auto sp = spacials[*ent])
 			sp->velocity.translation += gravity * clock.dt;
 
-		physics(bodies, shapes, spacials, clock.dt);
+
+		reset_virtual_arena(scratch);
+		for (auto& sp : spacials.buffer.allocated()) euler_integrate(sp, clock.dt);
+		physics(gather_as<RigidBody>(as_v_alloc(scratch), shapes.handles.allocated(), [](const RigidBodyComp& comp) { return tuple_as<RigidBody>(comp); }, shapes, spacials, bodies));
+		reset_virtual_arena(scratch);
 		sync(view_projection_matrix, view_project(project(camera), trs_2d(view)));
 		begin_render(fbf);
 		clear(fbf, v4f32(v3f32(0.3), 1));
@@ -378,7 +349,7 @@ struct PhysicsTestBed {
 	void editor(tuple<Physics2D::Editor, SystemEditor>& ed) {
 		auto& [ph, ent] = ed;
 		if (ph.debug)
-			ph.draw_debug(physics.collisions_pool.allocated(), shapes, spacials, view_projection_matrix);
+			ph.draw_debug(physics.collisions, shapes, spacials, view_projection_matrix);
 
 		if (ph.show_window) {
 			if (begin_editor(ph)) {

@@ -158,6 +158,19 @@ template<typename T> auto register_new_component(EntityRegistry& entities, Alloc
 	return registry;
 }
 
+template<typename... T> auto gather_entity(Alloc allocator, Array<EntityHandle> handles, ComponentRegistry<T>&... comp) {
+	return map(allocator, handles, [&](EntityHandle handle) { return tuple(handle, comp[handle]...); });
+}
+
+//TODO find out why tuple layout doesn't seem to match struct layout, even tho its got the tuple equivalent concept as guard
+// template<typename S, typename... T> auto gather_as(Alloc allocator, Array<EntityHandle> handles, ComponentRegistry<T>&... comp) {
+// 	return tuple_array_as<S>(gather_entity(allocator, handles, comp...));
+// }
+
+template<typename S, typename... T> auto gather_as(Alloc allocator, Array<EntityHandle> handles, auto mapper, ComponentRegistry<T>&... comp) {
+	return map(allocator, gather_entity(allocator, handles, comp...), mapper);
+}
+
 template<typename... T> void entity_registry_editor(EntityRegistry& entities, ComponentRegistry<T>&... comp) {
 	auto flag_names = entities.flag_names.allocated();
 	auto i = 0;

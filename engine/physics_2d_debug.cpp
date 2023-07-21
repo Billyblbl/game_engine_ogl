@@ -82,8 +82,10 @@ struct ShapeRenderer {
 		case Shape2D::Point: return draw_point(shape.point, view_matrix, wireframe);
 		case Shape2D::CompositeHull:
 		case Shape2D::Concave:
-			for (auto&& sub_shape : shape.composite)
+			for (auto&& sub_shape : shape.composite) {
 				(*this)(sub_shape, model_matrix, view_matrix, color, wireframe);
+				wait_gpu();
+			}
 		}
 	}
 

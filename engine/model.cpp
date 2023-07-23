@@ -10,7 +10,7 @@ struct RenderMesh {
 	GLuint vbo;
 	GLuint ibo;
 	GLuint vao;
-	uint32_t element_count;
+	u32 element_count;
 	GLenum index_type;
 	GLenum draw_mode;
 };
@@ -28,7 +28,7 @@ struct RenderMesh {
 //
 
 template<v2u32 dimensions> constexpr auto create_quad_sheet_UV() {
-	std::array<v2f32, (dimensions.x + 1)*(dimensions.y + 1)> uvs;
+	std::array<v2f32, (dimensions.x + 1)* (dimensions.y + 1)> uvs;
 	for (auto y = 0; y < dimensions.y + 1; y++) {
 		for (auto x = 0; x < dimensions.x + 1; x++) {
 			uvs[y * (dimensions.x + 1) + x] = v2f32(
@@ -42,30 +42,30 @@ template<v2u32 dimensions> constexpr auto create_quad_sheet_UV() {
 
 template<v2u32 dimensions> auto create_quad_sheet_indices() {
 	std::array<uint32_t, 3 * 2 * dimensions.x * dimensions.y> indices;
-	for (auto y = 0; y < dimensions.y; y++) {
-		for (auto x = 0; x < dimensions.x; x++) {
-			auto quadIndex = (y * dimensions.x + x);
-			auto offset = 0;
+	for (auto y : u32xrange{ 0, dimensions.y }) {
+		for (auto x : u32xrange{ 0, dimensions.x }) {
+			auto quad_index = (y * dimensions.x + x);
+			auto index_index = (y * (3 * 2 * dimensions.x) + x);
 
 			// // T1 clockwise
-			// indices[y * (3 * 2 * dimensions.x) + x + offset++] = quadIndex;
-			// indices[y * (3 * 2 * dimensions.x) + x + offset++] = quadIndex + 1;
-			// indices[y * (3 * 2 * dimensions.x) + x + offset++] = quadIndex + dimensions.x + 1;
+			// indices[index_index++] = quad_index;
+			// indices[index_index++] = quad_index + 1;
+			// indices[index_index++] = quad_index + dimensions.x + 1;
 
 			// T1 counter clockwise
-			indices[y * (3 * 2 * dimensions.x) + x + offset++] = quadIndex + dimensions.x + 1;
-			indices[y * (3 * 2 * dimensions.x) + x + offset++] = quadIndex + 1;
-			indices[y * (3 * 2 * dimensions.x) + x + offset++] = quadIndex;
+			indices[index_index++] = quad_index + dimensions.x + 1;
+			indices[index_index++] = quad_index + 1;
+			indices[index_index++] = quad_index;
 
 			// // T2 clockwise
-			// indices[y * (3 * 2 * dimensions.x) + x + offset++] = quadIndex + dimensions.x + 1;
-			// indices[y * (3 * 2 * dimensions.x) + x + offset++] = quadIndex + 1;
-			// indices[y * (3 * 2 * dimensions.x) + x + offset++] = quadIndex + dimensions.x + 2;
+			// indices[index_index++] = quad_index + dimensions.x + 1;
+			// indices[index_index++] = quad_index + 1;
+			// indices[index_index++] = quad_index + dimensions.x + 2;
 
 			// T2 counter clockwise
-			indices[y * (3 * 2 * dimensions.x) + x + offset++] = quadIndex + dimensions.x + 2;
-			indices[y * (3 * 2 * dimensions.x) + x + offset++] = quadIndex + 1;
-			indices[y * (3 * 2 * dimensions.x) + x + offset++] = quadIndex + dimensions.x + 1;
+			indices[index_index++] = quad_index + dimensions.x + 2;
+			indices[index_index++] = quad_index + 1;
+			indices[index_index++] = quad_index + dimensions.x + 1;
 		}
 	}
 	return indices;
@@ -85,10 +85,10 @@ auto create_rect(v2f32 dimensions) {
 	auto uvs = get_single_quad_UV();
 	return std::make_pair(
 		std::array{
-			DefaultVertex2D { v2f32(-dimensions.x / 2.f,  dimensions.y / 2.f), uvs[0] },
-			DefaultVertex2D { v2f32( dimensions.x / 2.f,  dimensions.y / 2.f), uvs[1] },
+			DefaultVertex2D { v2f32(-dimensions.x / 2.f, +dimensions.y / 2.f), uvs[0] },
+			DefaultVertex2D { v2f32(+dimensions.x / 2.f, +dimensions.y / 2.f), uvs[1] },
 			DefaultVertex2D { v2f32(-dimensions.x / 2.f, -dimensions.y / 2.f), uvs[2] },
-			DefaultVertex2D { v2f32( dimensions.x / 2.f, -dimensions.y / 2.f), uvs[3] }
+			DefaultVertex2D { v2f32(+dimensions.x / 2.f, -dimensions.y / 2.f), uvs[3] }
 		},
 		get_single_quad_indices()
 	);

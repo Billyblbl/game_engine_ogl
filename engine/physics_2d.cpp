@@ -626,15 +626,20 @@ struct Physics2D {
 		ShapeRenderer debug_draw = load_shape_renderer();
 		bool debug = false;
 		bool wireframe = true;
+		MappedObject<m4x4f32> view_projection_matrix;
 
-		Editor() : SystemEditor("Physics2D", "Alt+P", { Input::KB::K_LEFT_ALT, Input::KB::K_P }) {}
+		Editor() : SystemEditor("Physics2D", "Alt+P", { Input::KB::K_LEFT_ALT, Input::KB::K_P }) {
+			view_projection_matrix = map_object<m4x4f32>(m4x4f32(1));
+		}
 
 		void draw_debug(
 			Array<Collision2D> collisions,
 			ComponentRegistry<Shape2D>& shapes,
 			ComponentRegistry<Spacial2D>& spacials,
-			MappedObject<m4x4f32>& view_projection_matrix
+			const m4x4f32& matrix
+			// MappedObject<m4x4f32>& view_projection_matrix
 		) {
+			sync(view_projection_matrix, matrix);
 			for (auto [ent, shape] : shapes.iter()) {
 				auto spacial = spacials[*ent];
 				auto mat = trs_2d(spacial->transform);

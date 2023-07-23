@@ -39,7 +39,6 @@ struct PlaygroundScene {
 	Rendering rendering;
 	Physics2D physics;
 	Audio audio;
-	FrameBuffer fbf;
 
 	EntityRegistry entities;
 	ComponentRegistry<Spacial2D> spacials;
@@ -53,8 +52,7 @@ struct PlaygroundScene {
 	Time::Clock clock;
 	EntityHandle player;
 
-	PlaygroundScene(FrameBuffer _fbf = default_framebuffer) {
-		fbf = _fbf;
+	PlaygroundScene() {
 		rendering.camera = { v3f32(16.f, 9.f, 1000.f) * 4.f, v3f32(0) };
 		entities = create_entity_registry(std_allocator, MAX_ENTITIES);
 		spacials = register_new_component<Spacial2D>(entities, std_allocator, MAX_ENTITIES / 2, "Spacial");
@@ -84,128 +82,130 @@ struct PlaygroundScene {
 			}
 		());
 
-		static v2f32 test_polygon[] = { v2f32(-1, -1), v2f32(+1, -1), v2f32(+1, +1), v2f32(-1, +1) };
-		static v2f32 test_polygon2[] = { v2f32(-1000, -1), v2f32(+1000, -1), v2f32(+1000, +1), v2f32(-1000, +1) };
+		{// misc scene content
+			static v2f32 test_polygon[] = { v2f32(-1, -1), v2f32(+1, -1), v2f32(+1, +1), v2f32(-1, +1) };
+			static v2f32 test_polygon2[] = { v2f32(-1000, -1), v2f32(+1000, -1), v2f32(+1000, +1), v2f32(-1000, +1) };
 
-		static v2f32 test_polygon_concave[] = { v2f32(-1, -1), v2f32(+1, -1), v2f32(+1, +1), v2f32(-1, +1), v2f32(-.5, 0) };
-		auto [test_poly_decomposed, test_poly_decomposed_vertices] = decompose_concave_poly(larray(test_polygon_concave));
-		static List<Shape2D> test_poly_decomposed_shapes = { alloc_array<Shape2D>(std_allocator, test_poly_decomposed.size()), 0 };
+			static v2f32 test_polygon_concave[] = { v2f32(-1, -1), v2f32(+1, -1), v2f32(+1, +1), v2f32(-1, +1), v2f32(-.5, 0) };
+			auto [test_poly_decomposed, test_poly_decomposed_vertices] = decompose_concave_poly(larray(test_polygon_concave));
+			static List<Shape2D> test_poly_decomposed_shapes = { alloc_array<Shape2D>(std_allocator, test_poly_decomposed.size()), 0 };
 
-		test_poly_decomposed_shapes.current = 0;
-		for (auto sub_poly : test_poly_decomposed)
-			test_poly_decomposed_shapes.push(make_shape_2d<Shape2D::Polygon>(sub_poly));
+			test_poly_decomposed_shapes.current = 0;
+			for (auto sub_poly : test_poly_decomposed)
+				test_poly_decomposed_shapes.push(make_shape_2d<Shape2D::Polygon>(sub_poly));
 
-		{
-			auto ent = allocate_entity(entities, "concave1");
-			spacials.add_to(ent, {}).transform.translation = v2f32(0, 3);
-			Body body;
-			body.inverse_inertia = .1f;
-			body.inverse_mass = 1.f;
-			body.restitution = .3f;
-			body.friction = .8f;
-			bodies.add_to(ent, std::move(body));
-			shapes.add_to(ent, make_shape_2d<Shape2D::Concave>(test_poly_decomposed_shapes.allocated()));
-			assert(ent.valid());
-		}
+			{
+				auto ent = allocate_entity(entities, "concave1");
+				spacials.add_to(ent, {}).transform.translation = v2f32(0, 3);
+				Body body;
+				body.inverse_inertia = .1f;
+				body.inverse_mass = 1.f;
+				body.restitution = .3f;
+				body.friction = .8f;
+				bodies.add_to(ent, std::move(body));
+				shapes.add_to(ent, make_shape_2d<Shape2D::Concave>(test_poly_decomposed_shapes.allocated()));
+				assert(ent.valid());
+			}
 
-		{
-			auto ent = allocate_entity(entities, "body1");
-			spacials.add_to(ent, {}).transform.translation = test_polygon[0] * 2.f + v2f32(0, 10);
-			Body body;
-			body.inverse_inertia = 1;
-			body.inverse_mass = 1.f;
-			body.restitution = .5f;
-			body.friction = .5f;
-			bodies.add_to(ent, std::move(body));
-			shapes.add_to(ent, make_shape_2d<Shape2D::Polygon>(larray(test_polygon)));
-			assert(ent.valid());
-		}
+			{
+				auto ent = allocate_entity(entities, "body1");
+				spacials.add_to(ent, {}).transform.translation = test_polygon[0] * 2.f + v2f32(0, 10);
+				Body body;
+				body.inverse_inertia = 1;
+				body.inverse_mass = 1.f;
+				body.restitution = .5f;
+				body.friction = .5f;
+				bodies.add_to(ent, std::move(body));
+				shapes.add_to(ent, make_shape_2d<Shape2D::Polygon>(larray(test_polygon)));
+				assert(ent.valid());
+			}
 
-		{
-			auto ent = allocate_entity(entities, "body2");
-			spacials.add_to(ent, {}).transform.translation = test_polygon[1] * 2.f + v2f32(0, 10);
-			Body body;
-			body.inverse_inertia = 1;
-			body.inverse_mass = 1.f;
-			body.restitution = .5f;
-			body.friction = .5f;
-			bodies.add_to(ent, std::move(body));
-			shapes.add_to(ent, make_shape_2d<Shape2D::Circle>(v3f32(0, 0, 1)));
-			assert(ent.valid());
-		}
+			{
+				auto ent = allocate_entity(entities, "body2");
+				spacials.add_to(ent, {}).transform.translation = test_polygon[1] * 2.f + v2f32(0, 10);
+				Body body;
+				body.inverse_inertia = 1;
+				body.inverse_mass = 1.f;
+				body.restitution = .5f;
+				body.friction = .5f;
+				bodies.add_to(ent, std::move(body));
+				shapes.add_to(ent, make_shape_2d<Shape2D::Circle>(v3f32(0, 0, 1)));
+				assert(ent.valid());
+			}
 
-		{
-			auto ent = allocate_entity(entities, "body3");
-			spacials.add_to(ent, {}).transform.translation = test_polygon[2] * 2.f + v2f32(0, 10);
-			Body body;
-			body.inverse_inertia = 1;
-			body.inverse_mass = 1.f;
-			body.restitution = .5f;
-			body.friction = .5f;
-			bodies.add_to(ent, std::move(body));
-			shapes.add_to(ent, make_shape_2d<Shape2D::Polygon>(larray(test_polygon)));
-			assert(ent.valid());
-		}
+			{
+				auto ent = allocate_entity(entities, "body3");
+				spacials.add_to(ent, {}).transform.translation = test_polygon[2] * 2.f + v2f32(0, 10);
+				Body body;
+				body.inverse_inertia = 1;
+				body.inverse_mass = 1.f;
+				body.restitution = .5f;
+				body.friction = .5f;
+				bodies.add_to(ent, std::move(body));
+				shapes.add_to(ent, make_shape_2d<Shape2D::Polygon>(larray(test_polygon)));
+				assert(ent.valid());
+			}
 
-		{
-			auto ent = allocate_entity(entities, "body4");
-			spacials.add_to(ent, {}).transform.translation = test_polygon[3] * 2.f + v2f32(0, 10);
-			Body body;
-			body.inverse_inertia = 1;
-			body.inverse_mass = 1.f;
-			body.restitution = .5f;
-			body.friction = .5f;
-			bodies.add_to(ent, std::move(body));
-			shapes.add_to(ent, make_shape_2d<Shape2D::Polygon>(larray(test_polygon)));
-			assert(ent.valid());
-		}
+			{
+				auto ent = allocate_entity(entities, "body4");
+				spacials.add_to(ent, {}).transform.translation = test_polygon[3] * 2.f + v2f32(0, 10);
+				Body body;
+				body.inverse_inertia = 1;
+				body.inverse_mass = 1.f;
+				body.restitution = .5f;
+				body.friction = .5f;
+				bodies.add_to(ent, std::move(body));
+				shapes.add_to(ent, make_shape_2d<Shape2D::Polygon>(larray(test_polygon)));
+				assert(ent.valid());
+			}
 
-		{
-			auto ent = allocate_entity(entities, "static1");
-			spacials.add_to(ent, {}).transform.translation = v2f32(0, -2.5) - v2f32(0, -5);
-			Body body;
-			body.inverse_inertia = 0;
-			body.inverse_mass = 0;
-			body.restitution = .5f;
-			body.friction = .5f;
-			bodies.add_to(ent, std::move(body));
-			shapes.add_to(ent, make_shape_2d<Shape2D::Polygon>(larray(test_polygon2)));
-			assert(ent.valid());
-		}
+			{
+				auto ent = allocate_entity(entities, "static1");
+				spacials.add_to(ent, {}).transform.translation = v2f32(0, -2.5) - v2f32(0, -5);
+				Body body;
+				body.inverse_inertia = 0;
+				body.inverse_mass = 0;
+				body.restitution = .5f;
+				body.friction = .5f;
+				bodies.add_to(ent, std::move(body));
+				shapes.add_to(ent, make_shape_2d<Shape2D::Polygon>(larray(test_polygon2)));
+				assert(ent.valid());
+			}
 
-		{
-			auto ent = allocate_entity(entities, "static2");
-			Transform2D transform;
-			transform.translation = v2f32(10, 3) - v2f32(0, -5);
-			transform.rotation = 0;
-			transform.scale = v2f32(3);
-			spacials.add_to(ent, {}).transform = transform;
-			Body body;
-			body.inverse_inertia = 0;
-			body.inverse_mass = 0;
-			body.restitution = .5f;
-			body.friction = .5f;
-			bodies.add_to(ent, std::move(body));
-			shapes.add_to(ent, make_shape_2d<Shape2D::Line>(Segment<v2f32> { v2f32(-1), v2f32(1) }));
-			assert(ent.valid());
-		}
+			{
+				auto ent = allocate_entity(entities, "static2");
+				Transform2D transform;
+				transform.translation = v2f32(10, 3) - v2f32(0, -5);
+				transform.rotation = 0;
+				transform.scale = v2f32(3);
+				spacials.add_to(ent, {}).transform = transform;
+				Body body;
+				body.inverse_inertia = 0;
+				body.inverse_mass = 0;
+				body.restitution = .5f;
+				body.friction = .5f;
+				bodies.add_to(ent, std::move(body));
+				shapes.add_to(ent, make_shape_2d<Shape2D::Line>(Segment<v2f32> { v2f32(-1), v2f32(1) }));
+				assert(ent.valid());
+			}
 
-		{
-			auto ent = allocate_entity(entities, "static3");
-			Transform2D transform;
-			transform.translation = v2f32(-10, 3) - v2f32(0, -5);
-			transform.rotation = -90;
-			transform.scale = v2f32(3);
-			spacials.add_to(ent, {}).transform = transform;
-			Body body;
-			body.inverse_inertia = 0;
-			body.inverse_mass = 0;
-			body.restitution = .5f;
-			body.friction = .5f;
-			bodies.add_to(ent, std::move(body));
-			shapes.add_to(ent, make_shape_2d<Shape2D::Line>(Segment<v2f32> { v2f32(-1), v2f32(1) }));
-			assert(ent.valid());
-			spacials[ent]->transform.rotation = -90;
+			{
+				auto ent = allocate_entity(entities, "static3");
+				Transform2D transform;
+				transform.translation = v2f32(-10, 3) - v2f32(0, -5);
+				transform.rotation = -90;
+				transform.scale = v2f32(3);
+				spacials.add_to(ent, {}).transform = transform;
+				Body body;
+				body.inverse_inertia = 0;
+				body.inverse_mass = 0;
+				body.restitution = .5f;
+				body.friction = .5f;
+				bodies.add_to(ent, std::move(body));
+				shapes.add_to(ent, make_shape_2d<Shape2D::Line>(Segment<v2f32> { v2f32(-1), v2f32(1) }));
+				assert(ent.valid());
+				spacials[ent]->transform.rotation = -90;
+			}
 		}
 
 		fflush(stdout);
@@ -224,31 +224,33 @@ struct PlaygroundScene {
 
 	v2f32 gravity = v2f32(0);
 	bool operator()() {
-		constexpr auto SCRATCH_SIZE = (1 << 16) * sizeof(void*);
-		static auto scratch = create_virtual_arena(SCRATCH_SIZE);
+
+		auto flush_scratch = (
+			[&]() -> Alloc {
+				constexpr auto SCRATCH_SIZE = (1ull << 20);
+				static auto scratch = create_virtual_arena(SCRATCH_SIZE);
+				return as_v_alloc(reset_virtual_arena(scratch));
+			}
+		);
 
 		update(clock);
 		clear_stale(shapes, spacials, bodies);
-		reset_virtual_arena(scratch);
 
 		for (auto [ent, body] : bodies.iter()) if (body->inverse_mass > 0) if (auto sp = spacials[*ent])
 			sp->velocity.translation += gravity * clock.dt;
 
 		{// player controller
-			ctrl.input = controls::keyboard_plane(Input::KB::K_W, Input::KB::K_A, Input::KB::K_S, Input::KB::K_D);
-			auto pl_sprite = sprites[player];
-			if (pl_sprite)
+			ctrl.input = controls::keyboard_plane(Input::WASD);
+			if (auto pl_sprite = sprites[player])
 				pl_sprite->uv_rect = controls::animate(ctrl, anim, clock.current);
-			auto pl_spacial = spacials[player];
-			if (pl_spacial)
+			if (auto pl_spacial = spacials[player])
 				controls::move_top_down(pl_spacial->velocity.translation, ctrl.input, ctrl.speed, ctrl.accel, clock.dt);
 		}
 
 		for (auto& sp : spacials.buffer.allocated()) euler_integrate(sp, clock.dt);
-		physics(gather_as<RigidBody>(as_v_alloc(scratch), shapes.handles.allocated(), [](const RigidBodyComp& comp) { return tuple_as<RigidBody>(comp); }, shapes, spacials, bodies));
-		reset_virtual_arena(scratch);
-		audio(audio_sources, spacials, spacials[player]);
-		rendering(sprites, spacials, fbf, (player.valid() ? spacials[player]->transform : identity_2d));
+		physics(gather_as<RigidBody>(flush_scratch(), shapes.handles.allocated(), [](const RigidBodyComp& comp) { return tuple_as<RigidBody>(comp); }, shapes, spacials, bodies));
+		audio(gather_entity(flush_scratch(), audio_sources.handles.allocated(), audio_sources, spacials), spacials[player]);
+		rendering(map(flush_scratch(), sprites.handles.allocated(), [&](EntityHandle handle) { return sprite_data(trs_2d(spacials[handle]->transform), *sprites[handle], v2f32(1), 0); }), (player.valid() ? spacials[player]->transform : identity_2d));
 		return true;
 	}
 
@@ -265,7 +267,7 @@ struct PlaygroundScene {
 	void editor(tuple<SystemEditor, SystemEditor, Physics2D::Editor, SystemEditor, SystemEditor>& ed) {
 		auto& [rd, au, ph, ent, misc] = ed;
 		if (ph.debug)
-			ph.draw_debug(physics.collisions, shapes, spacials, rendering.view_projection_matrix);
+			ph.draw_debug(physics.collisions, shapes, spacials, view_project(project(rendering.camera), trs_2d((player.valid() ? spacials[player]->transform : identity_2d))));
 
 		if (rd.show_window) {
 			if (begin_editor(rd)) {
@@ -308,7 +310,6 @@ bool editor_test(App& app) {
 	ImGui::init_ogl_glfw(app.window); defer{ ImGui::shutdown_ogl_glfw(); };
 	auto editor = create_editor("Editor", "Alt+X", { Input::KB::K_LEFT_ALT, Input::KB::K_X });
 	editor.show_window = true;
-
 	auto sub_editors = List{ alloc_array<SystemEditor*>(std_allocator, 10), 0 }; defer{ dealloc_array(std_allocator, sub_editors.capacity); };
 	sub_editors.push(&editor);
 

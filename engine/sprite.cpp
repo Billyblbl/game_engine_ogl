@@ -101,42 +101,60 @@ void dealloc_atlas(Alloc allocator, TexBuffer& texture, Array<rtu32> rects, Atla
 struct SpriteInstance {
 	m4x4f32 matrix;
 	rtf32 uv_rect;
-	v4u32 depths; //x -> altas page, y -> sprite depths, z & w -> padding
+	v4f32 dimensions; //x -> altas page, y -> sprite depths, z & w -> padding
 };
 
-auto sprite_data(m4x4f32 matrix, SpriteCursor sprite, f32 depth) {
-	return SpriteInstance { matrix, sprite.uv_rect, v4u32(sprite.atlas_index, depth, 0, 0) };
+SpriteInstance sprite_data(m4x4f32 matrix, SpriteCursor sprite, v2f32 rect_dimensions, f32 depth) {
+	return { glm::scale(v3f32(rect_dimensions, 1)) * matrix, sprite.uv_rect, v4f32(rect_dimensions, depth, sprite.atlas_index) };
 }
 
 struct SpriteRenderer {
+	struct SceneData {
+		m4x4f32 view_projection;
+		struct {
+			u32 start;
+			u32 end;
+		} instances_range;
+	};
+
 	Pipeline pipeline;
 	MappedBuffer<SpriteInstance> instances_buffer;
+	MappedObject<SceneData> scene;
+	RenderMesh rect;
 
 	void operator()(
-		const RenderMesh& mesh,
-		const TexBuffer& textures,
-		MappedObject<m4x4f32> matrix,
-		u32 instance_count
+		Array<SpriteInstance> sprites,
+		const m4x4f32& vp,
+		const TexBuffer& textures
 		) {
-		sync(matrix);
+		//! will silently fail to render the latter part of the sprites array if > instance_buffer size
+		u32 content_size = min(sprites.size(), instances_buffer.content.size());
+		memcpy(instances_buffer.content.data(), sprites.data(), content_size * sizeof(SpriteInstance));
 		sync(instances_buffer);
-		pipeline(mesh, instance_count, {
+		sync(scene, {vp, { 0 , content_size}});
+		pipeline(rect, scene.obj->instances_range.end - scene.obj->instances_range.start, {
 			bind_to(textures, 0),
 			bind_to(instances_buffer, 0),
-			bind_to(matrix, 0)
+			bind_to(scene, 0),
 		});
 	}
-
-	List<SpriteInstance> start_batch() { return List { instances_buffer.content, 0 }; }
 };
 
-SpriteRenderer load_sprite_renderer(const cstr pipeline_path, GLsizeiptr max_draw_batch) {
-	return { load_pipeline(pipeline_path), map_buffer<SpriteInstance>(max_draw_batch)};
+// meant to take "ownership" of mesh
+SpriteRenderer load_sprite_renderer(const cstr pipeline_path, GLsizeiptr max_draw_batch, const RenderMesh* mesh = null) {
+	return {
+		load_pipeline(pipeline_path),
+		map_buffer<SpriteInstance>(max_draw_batch),
+		map_object<SpriteRenderer::SceneData>({}),
+		mesh ? *mesh : create_rect_mesh(v2f32(1))
+	};
 }
 
 void unload(SpriteRenderer& renderer) {
 	destroy_pipeline(renderer.pipeline);
 	unmap(renderer.instances_buffer);
+	unmap(renderer.scene);
+	delete_mesh(renderer.rect);
 }
 
 

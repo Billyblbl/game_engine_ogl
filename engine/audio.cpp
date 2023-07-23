@@ -136,18 +136,18 @@ struct Audio {
 		deinit_audio(data);
 	}
 
-	void operator()(ComponentRegistry<AudioSource>& audio, ComponentRegistry<Spacial2D>& spacial, Spacial2D* pov) {
-		for (auto&& [ent, source] : audio.iter()) {
-			source->set<POSITION>(v3f32(spacial[*ent]->transform.translation, 0));
-			source->set<VELOCITY>(v3f32(spacial[*ent]->velocity.translation, 0));
+	void operator()(Array<tuple<EntityHandle, AudioSource*, Spacial2D*>> entities, Spacial2D* poh = nullptr) {
+		for (auto& [_, source, spacial] : entities) {
+			source->set<POSITION>(v3f32(spacial->transform.translation, 0));
+			source->set<VELOCITY>(v3f32(spacial->velocity.translation, 0));
 		}
-		if (pov) {
-			ALListener::set<POSITION>(v3f32(pov->transform.translation, 0));
-			ALListener::set<VELOCITY>(v3f32(pov->velocity.translation, 0));
+		if (poh) {
+			ALListener::set<POSITION>(v3f32(poh->transform.translation, 0));
+			ALListener::set<VELOCITY>(v3f32(poh->velocity.translation, 0));
 		}
 	}
 
-	static auto default_editor() { return SystemEditor("Audio", "Alt+A", { Input::KB::K_LEFT_ALT,Input::KB::K_A }); }
+	static auto default_editor() { return SystemEditor("Audio", "Alt+A", { Input::KB::K_LEFT_ALT,Input::KB::K_O }); }
 
 	void editor_window() {
 		ImGui::Text("Device : %p", data.device);

@@ -95,6 +95,7 @@ void draw(
 	GL_GUARD(glUseProgram(pipeline));
 	GL_GUARD(glBindVertexArray(mesh.vao));
 	for (auto&& binding : bindings) bind(binding);
+	// TODO redo render mesh & draw usage
 	GL_GUARD(glDrawElementsInstanced(mesh.draw_mode, mesh.element_count, mesh.index_type, nullptr, instance_count));
 	for (auto&& binding : bindings) unbind(binding);
 	GL_GUARD(glBindVertexArray(0));
@@ -144,9 +145,6 @@ Pipeline create_render_pipeline(GLuint vertex_shader, GLuint fragment_shader) {
 	GL_GUARD(glGetProgramiv(program, GL_LINK_STATUS, &linked));
 	GL_GUARD(glDetachShader(program, vertex_shader));
 	GL_GUARD(glDetachShader(program, fragment_shader));
-	GL_GUARD(glDeleteShader(vertex_shader));
-	GL_GUARD(glDeleteShader(fragment_shader));
-
 	if (!linked) {
 		GLint logLength;
 		GL_GUARD(glGetProgramiv(program, GL_INFO_LOG_LENGTH, &logLength));
@@ -168,10 +166,12 @@ Pipeline load_pipeline(const char* path) {
 		file.seekg(0);
 		file.read(buffer, size);
 		file.close();
-		return create_render_pipeline(
-			create_shader(string(buffer, size), GL_VERTEX_SHADER),
-			create_shader(string(buffer, size), GL_FRAGMENT_SHADER)
-		);
+		auto vert = create_shader(string(buffer, size), GL_VERTEX_SHADER);
+		auto frag = create_shader(string(buffer, size), GL_FRAGMENT_SHADER);
+		auto pipeline = create_render_pipeline(vert, frag);
+		GL_GUARD(glDeleteShader(vert));
+		GL_GUARD(glDeleteShader(frag));
+		return pipeline;
 	} else {
 		fprintf(stderr, "failed to open file %s\n", path);
 		return { 0 };
@@ -197,46 +197,29 @@ void wait_gpu() {
 
 struct Rendering {
 	OrthoCamera camera;
-	MappedObject<m4x4f32> view_projection_matrix;
 	SpriteRenderer draw;
 	TexBuffer atlas;
-	RenderMesh rect;
-	// AnimationGrid<rtf32, 2> player_character_animation
+	FrameBuffer fbf;
+	v4f32 clear_color;
 
 	Rendering(string pipeline = "./shaders/sprite.glsl", u32 max_draw_batch = 256, v4u32 atlas_dimensions = v4u32(256, 256, 256, 1)) {
 		camera = { v3f32(16.f, 9.f, 1000.f) / 2.f, v3f32(0) };
-		view_projection_matrix = map_object(m4x4f32(1));
 		draw = load_sprite_renderer(pipeline.data(), max_draw_batch);
 		atlas = create_texture(TX2DARR, atlas_dimensions);
-		rect = create_rect_mesh(v2f32(1));
-		// player_character_animation = load_animation_grid<rtf32, 2>(assets.test_character_anim_path, std_allocator);
 		atlas.conf_sampling({ Nearest, Nearest });
+		fbf = default_framebuffer;
+		clear_color = v4f32(v3f32(0.3), 1);
 	}
 
 	~Rendering() {
-		// dealloc_array(std_allocator, player_character_animation.keyframes);
-		delete_mesh(rect);
 		unload(atlas);
 		unload(draw);
-		unmap(view_projection_matrix);
 	}
 
-	void set_viewpoint(const Transform2D viewpoint) {
-		*view_projection_matrix.obj = view_project(project(camera), trs_2d(viewpoint));
-	}
-
-	void operator()(
-		ComponentRegistry<SpriteCursor>& sprites,
-		ComponentRegistry<Spacial2D>& spacials,
-		FrameBuffer& fbf, const Transform2D& viewpoint) {
-
-		set_viewpoint(viewpoint);
+	void operator()(Array<SpriteInstance> sprites, const Transform2D& viewpoint) {
 		begin_render(fbf);
-		clear(fbf, v4f32(v3f32(0.3), 1));
-		auto batch = draw.start_batch();
-		for (auto [ent, sprite] : sprites.iter()) if (ent->valid())
-			batch.push(sprite_data(trs_2d(spacials[*ent]->transform), *sprite, 0/*draw layer*/));
-		draw(rect, atlas, view_projection_matrix, batch.current);
+		clear(fbf, clear_color);
+		draw(sprites, view_project(project(camera), trs_2d(viewpoint)), atlas);
 	}
 
 	static auto default_editor() {
@@ -247,6 +230,7 @@ struct Rendering {
 		EditorWidget("Camera", camera);
 		if (ImGui::Button("Reset Camera"))
 			camera = { v3f32(16.f, 9.f, 1000.f) / 2.f, v3f32(0) };
+		ImGui::ColorPicker4("Clear Color", glm::value_ptr(clear_color));
 		EditorWidget("Atlas", atlas);
 	}
 

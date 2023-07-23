@@ -23,8 +23,8 @@ namespace controls {
 
 	using namespace Input;
 
-	inline v2f32 keyboard_plane(KB::Key up, KB::Key left, KB::Key down, KB::Key right) {
-		return safe_normalise(key_axis(left, right, down, up));
+	inline v2f32 keyboard_plane(CompositeKeybind<2> keybinds = WASD) {
+		return safe_normalise(key_axis(keybinds.x.neg, keybinds.x.pos, keybinds.y.neg, keybinds.y.pos));
 	}
 
 	struct TopDownControl {

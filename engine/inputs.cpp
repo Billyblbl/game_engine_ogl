@@ -445,6 +445,17 @@ namespace Input {
 		);
 	}
 
+	struct AxisKeybind {
+		KB::Key pos;
+		KB::Key neg;
+	};
+
+	template<i32 D> using CompositeKeybind = glm::vec<D, AxisKeybind>;
+
+	constexpr auto WASD = CompositeKeybind<2>({ KB::K_D, KB::K_A }, { KB::K_W, KB::K_S });
+	constexpr auto ZQSD = CompositeKeybind<2>({ KB::K_D, KB::K_Q }, { KB::K_Z, KB::K_S });
+	constexpr auto Arrows = CompositeKeybind<2>({ KB::K_LEFT, KB::K_RIGHT }, { KB::K_UP, KB::K_DOWN });
+
 	void context_key_callback(
 		GLFWwindow* window,
 		KB::Key key,

@@ -27,6 +27,7 @@ struct Transform2D {
 	f32 rotation = .0f;
 };
 constexpr Transform2D identity_2d = {v2f32(0), v2f32(1), 0};
+constexpr Transform2D null_transform_2d = {v2f32(0), v2f32(0), 0};
 
 inline Transform2D operator+(const Transform2D& lhs, const Transform2D& rhs) {
 	return {
@@ -55,8 +56,8 @@ Transform2D lerp(const Transform2D& a, const Transform2D& b, f32 t) {
 
 struct Spacial2D {
 	Transform2D transform = identity_2d;
-	Transform2D velocity;
-	Transform2D accel;
+	Transform2D velocity = null_transform_2d;
+	Transform2D accel = null_transform_2d;
 };
 
 inline Spacial2D& euler_integrate(Spacial2D& spacial, f32 dt) {

@@ -75,18 +75,24 @@ namespace ImGui {
 		return ImVec2(max.x - min.x, max.y - min.y);
 	}
 
-	template<typename T> bool bit_flags(const cstr label, T& flags, Array<const string> bit_names) {
+	template<typename T> bool bit_flags(const cstr label, T& flags, Array<const string> bit_names, bool same_line = true) {
 		bool changed = false;
-		ImGui::Text(label);
-		ImGui::SameLine();
-		for (u64 bit_idx : u64xrange{ 0, bit_names.size() }) {
-			bool checked = flags & mask<T>(bit_idx);
-			if (ImGui::Checkbox(bit_names[bit_idx].cbegin(), &checked)) {
-				flags ^= mask<T>(bit_idx);
-				changed = true;
+		if (same_line) {
+			ImGui::Text(label);
+			ImGui::SameLine();
+		}
+		if (same_line || ImGui::TreeNode(label)) {
+			for (u64 bit_idx : u64xrange{ 0, bit_names.size() }) {
+				bool checked = flags & mask<T>(bit_idx);
+				if (ImGui::Checkbox(bit_names[bit_idx].cbegin(), &checked)) {
+					flags ^= mask<T>(bit_idx);
+					changed = true;
+				}
+				if (same_line && bit_idx < bit_names.size() - 1)
+					ImGui::SameLine();
 			}
-			if (bit_idx < bit_names.size() - 1)
-				ImGui::SameLine();
+			if (!same_line)
+				ImGui::TreePop();
 		}
 		return changed;
 	}
@@ -213,9 +219,9 @@ bool EditorWidget(const cstr label, string data) {
 template <typename T, typename U = int> struct has_name : std::false_type {};
 template <typename T> struct has_name<T, decltype((void)T::name, 0)> : std::true_type {};
 
-template<typename T> bool EditorWidget(const cstr label, Array<T> data) {
+template<typename T> bool EditorWidget(const cstr label, Array<T> data, bool foldable = true) {
 	bool changed = false;
-	if (ImGui::TreeNode(label)) {
+	if (!foldable || ImGui::TreeNode(label)) {
 		for (u32 i = 0; i < data.size(); i++) {
 			if constexpr (has_name<T>::value) {
 				string name = data[i].name;
@@ -230,12 +236,13 @@ template<typename T> bool EditorWidget(const cstr label, Array<T> data) {
 				ImGui::PopID();
 			}
 		}
-		ImGui::TreePop();
+		if (foldable)
+			ImGui::TreePop();
 	}
 	return changed;
 }
 
-template<> bool EditorWidget<char>(const cstr label, Array<char> data) {
+bool EditorWidget(const cstr label, Array<char> data) {
 	return ImGui::InputText(label, data.data(), data.size());
 }
 

@@ -5,194 +5,78 @@
 #include <imgui/imgui.h>
 #include <imgui/backends/imgui_impl_glfw.h>
 #include <imgui/backends/imgui_impl_opengl3.h>
+#include <high_order.cpp>
+#include <utils.cpp>
 
 #define MAX_ENTITIES 100
 #define MAX_DRAW_BATCH MAX_ENTITIES
 
 constexpr auto flag_index_count = 32;
 
-struct EntityDescriptor {
-	u32 generation;
-	u32 flags;
-	string name;
-	i16 index_hints[flag_index_count];
+template<typename T, typename G, G T::* gen> struct genhandle {
+	T* ptr;
+	G generation;
+	bool valid() { return ptr != null && ptr->*(gen) <= generation; }
+	T* try_get() { return valid() ? ptr : null; }
+	T* operator->() { return (assert(valid()), ptr); }
+	T& operator*() { return (assert(valid()), *ptr); }
 };
 
-struct EntityRegistry {
-	List<EntityDescriptor> pool;
-	List<string> flag_names;
-	enum : u8 {
-		AllocatedEntity = 0,
-		PendingRelease = 1,
-		//runtime defined indices 2->flag_index_count-1
-		FlagIndexCount = flag_index_count
+template<typename T, typename U> concept castable = std::derived_from<T, U> || std::same_as<T, U>;
+
+template<typename T, typename G, G T::* gen> genhandle<T, G, gen> get_genhandle(T& slot) {
+	return { &slot, slot.*(gen) };
+}
+
+struct EntitySlot {
+	static constexpr auto entity_flag_count = 64;
+	enum : u64 {
+		AllocatedEntity = 1 << 0,
+		PendingRelease = 1 << 1,
+		UserFlag = 1 << 2,
+		FlagIndexCount = entity_flag_count
 	};
+	u64 flags = 0;
+	u64 generation = 0;
+	string name = "__entity__";
+	bool available() { return !has_one(flags, AllocatedEntity | PendingRelease); }
+	void grab() { flags |= AllocatedEntity; }
+	void discard() { flags = (flags & ~AllocatedEntity) | PendingRelease; }
+	void recycle() { flags = 0; generation++; }
+	template<typename T> T& content() { return static_cast<T&>(*this); }
 };
 
-struct EntityHandle {
-	EntityDescriptor* desc;
-	u32 generation;
-	inline bool valid() {
-		return
-			desc != null &&
-			desc->generation <= generation &&
-			(desc->flags & mask<u32>(EntityRegistry::AllocatedEntity)) &&
-			!(desc->flags & mask<u32>(EntityRegistry::PendingRelease)) &&
-			true;
-	}
-};
+using EntityHandle = genhandle<EntitySlot, u64, &EntitySlot::generation>;
 
-EntityRegistry create_entity_registry(Alloc allocator, u32 capacity) {
-	EntityRegistry registry;
-	registry.pool = List{ alloc_array<EntityDescriptor>(allocator, capacity), 0 };
-	registry.flag_names = List{ alloc_array<string>(allocator, EntityRegistry::FlagIndexCount), 0 };
-	// Base flags
-	registry.flag_names.insert(EntityRegistry::AllocatedEntity, "Allocated Entity");
-	registry.flag_names.insert(EntityRegistry::PendingRelease, "Pending Release");
-	return registry;
-}
-
-void delete_registry(Alloc allocator, EntityRegistry& registry) {
-	dealloc_array(allocator, registry.flag_names.capacity);
-	dealloc_array(allocator, registry.pool.capacity);
-	registry.flag_names = { {}, 0 };
-	registry.pool = { {}, 0 };
-}
-
-inline EntityHandle allocate_entity(EntityRegistry& registry, string name = "__entity__", u64 flags = 0) {
-	EntityDescriptor* slot = null;
-	for (auto& ent : registry.pool.allocated()) if (ent.flags == 0) {
+template<castable<EntitySlot> E> inline E& allocate_entity(List<E>& entities, string name = "__entity__", u64 flags = 0) {
+	E* slot = null;
+	for (auto& ent : entities.allocated()) if (ent.available()) {
 		slot = &ent;
 		break;
 	}
 	if (slot == null)
-		slot = &registry.pool.push(EntityDescriptor{ 0 });
-	slot->generation++;
+		slot = &entities.push({});
+	slot->grab();
 	slot->name = name;
-	slot->flags = flags | mask<u64>(EntityRegistry::AllocatedEntity);
-	return { slot, slot->generation };
+	slot->flags |= flags;
+	return *slot;
 }
 
-void clear_pending_releases(EntityRegistry& registry) {
-	for (auto& ent : registry.pool.allocated()) if (has_all(ent.flags, mask<u64>(EntityRegistry::AllocatedEntity, EntityRegistry::PendingRelease))) {
-		ent.flags &= ~mask<u64>(EntityRegistry::AllocatedEntity);
-	}
+EntityHandle get_entity_genhandle(EntitySlot& ent) {
+	return get_genhandle<EntitySlot, u64, &EntitySlot::generation>(ent);
 }
 
-template<typename T> struct ComponentRegistry {
-	List<T> buffer;
-	List<EntityHandle> handles;
-	u8 flag_index;
-
-	auto iter() { return parallel_iter(handles.allocated(), buffer.allocated()); }
-
-	bool has_flag(EntityHandle ent) {
-		return has_all(ent.desc->flags, mask<u32>(flag_index));
+template<castable<EntitySlot> E, typename F = u64> auto gather(Alloc allocator, Array<E> entities, F flags, auto mapper) {
+	using R = decltype(mapper(entities[0]));
+	auto list = List{ alloc_array<R>(allocator, entities.size()), 0 };
+	for (auto&& i : entities) if (has_all(i.flags, flags))
+		list.push(mapper(i));
+	// avoids shrink to empty array situation which might break some allocators
+	//TODO FIXTHIS(202307231757) -> shrink to content shouldn't break anything even if it reduces to 0 which would dealloc in most allocators
+	if (list.current > 0) {
+		list.shrink_to_content(allocator);
 	}
-
-	T& add_to(EntityHandle ent, T&& comp) {
-		ent.desc->index_hints[flag_index] = handles.current;
-		ent.desc->flags |= mask<u32>(flag_index);
-		handles.push(ent);
-		return buffer.push(comp);
-	}
-
-	i64 index_of(EntityHandle ent) {
-		if (!ent.valid())
-			return -1;
-		return ent.desc->index_hints[flag_index] = linear_search(handles.allocated(),
-			[&](EntityHandle h) { return h.desc == ent.desc; },
-			ent.desc->index_hints[flag_index]);
-	}
-
-	void remove_from(EntityHandle ent) {
-		auto index = index_of(ent);
-		if (index < 0)
-			return fail_ret("Failed to remove component : Not found", void{});
-		ent.desc->flags &= ~mask<u32>(flag_index);
-		buffer.remove(index);
-		handles.remove(index);
-	}
-
-	T* operator[](EntityHandle ent) {
-		auto index = index_of(ent);
-		if (index < 0)
-			return null;
-		else
-			return &buffer.allocated()[index];
-	}
-
-	void clear_stale() {
-		for (isize i = handles.current - 1; i >= 0; i--) if (!handles.allocated()[i].valid()) {
-			buffer.remove(i);
-			handles.remove(i);
-		}
-	}
-};
-
-template<typename... T> void clear_stale(ComponentRegistry<T>&... components) { (..., components.clear_stale()); }
-
-template<typename T> ComponentRegistry<T> create_component_registry(Alloc allocator, u32 capacity) {
-	ComponentRegistry<T> registry;
-	registry.buffer = List{ alloc_array<T>(allocator, capacity), 0 };
-	registry.handles = List{ alloc_array<EntityHandle>(allocator, capacity), 0 };
-	registry.flag_index = -1;
-	return registry;
-}
-
-template<typename T> void delete_registry(Alloc allocator, ComponentRegistry<T>& registry) {
-	dealloc_array<T>(allocator, registry.buffer.capacity);
-	dealloc_array<EntityHandle>(allocator, registry.handles.capacity);
-	registry.buffer = {};
-	registry.handles = { {}, 0 };
-}
-
-u8 register_flag_index(EntityRegistry& entities, string name) {
-	defer{ entities.flag_names.push(name); };
-	return entities.flag_names.current;
-}
-
-template<typename T> auto register_new_component(EntityRegistry& entities, Alloc allocator, u64 capacity, string name) {
-	auto registry = create_component_registry<T>(allocator, capacity);
-	registry.flag_index = register_flag_index(entities, name);
-	return registry;
-}
-
-template<typename... T> auto gather_entity(Alloc allocator, Array<EntityHandle> handles, ComponentRegistry<T>&... comp) {
-	return map(allocator, handles, [&](EntityHandle handle) { return tuple(handle, comp[handle]...); });
-}
-
-//TODO find out why tuple layout doesn't seem to match struct layout, even tho its got the tuple equivalent concept as guard
-// template<typename S, typename... T> auto gather_as(Alloc allocator, Array<EntityHandle> handles, ComponentRegistry<T>&... comp) {
-// 	return tuple_array_as<S>(gather_entity(allocator, handles, comp...));
-// }
-
-template<typename S, typename... T> auto gather_as(Alloc allocator, Array<EntityHandle> handles, auto mapper, ComponentRegistry<T>&... comp) {
-	return map(allocator, gather_entity(allocator, handles, comp...), mapper);
-}
-
-template<typename... T> void entity_registry_editor(EntityRegistry& entities, ComponentRegistry<T>&... comp) {
-	auto flag_names = entities.flag_names.allocated();
-	auto i = 0;
-	for (auto& desc : entities.pool.allocated()) {
-		EntityHandle ent = { &desc, desc.generation };
-		ImGui::PushID(i++);
-		if (ent.valid() && ImGui::TreeNode(desc.name.data())) {
-			defer{ ImGui::TreePop(); };
-			ImGui::bit_flags("Flags", desc.flags, entities.flag_names.allocated());
-			ImGui::Text("Slot Generation : %u", desc.generation);
-			(...,
-				[&]() {
-					if (has_all(desc.flags, mask<u32>(comp.flag_index)) && ImGui::CollapsingHeader(flag_names[comp.flag_index].data())) {
-						auto c = comp[ent];
-						if (c)
-							EditorWidget(flag_names[comp.flag_index].data(), *c);
-					}
-				}
-			());
-		}
-		ImGui::PopID();
-	}
+	return list.allocated();
 }
 
 #endif

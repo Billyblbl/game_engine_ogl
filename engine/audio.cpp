@@ -136,8 +136,8 @@ struct Audio {
 		deinit_audio(data);
 	}
 
-	void operator()(Array<tuple<EntityHandle, AudioSource*, Spacial2D*>> entities, Spacial2D* poh = nullptr) {
-		for (auto& [_, source, spacial] : entities) {
+	void operator()(Array<tuple<AudioSource*, const Spacial2D*>> entities, Spacial2D* poh = nullptr) {
+		for (auto& [source, spacial] : entities) {
 			source->set<POSITION>(v3f32(spacial->transform.translation, 0));
 			source->set<VELOCITY>(v3f32(spacial->velocity.translation, 0));
 		}

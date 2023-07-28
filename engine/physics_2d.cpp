@@ -544,7 +544,7 @@ Array<Collision2D> simulate_collisions(Alloc allocator, Array<RigidBody> entitie
 	auto contact_pool = List{ alloc_array<Contact2D>(allocator, entities.size() * entities.size() * MaxContactPerCollision), 0 };
 	auto collisions = List{ alloc_array<Collision2D>(allocator, entities.size() * entities.size()), 0 };
 
-	for (auto i : u64xrange{ 0, entities.size() - 1 }) {
+	if (entities.size() > 1) for (auto i : u64xrange{ 0, entities.size() - 1 }) {
 		for (auto j : u64xrange{ i + 1, entities.size() }) {
 			RigidBody ents[] = { entities[i], entities[j] };
 			auto contacts = intersect_concave(contact_pool, *ents[0].shape, *ents[1].shape, trs_2d(ents[0].spacial->transform), trs_2d(ents[1].spacial->transform));
@@ -608,11 +608,7 @@ Array<Collision2D> simulate_collisions(Alloc allocator, Array<RigidBody> entitie
 
 struct Physics2D {
 
-	static constexpr u64 PhysicsMemory = (
-		MAX_ENTITIES * MAX_ENTITIES * sizeof(Collision2D) +
-		MAX_ENTITIES * MAX_ENTITIES * sizeof(Contact2D) * MaxContactPerCollision
-	);
-
+	static constexpr u64 PhysicsMemory = (MAX_ENTITIES * MAX_ENTITIES * sizeof(Collision2D) + MAX_ENTITIES * MAX_ENTITIES * sizeof(Contact2D) * MaxContactPerCollision);
 	Array<Collision2D> collisions = {};
 	Arena physics_scratch = create_virtual_arena(PhysicsMemory);
 
@@ -632,36 +628,28 @@ struct Physics2D {
 			view_projection_matrix = map_object<m4x4f32>(m4x4f32(1));
 		}
 
-		void draw_debug(
+		template<typename T, Spacial2D T::* sp_member> void draw_debug(
 			Array<Collision2D> collisions,
-			ComponentRegistry<Shape2D>& shapes,
-			ComponentRegistry<Spacial2D>& spacials,
+			Array<tuple<Shape2D*, Spacial2D*>> shapes,
 			const m4x4f32& matrix
-			// MappedObject<m4x4f32>& view_projection_matrix
 		) {
 			sync(view_projection_matrix, matrix);
-			for (auto [ent, shape] : shapes.iter()) {
-				auto spacial = spacials[*ent];
-				auto mat = trs_2d(spacial->transform);
+			for (auto [shape, space] : shapes) {
+				auto mat = trs_2d(space->transform);
 				debug_draw(*shape, mat, view_projection_matrix, v4f32(1, 0, 0, 1), wireframe);
-				v2f32 local_vel = glm::transpose(mat) * v4f32(spacial->velocity.translation, 0, 1);
-
+				v2f32 local_vel = glm::transpose(mat) * v4f32(space->velocity.translation, 0, 1);
 				sync(debug_draw.render_info, { mat, v4f32(1, 1, 0, 1) });
-				debug_draw.draw_line(
-					Segment<v2f32>{v2f32(0), local_vel},
-					view_projection_matrix,
-					wireframe
-				);
+				debug_draw.draw_line(Segment<v2f32>{v2f32(0), local_vel}, view_projection_matrix, wireframe);
 			}
 
 			for (auto [contacts, entities, physical] : collisions) {
 				Spacial2D* sp[] = {
-					spacials[entities[0]],
-					spacials[entities[1]]
+					&(entities[0]->template content<T>().*sp_member),
+					&(entities[1]->template content<T>().*sp_member)
 				};
 				sync(debug_draw.render_info, { m4x4f32(1), v4f32(1, 0, 1, 1) });
 				debug_draw.draw_line({ sp[0]->transform.translation , sp[1]->transform.translation }, view_projection_matrix, wireframe);
-				for (auto& contact : contacts) if (physical) {
+				if (physical) for (auto& contact : contacts) {
 					sync(debug_draw.render_info, { m4x4f32(1), v4f32(0, 1, 1, 1) });
 					for (auto i : u64xrange{ 0, 2 })
 						debug_draw.draw_line({ sp[i]->transform.translation, sp[i]->transform.translation + contact.levers[i] }, view_projection_matrix, wireframe);
@@ -678,7 +666,7 @@ struct Physics2D {
 				auto id = 0;
 				for (auto [contacts, entities, physical] : system.collisions) {
 					char buffer[999];
-					snprintf(buffer, sizeof(buffer), "%u:%s:%s", id, entities[0].desc->name.data(), entities[1].desc->name.data());
+					snprintf(buffer, sizeof(buffer), "%u:%s:%s", id, entities[0]->name.data(), entities[1]->name.data());
 					ImGui::PushID(id++);
 					if (ImGui::TreeNode(buffer)) {
 						EditorWidget("Contacts", contacts);

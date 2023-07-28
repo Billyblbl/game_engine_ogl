@@ -16,6 +16,8 @@
 #include <audio.cpp>
 #include <system_editor.cpp>
 
+#include <high_order.cpp>
+
 /*
 SceneNode {
 	Create(...)
@@ -35,17 +37,52 @@ const struct {
 	cstrp test_sound = "./audio/file_example_OOG_1MG.ogg";
 } assets;
 
+struct Entity : public EntitySlot {
+	enum : u64 {
+		Sound = UserFlag << 0,
+		Sprite = UserFlag << 1,
+		Collider = UserFlag << 2,
+		Physical = UserFlag << 3,
+		Rigidbody = Collider | Physical
+	};
+	static constexpr string Flags[] = {
+		"None",
+		"Allocated",
+		"Pending Release",
+		"Sound",
+		"Sprite",
+		"Collider",
+		"Physical",
+		"Rigidbody"
+	};
+	Spacial2D space;
+	AudioSource audio_source;
+	SpriteCursor sprite;
+	Shape2D shape;
+	Body body;
+};
+
+bool EditorWidget(const cstr label, Entity& ent) {
+	bool changed = false;
+	if (ImGui::TreeNode(label)) {
+		defer{ ImGui::TreePop(); };
+
+		changed |= ImGui::bit_flags("Flags", ent.flags, larray(Entity::Flags).subspan(1), false);
+		changed |= EditorWidget("Space", ent.space);
+		changed |= EditorWidget("Audio Source", ent.audio_source);
+		changed |= EditorWidget("Sprite", ent.sprite);
+		changed |= EditorWidget("Shape", ent.shape);
+		changed |= EditorWidget("Body", ent.body);
+	}
+	return changed;
+}
+
 struct PlaygroundScene {
 	Rendering rendering;
 	Physics2D physics;
 	Audio audio;
 
-	EntityRegistry entities;
-	ComponentRegistry<Spacial2D> spacials;
-	ComponentRegistry<AudioSource> audio_sources;
-	ComponentRegistry<SpriteCursor> sprites;
-	ComponentRegistry<Shape2D> shapes;
-	ComponentRegistry<Body> bodies;
+	List<Entity> entities;
 
 	AnimationGrid<rtf32, 2> anim;
 	controls::TopDownControl ctrl;
@@ -54,12 +91,7 @@ struct PlaygroundScene {
 
 	PlaygroundScene() {
 		rendering.camera = { v3f32(16.f, 9.f, 1000.f) * 4.f, v3f32(0) };
-		entities = create_entity_registry(std_allocator, MAX_ENTITIES);
-		spacials = register_new_component<Spacial2D>(entities, std_allocator, MAX_ENTITIES / 2, "Spacial");
-		audio_sources = register_new_component<AudioSource>(entities, std_allocator, MAX_ENTITIES / 2, "Audio Source");
-		sprites = register_new_component<SpriteCursor>(entities, std_allocator, MAX_ENTITIES / 2, "Sprite");
-		shapes = register_new_component<Shape2D>(entities, std_allocator, MAX_ENTITIES / 2, "Shape");
-		bodies = register_new_component<Body>(entities, std_allocator, MAX_ENTITIES / 2, "Body");
+		entities = List{ alloc_array<Entity>(std_allocator, MAX_ENTITIES), 0 };
 
 		anim = load_animation_grid<rtf32, 2>(assets.test_character_anim_path, std_allocator);
 		ctrl = { 1, 1, 1, v2f32(0), 0 };
@@ -67,20 +99,19 @@ struct PlaygroundScene {
 		player = (
 			[&]() {
 				static v2f32 player_polygon[] = { v2f32(-1, -1) / 2.f, v2f32(+1, -1) / 2.f, v2f32(+1, +1) / 2.f, v2f32(-1, +1) / 2.f };
-				auto ent = allocate_entity(entities, "player");
-				spacials.add_to(ent, {});
-				sprites.add_to(ent, load_into(assets.test_character_spritesheet_path, rendering.atlas, v2u32(0), 0));
-				Body body;
-				body.inverse_inertia = .1f;
-				body.inverse_mass = 1.f;
-				body.restitution = .3f;
-				body.friction = .8f;
-				bodies.add_to(ent, std::move(body));
-				shapes.add_to(ent, make_shape_2d<Shape2D::Polygon>(larray(player_polygon)));
-				assert(ent.valid());
-				return ent;
+				auto& ent = allocate_entity(entities, "player", Entity::Sprite | Entity::Rigidbody);
+				ent.space = { identity_2d, null_transform_2d, null_transform_2d };
+				ent.sprite = load_into(assets.test_character_spritesheet_path, rendering.atlas, v2u32(0), 0);
+				ent.body.inverse_inertia = .1f;
+				ent.body.inverse_mass = 1.f;
+				ent.body.restitution = .3f;
+				ent.body.friction = .8f;
+				ent.shape = make_shape_2d<Shape2D::Polygon>(larray(player_polygon));
+				return get_entity_genhandle(ent);
 			}
 		());
+
+
 
 		{// misc scene content
 			static v2f32 test_polygon[] = { v2f32(-1, -1), v2f32(+1, -1), v2f32(+1, +1), v2f32(-1, +1) };
@@ -95,162 +126,136 @@ struct PlaygroundScene {
 				test_poly_decomposed_shapes.push(make_shape_2d<Shape2D::Polygon>(sub_poly));
 
 			{
-				auto ent = allocate_entity(entities, "concave1");
-				spacials.add_to(ent, {}).transform.translation = v2f32(0, 3);
-				Body body;
-				body.inverse_inertia = .1f;
-				body.inverse_mass = 1.f;
-				body.restitution = .3f;
-				body.friction = .8f;
-				bodies.add_to(ent, std::move(body));
-				shapes.add_to(ent, make_shape_2d<Shape2D::Concave>(test_poly_decomposed_shapes.allocated()));
-				assert(ent.valid());
+				auto& ent = allocate_entity(entities, "concave1", Entity::Rigidbody);
+				ent.space.transform.translation = v2f32(0, 3);
+				ent.body.inverse_inertia = .1f;
+				ent.body.inverse_mass = 1.f;
+				ent.body.restitution = .3f;
+				ent.body.friction = .8f;
+				ent.shape = make_shape_2d<Shape2D::Concave>(test_poly_decomposed_shapes.allocated());
 			}
 
 			{
-				auto ent = allocate_entity(entities, "body1");
-				spacials.add_to(ent, {}).transform.translation = test_polygon[0] * 2.f + v2f32(0, 10);
-				Body body;
-				body.inverse_inertia = 1;
-				body.inverse_mass = 1.f;
-				body.restitution = .5f;
-				body.friction = .5f;
-				bodies.add_to(ent, std::move(body));
-				shapes.add_to(ent, make_shape_2d<Shape2D::Polygon>(larray(test_polygon)));
-				assert(ent.valid());
+				auto& ent = allocate_entity(entities, "body1", Entity::Rigidbody);
+				ent.space.transform.translation = test_polygon[0] * 2.f + v2f32(0, 10);
+				ent.body.inverse_inertia = 1;
+				ent.body.inverse_mass = 1.f;
+				ent.body.restitution = .5f;
+				ent.body.friction = .5f;
+				ent.shape = make_shape_2d<Shape2D::Polygon>(larray(test_polygon));
 			}
 
 			{
-				auto ent = allocate_entity(entities, "body2");
-				spacials.add_to(ent, {}).transform.translation = test_polygon[1] * 2.f + v2f32(0, 10);
-				Body body;
-				body.inverse_inertia = 1;
-				body.inverse_mass = 1.f;
-				body.restitution = .5f;
-				body.friction = .5f;
-				bodies.add_to(ent, std::move(body));
-				shapes.add_to(ent, make_shape_2d<Shape2D::Circle>(v3f32(0, 0, 1)));
-				assert(ent.valid());
+				auto& ent = allocate_entity(entities, "body2", Entity::Rigidbody);
+				ent.space.transform.translation = test_polygon[1] * 2.f + v2f32(0, 10);
+				ent.body.inverse_inertia = 1;
+				ent.body.inverse_mass = 1.f;
+				ent.body.restitution = .5f;
+				ent.body.friction = .5f;
+				ent.shape = make_shape_2d<Shape2D::Circle>(v3f32(0, 0, 1));
 			}
 
 			{
-				auto ent = allocate_entity(entities, "body3");
-				spacials.add_to(ent, {}).transform.translation = test_polygon[2] * 2.f + v2f32(0, 10);
-				Body body;
-				body.inverse_inertia = 1;
-				body.inverse_mass = 1.f;
-				body.restitution = .5f;
-				body.friction = .5f;
-				bodies.add_to(ent, std::move(body));
-				shapes.add_to(ent, make_shape_2d<Shape2D::Polygon>(larray(test_polygon)));
-				assert(ent.valid());
+				auto& ent = allocate_entity(entities, "body3", Entity::Rigidbody);
+				ent.space.transform.translation = test_polygon[2] * 2.f + v2f32(0, 10);
+				ent.body.inverse_inertia = 1;
+				ent.body.inverse_mass = 1.f;
+				ent.body.restitution = .5f;
+				ent.body.friction = .5f;
+				ent.shape = make_shape_2d<Shape2D::Polygon>(larray(test_polygon));
 			}
 
 			{
-				auto ent = allocate_entity(entities, "body4");
-				spacials.add_to(ent, {}).transform.translation = test_polygon[3] * 2.f + v2f32(0, 10);
-				Body body;
-				body.inverse_inertia = 1;
-				body.inverse_mass = 1.f;
-				body.restitution = .5f;
-				body.friction = .5f;
-				bodies.add_to(ent, std::move(body));
-				shapes.add_to(ent, make_shape_2d<Shape2D::Polygon>(larray(test_polygon)));
-				assert(ent.valid());
+				auto& ent = allocate_entity(entities, "body4", Entity::Rigidbody);
+				ent.space.transform.translation = test_polygon[3] * 2.f + v2f32(0, 10);
+				ent.body.inverse_inertia = 1;
+				ent.body.inverse_mass = 1.f;
+				ent.body.restitution = .5f;
+				ent.body.friction = .5f;
+				ent.shape = make_shape_2d<Shape2D::Polygon>(larray(test_polygon));
 			}
 
 			{
-				auto ent = allocate_entity(entities, "static1");
-				spacials.add_to(ent, {}).transform.translation = v2f32(0, -2.5) - v2f32(0, -5);
-				Body body;
-				body.inverse_inertia = 0;
-				body.inverse_mass = 0;
-				body.restitution = .5f;
-				body.friction = .5f;
-				bodies.add_to(ent, std::move(body));
-				shapes.add_to(ent, make_shape_2d<Shape2D::Polygon>(larray(test_polygon2)));
-				assert(ent.valid());
+				auto& ent = allocate_entity(entities, "static1", Entity::Rigidbody);
+				ent.space.transform.translation = v2f32(0, -2.5) - v2f32(0, -5);
+				ent.body.inverse_inertia = 0;
+				ent.body.inverse_mass = 0;
+				ent.body.restitution = .5f;
+				ent.body.friction = .5f;
+				ent.shape = make_shape_2d<Shape2D::Polygon>(larray(test_polygon2));
 			}
 
 			{
-				auto ent = allocate_entity(entities, "static2");
+				auto& ent = allocate_entity(entities, "static2", Entity::Rigidbody);
 				Transform2D transform;
 				transform.translation = v2f32(10, 3) - v2f32(0, -5);
 				transform.rotation = 0;
 				transform.scale = v2f32(3);
-				spacials.add_to(ent, {}).transform = transform;
-				Body body;
-				body.inverse_inertia = 0;
-				body.inverse_mass = 0;
-				body.restitution = .5f;
-				body.friction = .5f;
-				bodies.add_to(ent, std::move(body));
-				shapes.add_to(ent, make_shape_2d<Shape2D::Line>(Segment<v2f32> { v2f32(-1), v2f32(1) }));
-				assert(ent.valid());
+				ent.space.transform = transform;
+				ent.body.inverse_inertia = 0;
+				ent.body.inverse_mass = 0;
+				ent.body.restitution = .5f;
+				ent.body.friction = .5f;
+				ent.shape = make_shape_2d<Shape2D::Line>(Segment<v2f32> { v2f32(-1), v2f32(1) });
 			}
 
 			{
-				auto ent = allocate_entity(entities, "static3");
+				auto& ent = allocate_entity(entities, "static3", Entity::Rigidbody);
 				Transform2D transform;
 				transform.translation = v2f32(-10, 3) - v2f32(0, -5);
 				transform.rotation = -90;
 				transform.scale = v2f32(3);
-				spacials.add_to(ent, {}).transform = transform;
-				Body body;
-				body.inverse_inertia = 0;
-				body.inverse_mass = 0;
-				body.restitution = .5f;
-				body.friction = .5f;
-				bodies.add_to(ent, std::move(body));
-				shapes.add_to(ent, make_shape_2d<Shape2D::Line>(Segment<v2f32> { v2f32(-1), v2f32(1) }));
-				assert(ent.valid());
-				spacials[ent]->transform.rotation = -90;
+				ent.space.transform = transform;
+				ent.body.inverse_inertia = 0;
+				ent.body.inverse_mass = 0;
+				ent.body.restitution = .5f;
+				ent.body.friction = .5f;
+				ent.shape = make_shape_2d<Shape2D::Line>(Segment<v2f32> { v2f32(-1), v2f32(1) });
 			}
 		}
-
 		fflush(stdout);
 		wait_gpu();
 	}
 
 	~PlaygroundScene() {
-		defer{ delete_registry(std_allocator, entities); };
-		defer{ delete_registry(std_allocator, spacials); };
-		defer{ delete_registry(std_allocator, audio_sources); };
-		defer{ delete_registry(std_allocator, sprites); };
-		defer{ delete_registry(std_allocator, shapes); };
-		defer{ delete_registry(std_allocator, bodies); };
-		defer{ unload(anim, std_allocator); };
+		unload(anim, std_allocator);
+		dealloc_array(std_allocator, entities.capacity);
 	}
 
 	v2f32 gravity = v2f32(0);
+	u64 update_count = 0;
 	bool operator()() {
+		defer{ update_count++; };
 
+		constexpr auto SCRATCH_SIZE = (1ull << 20);
+		static auto scratch = create_virtual_arena(SCRATCH_SIZE);
 		auto flush_scratch = (
 			[&]() -> Alloc {
-				constexpr auto SCRATCH_SIZE = (1ull << 20);
-				static auto scratch = create_virtual_arena(SCRATCH_SIZE);
 				return as_v_alloc(reset_virtual_arena(scratch));
 			}
 		);
 
 		update(clock);
-		clear_stale(shapes, spacials, bodies);
 
-		for (auto [ent, body] : bodies.iter()) if (body->inverse_mass > 0) if (auto sp = spacials[*ent])
-			sp->velocity.translation += gravity * clock.dt;
+		for (auto& i : entities.allocated()) if (has_all(i.flags, Entity::Physical) && i.body.inverse_mass > 0)
+			i.space.velocity.translation += gravity * clock.dt;
 
 		{// player controller
 			ctrl.input = controls::keyboard_plane(Input::WASD);
-			if (auto pl_sprite = sprites[player])
-				pl_sprite->uv_rect = controls::animate(ctrl, anim, clock.current);
-			if (auto pl_spacial = spacials[player])
-				controls::move_top_down(pl_spacial->velocity.translation, ctrl.input, ctrl.speed, ctrl.accel, clock.dt);
+			if (player.valid()) {
+				if (has_all(player->flags, Entity::Sprite))
+					player->content<Entity>().sprite.uv_rect = controls::animate(ctrl, anim, clock.current);
+				controls::move_top_down(player->content<Entity>().space.velocity.translation, ctrl.input, ctrl.speed, ctrl.accel, clock.dt);
+			}
 		}
 
-		for (auto& sp : spacials.buffer.allocated()) euler_integrate(sp, clock.dt);
-		physics(gather_as<RigidBody>(flush_scratch(), shapes.handles.allocated(), [](const RigidBodyComp& comp) { return tuple_as<RigidBody>(comp); }, shapes, spacials, bodies));
-		audio(gather_entity(flush_scratch(), audio_sources.handles.allocated(), audio_sources, spacials), spacials[player]);
-		rendering(map(flush_scratch(), sprites.handles.allocated(), [&](EntityHandle handle) { return sprite_data(trs_2d(spacials[handle]->transform), *sprites[handle], v2f32(1), 0); }), (player.valid() ? spacials[player]->transform : identity_2d));
+		for (auto& i : entities.allocated()) euler_integrate(i.space, clock.dt);
+		physics(gather(flush_scratch(), _ent_allocated, Entity::Rigidbody, [&](Entity& ent) { return RigidBody{ get_entity_genhandle(ent), &ent.shape, &ent.space, &ent.body }; }));
+		audio(gather(flush_scratch(), entities.allocated(), Entity::Sound, [&](Entity& ent) { return tuple(&ent.audio_source, (const Spacial2D*)&ent.space); }), &player->content<Entity>().space);
+		rendering(
+			gather(flush_scratch(), entities.allocated(), Entity::Sprite, [&](const Entity& ent) { return sprite_data(trs_2d(ent.space.transform), ent.sprite, v2f32(1), 0); }),
+			(player.valid() ? player->content<Entity>().space.transform : identity_2d)
+		);
 		return true;
 	}
 
@@ -266,8 +271,9 @@ struct PlaygroundScene {
 
 	void editor(tuple<SystemEditor, SystemEditor, Physics2D::Editor, SystemEditor, SystemEditor>& ed) {
 		auto& [rd, au, ph, ent, misc] = ed;
+		static auto debug_scratch = create_virtual_arena(1 << 19);
 		if (ph.debug)
-			ph.draw_debug(physics.collisions, shapes, spacials, view_project(project(rendering.camera), trs_2d((player.valid() ? spacials[player]->transform : identity_2d))));
+			ph.draw_debug<Entity, &Entity::space>(physics.collisions, gather(as_v_alloc(reset_virtual_arena(debug_scratch)), entities.allocated(), Entity::Collider, [&](Entity& ent) { return tuple(&ent.shape, &ent.space); }), view_project(project(rendering.camera), trs_2d((player.valid() ? player->content<Entity>().space.transform : identity_2d))));
 
 		if (rd.show_window) {
 			if (begin_editor(rd)) {
@@ -290,7 +296,7 @@ struct PlaygroundScene {
 
 		if (ent.show_window) {
 			if (begin_editor(ent)) {
-				entity_registry_editor(entities, spacials, audio_sources, sprites, bodies);
+				EditorWidget("Entities", entities.allocated(), false);
 			} end_editor();
 		}
 

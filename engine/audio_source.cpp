@@ -156,11 +156,13 @@ bool EditorWidget(const cstr label, AudioSource& source) {
 	auto changed = false;
 	if (ImGui::TreeNode(label)) {
 		defer{ ImGui::TreePop(); };
-		ImGui::Text("Id : %u", source.id); ImGui::SameLine();
-		if (ImGui::Button("Play")) source.play(); ImGui::SameLine();
-		if (ImGui::Button("Pause")) source.pause(); ImGui::SameLine();
-		if (ImGui::Button("Stop")) source.stop(); ImGui::SameLine();
-		if (ImGui::Button("Rewind")) source.rewind();
+		ImGui::Text("Id : %u", source.id);
+		if (source.id == 0)
+			return changed;
+		ImGui::SameLine(); if (ImGui::Button("Play")) source.play();
+		ImGui::SameLine(); if (ImGui::Button("Pause")) source.pause();
+		ImGui::SameLine(); if (ImGui::Button("Stop")) source.stop();
+		ImGui::SameLine(); if (ImGui::Button("Rewind")) source.rewind();
 		changed |= AudioSourceWidgetHelper <
 			PITCH,
 			GAIN,

@@ -216,10 +216,12 @@ struct Rendering {
 		unload(draw);
 	}
 
-	void operator()(Array<SpriteInstance> sprites, const Transform2D& viewpoint) {
+	auto get_vp_matrix(const Transform2D& pov) { return view_project(project(camera), trs_2d(pov)); }
+
+	void operator()(Array<SpriteInstance> sprites, const Transform2D& pov) {
 		begin_render(fbf);
 		clear(fbf, clear_color);
-		draw(sprites, view_project(project(camera), trs_2d(viewpoint)), atlas);
+		draw(sprites, get_vp_matrix(pov), atlas);
 	}
 
 	static auto default_editor() {

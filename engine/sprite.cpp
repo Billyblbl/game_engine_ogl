@@ -101,11 +101,12 @@ void dealloc_atlas(Alloc allocator, TexBuffer& texture, Array<rtu32> rects, Atla
 struct SpriteInstance {
 	m4x4f32 matrix;
 	rtf32 uv_rect;
-	v4f32 dimensions; //x -> altas page, y -> sprite depths, z & w -> padding
+	v4f32 dimensions; //x, y -> rect dims, z -> rect depths, w -> altas page
 };
 
 SpriteInstance sprite_data(m4x4f32 matrix, SpriteCursor sprite, v2f32 rect_dimensions, f32 depth) {
-	return { glm::scale(v3f32(rect_dimensions, 1)) * matrix, sprite.uv_rect, v4f32(rect_dimensions, depth, sprite.atlas_index) };
+	//? might want to have a full transform instead of just thte rect dimensions ? would allow for more options
+	return { matrix * glm::scale(v3f32(rect_dimensions, 1)), sprite.uv_rect, v4f32(rect_dimensions, depth, sprite.atlas_index) };
 }
 
 struct SpriteRenderer {
@@ -140,7 +141,7 @@ struct SpriteRenderer {
 	}
 };
 
-// meant to take "ownership" of mesh
+// meant to take "ownership" of mesh, as in will clean it up upon unload call
 SpriteRenderer load_sprite_renderer(const cstr pipeline_path, GLsizeiptr max_draw_batch, const RenderMesh* mesh = null) {
 	return {
 		load_pipeline(pipeline_path),

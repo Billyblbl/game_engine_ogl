@@ -621,18 +621,16 @@ struct Physics2D {
 	struct Editor : public SystemEditor {
 		ShapeRenderer debug_draw = load_shape_renderer();
 		bool debug = false;
+		bool colliders = true;
 		bool wireframe = true;
+		bool collisions = true;
 		MappedObject<m4x4f32> view_projection_matrix;
 
 		Editor() : SystemEditor("Physics2D", "Alt+P", { Input::KB::K_LEFT_ALT, Input::KB::K_P }) {
 			view_projection_matrix = map_object<m4x4f32>(m4x4f32(1));
 		}
 
-		template<typename T, Spacial2D T::* sp_member> void draw_debug(
-			Array<Collision2D> collisions,
-			Array<tuple<Shape2D*, Spacial2D*>> shapes,
-			const m4x4f32& matrix
-		) {
+		void draw_shapes(Array<tuple<Shape2D*, Spacial2D*>> shapes, const m4x4f32& matrix) {
 			sync(view_projection_matrix, matrix);
 			for (auto [shape, space] : shapes) {
 				auto mat = trs_2d(space->transform);
@@ -641,12 +639,12 @@ struct Physics2D {
 				sync(debug_draw.render_info, { mat, v4f32(1, 1, 0, 1) });
 				debug_draw.draw_line(Segment<v2f32>{v2f32(0), local_vel}, view_projection_matrix, wireframe);
 			}
+		}
 
+		template<typename T> void draw_collisions(Array<Collision2D> collisions, const m4x4f32& matrix, Spacial2D T::* sp_member) {
+			sync(view_projection_matrix, matrix);
 			for (auto [contacts, entities, physical] : collisions) {
-				Spacial2D* sp[] = {
-					&(entities[0]->template content<T>().*sp_member),
-					&(entities[1]->template content<T>().*sp_member)
-				};
+				Spacial2D* sp[] = { &(entities[0]->template content<T>().*sp_member), &(entities[1]->template content<T>().*sp_member)};
 				sync(debug_draw.render_info, { m4x4f32(1), v4f32(1, 0, 1, 1) });
 				debug_draw.draw_line({ sp[0]->transform.translation , sp[1]->transform.translation }, view_projection_matrix, wireframe);
 				if (physical) for (auto& contact : contacts) {
@@ -659,8 +657,11 @@ struct Physics2D {
 
 		void editor_window(Physics2D& system) {
 			EditorWidget("Draw debug", debug);
-			if (debug)
+			if (debug) {
 				EditorWidget("Wireframe", wireframe);
+				EditorWidget("Colliders", colliders);
+				EditorWidget("Collisions marks", collisions);
+			}
 			if (ImGui::TreeNode("Collisions")) {
 				defer{ ImGui::TreePop(); };
 				auto id = 0;

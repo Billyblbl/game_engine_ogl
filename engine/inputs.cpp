@@ -407,6 +407,12 @@ namespace Input {
 		return context;
 	}
 
+	struct AxisButtonState { ButtonState pos, neg; };
+	struct AxisKeybind { KB::Key pos, neg; };
+
+	template<i32 D> using CompositeButtonState = glm::vec<D, AxisButtonState>;
+	template<i32 D> using CompositeKeybind = glm::vec<D, AxisKeybind>;
+
 	inline f32 composite(ButtonState neg, ButtonState pos) {
 		f32 value = 0.f;
 		if (neg & ButtonState::Pressed)
@@ -416,45 +422,28 @@ namespace Input {
 		return value;
 	}
 
-	inline v2f32 composite(ButtonState negH, ButtonState posH, ButtonState negV, ButtonState posV) {
-		return v2f32(composite(negH, posH), composite(negV, posV));
-	}
-
-	inline v3f32 composite(ButtonState negH, ButtonState posH, ButtonState negV, ButtonState posV, ButtonState negD, ButtonState posD) {
-		return v3f32(composite(negH, posH), composite(negV, posV), composite(negD, posD));
+	template<i32 D> inline glm::vec<D, f32> composite(CompositeButtonState<D> state) {
+		glm::vec<D, f32> input;
+		for (auto i : i32xrange{ 0, D })
+			input[i] = composite(state[i].neg, state[i].pos);
+		return input;
 	}
 
 	inline ButtonState get_key(KB::Key key) { return get_context().key_states[KB::index_of(key)]; }
-
-	inline f32 key_axis(KB::Key neg, KB::Key pos) {
-		return composite(get_key(neg), get_key(pos));
+	template<i32 D> inline CompositeButtonState<D> get_composite_keys(CompositeKeybind<D> keys) {
+		CompositeButtonState<D> input;
+		for (auto i : i32xrange{ 0, D })
+			input[i] = { get_key(keys[i].pos), get_keys(keys[i].neg) };
+		return input;
 	}
 
-	inline v2f32 key_axis(KB::Key negH, KB::Key posH, KB::Key negV, KB::Key posV) {
-		return composite(
-			get_key(negH), get_key(posH),
-			get_key(negV), get_key(posV)
-		);
-	}
-
-	inline v3f32 key_axis(KB::Key negH, KB::Key posH, KB::Key negV, KB::Key posV, KB::Key negD, KB::Key posD) {
-		return composite(
-			get_key(negH), get_key(posH),
-			get_key(negV), get_key(posV),
-			get_key(negD), get_key(posD)
-		);
-	}
-
-	struct AxisKeybind {
-		KB::Key pos;
-		KB::Key neg;
-	};
-
-	template<i32 D> using CompositeKeybind = glm::vec<D, AxisKeybind>;
+	inline f32 key_axis(KB::Key neg, KB::Key pos) { return composite(get_key(neg), get_key(pos)); }
+	template<i32 D> inline glm::vec<D, f32> key_axis(CompositeKeybind<D> keys) { return get_axis(get_composite_keys(keys)); }
 
 	constexpr auto WASD = CompositeKeybind<2>({ KB::K_D, KB::K_A }, { KB::K_W, KB::K_S });
 	constexpr auto ZQSD = CompositeKeybind<2>({ KB::K_D, KB::K_Q }, { KB::K_Z, KB::K_S });
-	constexpr auto Arrows = CompositeKeybind<2>({ KB::K_LEFT, KB::K_RIGHT }, { KB::K_UP, KB::K_DOWN });
+	constexpr auto IJKL = CompositeKeybind<2>({ KB::K_L, KB::K_J }, { KB::K_I, KB::K_K });
+	constexpr auto Arrows = CompositeKeybind<2>({ KB::K_RIGHT, KB::K_LEFT }, { KB::K_UP, KB::K_DOWN });
 
 	void context_key_callback(
 		GLFWwindow* window,

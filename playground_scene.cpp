@@ -254,8 +254,10 @@ struct PlaygroundScene {
 		pov = (player.valid() ? player->content<Entity>().space : Spacial2D{ identity_2d, null_transform_2d, null_transform_2d });
 		pov.transform.rotation = 0;
 
-		for (auto& i : entities.allocated()) if (has_all(i.flags, Entity::Controllable)) controls::move_top_down(i.space.velocity.translation, i.ctrl.input, i.ctrl.speed, i.ctrl.accel, clock.dt);
-		for (auto& i : entities.allocated()) euler_integrate(i.space, clock.dt);
+		for (auto& i : entities.allocated()) if (has_all(i.flags, Entity::Controllable))
+			i.space.velocity.translation = controls::move_top_down(i.space.velocity.translation, i.ctrl.input, i.ctrl.speed, i.ctrl.accel, clock.dt);
+		for (auto& i : entities.allocated())
+			euler_integrate(i.space, clock.dt);
 		physics(gather(flush_scratch(), entities.allocated(), Entity::Collider, [&](Entity& ent) { return RigidBody{ get_entity_genhandle(ent), &ent.shape, &ent.space, (has_all(ent.flags, Entity::Rigidbody) ? &ent.body : null) }; }));
 		audio(gather(flush_scratch(), entities.allocated(), Entity::Sound, [&](Entity& ent) { return tuple(&ent.audio_source, (const Spacial2D*)&ent.space); }), &pov);
 		rendering(gather(flush_scratch(), entities.allocated(), Entity::Sprite, [&](const Entity& ent) { return sprite_data(trs_2d(ent.space.transform), ent.sprite, ent.render_rect.dimensions, ent.render_rect.depth); }), pov.transform);

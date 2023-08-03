@@ -108,14 +108,15 @@ struct PlaygroundScene {
 				static v2f32 player_polygon[] = { v2f32(-1, -1) / 2.f, v2f32(+1, -1) / 2.f, v2f32(+1, +1) / 2.f, v2f32(-1, +1) / 2.f };
 				auto& ent = allocate_entity(entities, "player", Entity::Sprite | Entity::Rigidbody | Entity::Controllable);
 				ent.space = { identity_2d, null_transform_2d, null_transform_2d };
+				ent.space.transform.translation += v2f32(0, 10);
 				ent.sprite = load_into(assets.test_character_spritesheet_path, rendering.atlas, v2u32(0), 0);
 				ent.render_rect = { v2f32(1), 1 };
-				ent.body.inverse_inertia = .1f;
+				ent.body.inverse_inertia = 0.f;
 				ent.body.inverse_mass = 1.f;
 				ent.body.restitution = .3f;
-				ent.body.friction = .8f;
+				ent.body.friction = .5f;
 				ent.shape = make_shape_2d<Shape2D::Polygon>(larray(player_polygon));
-				ent.ctrl = { 1, 1, 1, v2f32(0), 0 };
+				ent.ctrl = { 10, 100, 1, v2f32(0), 0 };
 				return get_entity_genhandle(ent);
 			}
 		());
@@ -237,13 +238,18 @@ struct PlaygroundScene {
 	bool operator()() {
 		defer{ update_count++; };
 		update(clock);
-
+// #if 0
+#if 1
+		f32 dt = clock.dt;
+#else
+		f32 dt = 1.f/60.f;
+#endif
 		constexpr auto SCRATCH_SIZE = (1ull << 20);
 		static auto scratch = create_virtual_arena(SCRATCH_SIZE);
 		auto flush_scratch = [&]() -> Alloc { return as_v_alloc(reset_virtual_arena(scratch)); };
 
 		for (auto& i : entities.allocated()) if (has_all(i.flags, Entity::Physical) && i.body.inverse_mass > 0)
-			i.space.velocity.translation += gravity * clock.dt;
+			i.space.velocity.translation += gravity * dt;
 
 		if (player.valid()) {// player controller
 			player->content<Entity>().ctrl.input = controls::keyboard_plane(Input::WASD);
@@ -255,9 +261,9 @@ struct PlaygroundScene {
 		pov.transform.rotation = 0;
 
 		for (auto& i : entities.allocated()) if (has_all(i.flags, Entity::Controllable))
-			i.space.velocity.translation = controls::move_top_down(i.space.velocity.translation, i.ctrl.input, i.ctrl.speed, i.ctrl.accel, clock.dt);
+			i.space.velocity.translation = controls::move_top_down(i.space.velocity.translation, i.ctrl.input, i.ctrl.speed, i.ctrl.accel, dt);
 		for (auto& i : entities.allocated())
-			euler_integrate(i.space, clock.dt);
+			euler_integrate(i.space, dt);
 		physics(gather(flush_scratch(), entities.allocated(), Entity::Collider, [&](Entity& ent) { return RigidBody{ get_entity_genhandle(ent), &ent.shape, &ent.space, (has_all(ent.flags, Entity::Rigidbody) ? &ent.body : null) }; }));
 		audio(gather(flush_scratch(), entities.allocated(), Entity::Sound, [&](Entity& ent) { return tuple(&ent.audio_source, (const Spacial2D*)&ent.space); }), &pov);
 		rendering(gather(flush_scratch(), entities.allocated(), Entity::Sprite, [&](const Entity& ent) { return sprite_data(trs_2d(ent.space.transform), ent.sprite, ent.render_rect.dimensions, ent.render_rect.depth); }), pov.transform);

@@ -433,12 +433,12 @@ namespace Input {
 	template<i32 D> inline CompositeButtonState<D> get_composite_keys(CompositeKeybind<D> keys) {
 		CompositeButtonState<D> input;
 		for (auto i : i32xrange{ 0, D })
-			input[i] = { get_key(keys[i].pos), get_keys(keys[i].neg) };
+			input[i] = { get_key(keys[i].pos), get_key(keys[i].neg) };
 		return input;
 	}
 
 	inline f32 key_axis(KB::Key neg, KB::Key pos) { return composite(get_key(neg), get_key(pos)); }
-	template<i32 D> inline glm::vec<D, f32> key_axis(CompositeKeybind<D> keys) { return get_axis(get_composite_keys(keys)); }
+	template<i32 D> inline glm::vec<D, f32> key_axis(CompositeKeybind<D> keys) { return composite(get_composite_keys(keys)); }
 
 	constexpr auto WASD = CompositeKeybind<2>({ KB::K_D, KB::K_A }, { KB::K_W, KB::K_S });
 	constexpr auto ZQSD = CompositeKeybind<2>({ KB::K_D, KB::K_Q }, { KB::K_Z, KB::K_S });

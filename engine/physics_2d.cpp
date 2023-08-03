@@ -345,22 +345,43 @@ tuple<bool, rtf32, v2f32> intersect(const Shape2D& s1, const Shape2D& s2, m4x4f3
 	return { collided, aabb_intersection, pen };
 }
 
+bool can_respond(f32 i1, f32 i2) { return i1 > 0 || i2 > 0; }
+
 bool can_resolve_collision(Body* b1, Body* b2) {
 	return (b1 && b2) && // has bodies
-		(b1->inverse_mass > 0 || b2->inverse_mass > 0) &&// can move
-		(b1->inverse_inertia > 0 || b2->inverse_inertia > 0); // can turn
+		can_respond(b1->inverse_mass, b2->inverse_mass) &&
+		can_respond(b1->inverse_inertia, b2->inverse_inertia)
+		;
 }
 
 v2f32 velocity_at_point(const Transform2D& velocity, v2f32 point) {
 	return velocity.translation + orthogonal(point) * glm::radians(velocity.rotation);
 }
 
-Transform2D push_at_point(v2f32 impulse, v2f32 point, f32 inverse_mass, f32 inverse_inertia) {
-	Transform2D delta_v;
-	delta_v.translation = impulse * inverse_mass;
-	delta_v.rotation = glm::degrees(glm::cross(v3f32(point, 0), v3f32(impulse, 0)).z * inverse_inertia);
-	return delta_v;
+tuple<Transform2D, Transform2D> lever_impulsion(v2f32 impulse, Array<const v2f32> lever, Array<const f32> inverse_masses, Array<const f32> inverse_inertias) {
+	using namespace glm;
+	if (length(impulse) <= 0) return { null_transform_2d, null_transform_2d };
+
+	auto attenuated = impulse / f32(inverse_masses[0] + inverse_masses[1] +
+		pow(dot(orthogonal_axis(lever[0]), normalize(impulse)), 2) * inverse_inertias[0] +
+		pow(dot(orthogonal_axis(lever[1]), normalize(impulse)), 2) * inverse_inertias[1]);
+
+	auto push_at_lever = (
+		[](v2f32 attenuated_impulse, v2f32 lever, f32 inverse_mass, f32 inverse_inertia) -> Transform2D {
+			Transform2D delta_v;
+			delta_v.translation = attenuated_impulse * inverse_mass;
+			delta_v.rotation = degrees(cross(v3f32(lever, 0), v3f32(attenuated_impulse, 0)).z * inverse_inertia);
+			return delta_v;
+		}
+	);
+
+	return {
+		push_at_lever(-attenuated, lever[0], inverse_masses[0], inverse_inertias[0]),
+		push_at_lever(+attenuated, lever[1], inverse_masses[1], inverse_inertias[1])
+	};
 }
+
+tuple<Transform2D, Transform2D> lever_impulsion(v2f32 impulse, LiteralArray<v2f32> lever, LiteralArray<f32> inverse_masses, LiteralArray<f32> inverse_inertias) { return lever_impulsion(impulse, larray(lever), larray(inverse_masses), larray(inverse_inertias)); }
 
 #ifndef DEFAULT_GRAVITY
 #define DEFAULT_GRAVITY v2f32(0, -9.807f)
@@ -524,10 +545,28 @@ tuple<Array<Polygon>, Array<v2f32>> decompose_concave_poly(Polygon polygon, Allo
 #include <physics_2d_debug.cpp>
 
 struct Collision2D {
+	enum : u8 {
+		Physical = 1 << 0,
+		Linear = 1 << 1,
+		Angular = 1 << 2,
+	};
 	Array<Contact2D> contacts;
 	EntityHandle entities[2];
-	bool physical;
+	u8 flags;
 };
+
+u8 collision_type(Body* b1, Body* b2) {
+	u8 flags = 0;
+	if (b1 && b2)
+		flags |= Collision2D::Physical;
+	else
+		return 0;
+	if (can_respond(b1->inverse_mass, b2->inverse_mass))
+		flags |= Collision2D::Linear;
+	if (can_respond(b1->inverse_inertia, b2->inverse_inertia))
+		flags |= Collision2D::Angular;
+	return flags;
+}
 
 struct RigidBody {
 	EntityHandle handle;
@@ -540,69 +579,80 @@ using RigidBodyComp = tuple<EntityHandle, Shape2D*, Spacial2D*, Body*>;
 
 constexpr auto MaxContactPerCollision = 10u;
 
+//* linear + angular momentum deltas -> https://www.youtube.com/watch?v=VbvdoLQQUPs&ab_channel=Two-BitCoding
+//* heavily modified since first written from this video
+//* static friction taken from : https://gamedevelopment.tutsplus.com/how-to-create-a-custom-2d-physics-engine-friction-scene-and-jump-table--gamedev-7756t
+tuple<Transform2D, Transform2D> contact_response(
+	Array<RigidBody> ents,
+	const Contact2D& contact,
+	f32 elasticity,
+	f32 kinetic_friction,
+	f32 static_friction
+) {
+	using namespace glm;
+	auto normal = normalize(contact.penetration);
+	auto ctc_rvel = velocity_at_point(ents[1].spacial->velocity, contact.levers[1]) - velocity_at_point(ents[0].spacial->velocity, contact.levers[0]);
+	auto tangent = orthogonal_axis(normal) * sign(dot(orthogonal_axis(normal), ctc_rvel));
+
+	auto cancel = [&](v2f32 v, v2f32 d)->f32 { return length(d) > 0 && length(v) > 0 ? -dot(v, d) : 0; };
+	f32 normal_impulse = cancel(ctc_rvel, normal);//cancel(ctc_rvel, normal);
+	f32 friction_impulse = cancel(ctc_rvel, tangent);//cancel(ctc_rvel, tangent);
+
+	auto overcome_static = abs(friction_impulse) > abs(normal_impulse * static_friction);
+
+	v2f32 impulse =
+		normal * (1.f + elasticity) * normal_impulse + //contact elastic bounce
+		tangent * (overcome_static ? kinetic_friction : 1.f) * friction_impulse; // static friction resistance | kinetic friction dragging
+
+	return lever_impulsion(
+		impulse,
+		{ contact.levers[0], contact.levers[1] },
+		{ ents[0].body->inverse_mass, ents[1].body->inverse_mass },
+		{ ents[0].body->inverse_inertia, ents[1].body->inverse_inertia }
+	);
+}
+
 Array<Collision2D> simulate_collisions(Alloc allocator, Array<RigidBody> entities) {
+	if (entities.size() == 0) return {};
 	auto contact_pool = List{ alloc_array<Contact2D>(allocator, entities.size() * entities.size() * MaxContactPerCollision), 0 };
 	auto collisions = List{ alloc_array<Collision2D>(allocator, entities.size() * entities.size()), 0 };
-
-	if (entities.size() > 1) for (auto i : u64xrange{ 0, entities.size() - 1 }) {
+	for (auto i : u64xrange{ 0, entities.size() - 1 }) {
 		for (auto j : u64xrange{ i + 1, entities.size() }) {
 			RigidBody ents[] = { entities[i], entities[j] };
+
 			auto contacts = intersect_concave(contact_pool, *ents[0].shape, *ents[1].shape, trs_2d(ents[0].spacial->transform), trs_2d(ents[1].spacial->transform));
-			if (contacts.size() == 0 || !collisions.push_growing(allocator, { contacts, { ents[0].handle, ents[1].handle }, can_resolve_collision(ents[0].body, ents[1].body) }).physical)
+			if (contacts.size() == 0)
+				continue;
+
+			auto type = collision_type(ents[0].body, ents[1].body);
+			collisions.push_growing(allocator, { contacts, { ents[0].handle, ents[1].handle },  type });
+			if (!has_all(type, Collision2D::Physical))
 				continue;
 
 			// Correct penetration
 			auto pen = average(contacts, &Contact2D::penetration);
 			ents[0].spacial->transform.translation += pen * -inv_lerp(0.f, ents[0].body->inverse_mass + ents[1].body->inverse_mass, ents[0].body->inverse_mass);
 			ents[1].spacial->transform.translation += pen * +inv_lerp(0.f, ents[0].body->inverse_mass + ents[1].body->inverse_mass, ents[1].body->inverse_mass);
+			if (!has_one(type, Collision2D::Linear | Collision2D::Angular))
+				continue;
 
 			// Velocity Impulse
-
-			// Collisions properties
 			f32 elasticity = min(ents[0].body->restitution, ents[1].body->restitution);
 			f32 kinetic_friction = average({ ents[0].body->friction, ents[1].body->friction });
-			f32 static_friction = sqrtf(max(ents[0].body->friction, ents[1].body->friction));
-
-			//* linear + angular momentum deltas -> https://www.youtube.com/watch?v=VbvdoLQQUPs&ab_channel=Two-BitCoding
-			//* heavily modified since first written from this video
-			//* static friction taken from : https://gamedevelopment.tutsplus.com/how-to-create-a-custom-2d-physics-engine-friction-scene-and-jump-table--gamedev-7756t
+			f32 static_friction = ents[0].body->friction * ents[1].body->friction;
 			auto [d1, d2] = fold(tuple<Transform2D, Transform2D>{}, contacts,
-				[&](const tuple<Transform2D, Transform2D>& d, const Contact2D& contact) -> tuple<Transform2D, Transform2D> {
-					using namespace glm;
-					auto normal = normalize(contact.penetration);
-					auto ctc_rvel = velocity_at_point(ents[1].spacial->velocity, contact.levers[1]) - velocity_at_point(ents[0].spacial->velocity, contact.levers[0]);
-					auto tangent = orthogonal_axis(normal) * sign(dot(orthogonal_axis(normal), ctc_rvel));
-
-					auto impulse_mag = [&](v2f32 direction)->f32 {
-						return dot(ctc_rvel, direction) /
-							f32(ents[0].body->inverse_mass + ents[1].body->inverse_mass +
-								pow(dot(orthogonal_axis(contact.levers[0]), direction), 2) * ents[0].body->inverse_inertia +
-								pow(dot(orthogonal_axis(contact.levers[1]), direction), 2) * ents[1].body->inverse_inertia);
-						};
-
-					f32 normal_impulse = impulse_mag(normal);
-					f32 kinetic_friction_impulse = impulse_mag(tangent);
-					f32 friction_impulse = (abs(kinetic_friction_impulse) < normal_impulse * static_friction) ? -kinetic_friction_impulse : kinetic_friction * normal_impulse;
-
-					v2f32 impulse =
-						normal * -(1.f + elasticity) * normal_impulse + //contact elastic bounce
-						tangent * friction_impulse; // friction resistance
-
-					auto& [d1, d2] = d;
-
-					return {
-						d1 + push_at_point(-impulse, contact.levers[0], ents[0].body->inverse_mass, ents[0].body->inverse_inertia),
-						d2 + push_at_point(+impulse, contact.levers[1], ents[1].body->inverse_mass, ents[1].body->inverse_inertia)
-					};
+				[&](const tuple<Transform2D, Transform2D>& acc, const Contact2D& contact) -> tuple<Transform2D, Transform2D> {
+					auto [acc1, acc2] = acc;
+					auto [r1, r2] = contact_response(ents, contact, elasticity, kinetic_friction, static_friction);
+					return { acc1 + r1, acc2 + r2 };
 				}
 			);
-
 			ents[0].spacial->velocity = ents[0].spacial->velocity + d1;
 			ents[1].spacial->velocity = ents[1].spacial->velocity + d2;
 		}
 	}
-	contact_pool.shrink_to_content(allocator);
 	collisions.shrink_to_content(allocator);
+	contact_pool.shrink_to_content(allocator);
 	return collisions.allocated();
 }
 
@@ -644,7 +694,7 @@ struct Physics2D {
 		template<typename T> void draw_collisions(Array<Collision2D> collisions, const m4x4f32& matrix, Spacial2D T::* sp_member) {
 			sync(view_projection_matrix, matrix);
 			for (auto [contacts, entities, physical] : collisions) {
-				Spacial2D* sp[] = { &(entities[0]->template content<T>().*sp_member), &(entities[1]->template content<T>().*sp_member)};
+				Spacial2D* sp[] = { &(entities[0]->template content<T>().*sp_member), &(entities[1]->template content<T>().*sp_member) };
 				sync(debug_draw.render_info, { m4x4f32(1), v4f32(1, 0, 1, 1) });
 				debug_draw.draw_line({ sp[0]->transform.translation , sp[1]->transform.translation }, view_projection_matrix, wireframe);
 				if (physical) for (auto& contact : contacts) {
@@ -671,7 +721,6 @@ struct Physics2D {
 					ImGui::PushID(id++);
 					if (ImGui::TreeNode(buffer)) {
 						EditorWidget("Contacts", contacts);
-						EditorWidget("Physical", physical);
 						ImGui::TreePop();
 					}
 					ImGui::PopID();

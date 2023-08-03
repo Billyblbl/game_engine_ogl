@@ -277,14 +277,14 @@ template<support_function F1, support_function F2> v2f32 EPA(const F1& f1, const
 
 template<support_function F1, support_function F2> inline Segment<v2f32> contacts_segment(const F1& f1, const F2& f2, v2f32 normal) {
 	//* assumes normal is in general direction s1 -> s2, aka normal is in direction of the penetration of s1 into s2
-	Segment<v2f32> supports[] = { f1(+normal), f2(-normal) };
-	for (auto [a, b] : supports) if (a == b)
+	using namespace glm;
+	Segment<v2f32> s[] = { f1(+normal), f2(-normal) };
+	for (auto [a, b] : s) if (a == b)
 		return { a, b };
 
-	return Segment<v2f32>{// overlap of segments
-		glm::min(glm::max(supports[0].A, supports[0].B), glm::max(supports[1].A, supports[1].B)),
-			glm::max(glm::min(supports[0].A, supports[0].B), glm::min(supports[1].A, supports[1].B))
-	};
+	// overlap of segments
+	//TODO verify the correctness of this
+	return Segment<v2f32>{ min(max(s[0].A, s[0].B), max(s[1].A, s[1].B)), max(min(s[0].A, s[0].B), min(s[1].A, s[1].B))};
 }
 
 template<support_function F1, support_function F2> tuple<bool, v2f32> intersect_convex(const F1& f1, const F2& f2) {
@@ -303,12 +303,14 @@ bool EditorWidget(const cstr label, Contact2D& contact) {
 	if (ImGui::TreeNode(label)) {
 		changed |= EditorWidget("Penetration", contact.penetration);
 		changed |= EditorWidget("Levers", larray(contact.levers));
+		changed |= EditorWidget("Surface", contact.surface);
 		ImGui::TreePop();
 	}
 	return changed;
 }
 
 Array<Contact2D> intersect_concave(List<Contact2D>& intersections, const Shape2D& s1, const Shape2D& s2, const m4x4f32& t1, const m4x4f32& t2) {
+	using namespace glm;
 
 	auto start = intersections.current;
 
@@ -316,16 +318,12 @@ Array<Contact2D> intersect_concave(List<Contact2D>& intersections, const Shape2D
 		auto [collided, pen] = intersect_convex(support_function_of(s1, t1), support_function_of(s2, t2));
 
 		if (collided) {
-			auto offset_t1 = glm::translate(t1, v3f32(-pen, 0));
-			auto [ctct1, ctct2] = contacts_segment(
-				support_function_of(s1, offset_t1),
-				support_function_of(s2, t2),
-				glm::normalize(pen)
-			);
+			auto offset_t1 = translate(t1, v3f32(-pen, 0));
+			auto [ctct1, ctct2] = contacts_segment(support_function_of(s1, offset_t1), support_function_of(s2, t2), normalize(pen));
 			auto av_contact = average({ ctct1, ctct2 });
 			v2f32 world_cmass[] = { t1 * v4f32(0, 0, 0, 1), t2 * v4f32(0, 0, 0, 1) };
 
-			intersections.push({ pen, { av_contact - world_cmass[0], av_contact - world_cmass[1] }, glm::length(ctct2 - ctct1) });
+			intersections.push({ pen, { av_contact - world_cmass[0], av_contact - world_cmass[1] }, length(ctct2 - ctct1) });
 		}
 	} else {
 		for (auto& sub_shape1 : (s1.type == Shape2D::Concave) ? s1.composite : carray(&s1, 1))
@@ -333,7 +331,7 @@ Array<Contact2D> intersect_concave(List<Contact2D>& intersections, const Shape2D
 				intersect_concave(intersections, sub_shape1, sub_shape2, t1, t2);
 	}
 
-	return intersections.allocated().subspan(start, intersections.current - start);
+	return intersections.allocated().subspan(start);
 }
 
 tuple<bool, rtf32, v2f32> intersect(const Shape2D& s1, const Shape2D& s2, m4x4f32 t1, m4x4f32 t2) {
@@ -343,15 +341,6 @@ tuple<bool, rtf32, v2f32> intersect(const Shape2D& s1, const Shape2D& s2, m4x4f3
 
 	auto [collided, pen] = intersect_convex(support_function_of(s1, t1), support_function_of(s2, t2));
 	return { collided, aabb_intersection, pen };
-}
-
-bool can_respond(f32 i1, f32 i2) { return i1 > 0 || i2 > 0; }
-
-bool can_resolve_collision(Body* b1, Body* b2) {
-	return (b1 && b2) && // has bodies
-		can_respond(b1->inverse_mass, b2->inverse_mass) &&
-		can_respond(b1->inverse_inertia, b2->inverse_inertia)
-		;
 }
 
 v2f32 velocity_at_point(const Transform2D& velocity, v2f32 point) {
@@ -561,9 +550,9 @@ u8 collision_type(Body* b1, Body* b2) {
 		flags |= Collision2D::Physical;
 	else
 		return 0;
-	if (can_respond(b1->inverse_mass, b2->inverse_mass))
+	if (b1->inverse_mass > 0 || b2->inverse_mass > 0)
 		flags |= Collision2D::Linear;
-	if (can_respond(b1->inverse_inertia, b2->inverse_inertia))
+	if (b1->inverse_inertia > 0 || b2->inverse_inertia > 0 )
 		flags |= Collision2D::Angular;
 	return flags;
 }
@@ -580,8 +569,8 @@ using RigidBodyComp = tuple<EntityHandle, Shape2D*, Spacial2D*, Body*>;
 constexpr auto MaxContactPerCollision = 10u;
 
 //* linear + angular momentum deltas -> https://www.youtube.com/watch?v=VbvdoLQQUPs&ab_channel=Two-BitCoding
-//* heavily modified since first written from this video
 //* static friction taken from : https://gamedevelopment.tutsplus.com/how-to-create-a-custom-2d-physics-engine-friction-scene-and-jump-table--gamedev-7756t
+//* heavily modified since first written from these videos
 tuple<Transform2D, Transform2D> contact_response(
 	Array<RigidBody> ents,
 	const Contact2D& contact,
@@ -647,8 +636,8 @@ Array<Collision2D> simulate_collisions(Alloc allocator, Array<RigidBody> entitie
 					return { acc1 + r1, acc2 + r2 };
 				}
 			);
-			ents[0].spacial->velocity = ents[0].spacial->velocity + d1;
-			ents[1].spacial->velocity = ents[1].spacial->velocity + d2;
+			ents[0].spacial->velocity = ents[0].spacial->velocity + d1 * (1.f / f32(contacts.size()));
+			ents[1].spacial->velocity = ents[1].spacial->velocity + d2 * (1.f / f32(contacts.size()));
 		}
 	}
 	collisions.shrink_to_content(allocator);

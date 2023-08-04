@@ -45,6 +45,7 @@ AudioData init_audio(LiteralArray<string> extensions = {}) {
 };
 
 void deinit_audio(AudioData& audio) {
+	alcMakeContextCurrent(NULL);
 	alcDestroyContext(audio.context);
 	alcCloseDevice(audio.device);
 	audio.context = null;
@@ -124,6 +125,10 @@ namespace ALListener {
 	}
 
 }
+
+#include <transform.cpp>
+#include <inputs.cpp>
+#include <system_editor.cpp>
 
 struct Audio {
 	static constexpr auto MAX_AUDIO_BUFFER_COUNT = 10;

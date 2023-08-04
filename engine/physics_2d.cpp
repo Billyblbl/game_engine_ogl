@@ -552,7 +552,7 @@ u8 collision_type(Body* b1, Body* b2) {
 		return 0;
 	if (b1->inverse_mass > 0 || b2->inverse_mass > 0)
 		flags |= Collision2D::Linear;
-	if (b1->inverse_inertia > 0 || b2->inverse_inertia > 0 )
+	if (b1->inverse_inertia > 0 || b2->inverse_inertia > 0)
 		flags |= Collision2D::Angular;
 	return flags;
 }
@@ -650,13 +650,35 @@ struct Physics2D {
 	static constexpr u64 PhysicsMemory = (MAX_ENTITIES * MAX_ENTITIES * sizeof(Collision2D) + MAX_ENTITIES * MAX_ENTITIES * sizeof(Contact2D) * MaxContactPerCollision);
 	Array<Collision2D> collisions = {};
 	Arena physics_scratch = create_virtual_arena(PhysicsMemory);
+	f32 dt = 1.f / 240.f;
+	u32 max_ticks = 5;
+	v2f32 gravity = v2f32(0);
+	f32 tpu = 0;
+	f32 time;
 
-	void operator()(Array<RigidBody> entities) {
+	Array<Collision2D> operator()(Array<RigidBody> rbs, Array<Spacial2D*> ents, u32 iterations = 1) {
+		auto heuristic_collision_count = collisions.size() * 2;
 		collisions = {};
 		reset_virtual_arena(physics_scratch);
-		collisions = simulate_collisions(as_v_alloc(physics_scratch), entities);
+		tpu = average({tpu, f32(iterations)});
+		if (iterations == 0)
+			return {};
+		auto collisions_acc = List{ alloc_array<Collision2D>(as_v_alloc(physics_scratch), heuristic_collision_count), 0 };
+		Array<Collision2D> last_tick_collisions = {};
+		for (auto i : u32xrange{ 0, iterations }) {
+			time += dt;
+			for (auto& rb : rbs) if (rb.body && rb.body->inverse_mass > 0)
+				rb.spacial->velocity.translation += gravity * dt;
+			for (auto s : ents)
+				euler_integrate(*s, dt);
+			last_tick_collisions =  collisions_acc.push_range_growing(as_v_alloc(physics_scratch), simulate_collisions(as_v_alloc(physics_scratch), rbs));
+		}
+		collisions = collisions_acc.allocated();
+		return last_tick_collisions;
 	}
 
+	inline u32 iteration_count(f32 real_time) { return u32(glm::clamp(i32((real_time - time) / dt), i32(0), i32(max_ticks))); }
+ 
 	struct Editor : public SystemEditor {
 		ShapeRenderer debug_draw = load_shape_renderer();
 		bool debug = false;
@@ -701,6 +723,10 @@ struct Physics2D {
 				EditorWidget("Colliders", colliders);
 				EditorWidget("Collisions marks", collisions);
 			}
+			EditorWidget("Gravity", system.gravity);
+			EditorWidget("Delta Time", system.dt);
+			EditorWidget("Max ticks per update", system.max_ticks);
+			EditorWidget("Average ticks per update", system.tpu);
 			if (ImGui::TreeNode("Collisions")) {
 				defer{ ImGui::TreePop(); };
 				auto id = 0;

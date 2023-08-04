@@ -232,24 +232,14 @@ struct PlaygroundScene {
 		dealloc_array(std_allocator, entities.capacity);
 	}
 
-	v2f32 gravity = v2f32(0);
 	u64 update_count = 0;
 	Spacial2D pov;
 	bool operator()() {
 		defer{ update_count++; };
 		update(clock);
-// #if 0
-#if 1
-		f32 dt = clock.dt;
-#else
-		f32 dt = 1.f/60.f;
-#endif
-		constexpr auto SCRATCH_SIZE = (1ull << 20);
+		constexpr u64 SCRATCH_SIZE = (1ull << 21);
 		static auto scratch = create_virtual_arena(SCRATCH_SIZE);
 		auto flush_scratch = [&]() -> Alloc { return as_v_alloc(reset_virtual_arena(scratch)); };
-
-		for (auto& i : entities.allocated()) if (has_all(i.flags, Entity::Physical) && i.body.inverse_mass > 0)
-			i.space.velocity.translation += gravity * dt;
 
 		if (player.valid()) {// player controller
 			player->content<Entity>().ctrl.input = controls::keyboard_plane(Input::WASD);
@@ -261,12 +251,16 @@ struct PlaygroundScene {
 		pov.transform.rotation = 0;
 
 		for (auto& i : entities.allocated()) if (has_all(i.flags, Entity::Controllable))
-			i.space.velocity.translation = controls::move_top_down(i.space.velocity.translation, i.ctrl.input, i.ctrl.speed, i.ctrl.accel, dt);
-		for (auto& i : entities.allocated())
-			euler_integrate(i.space, dt);
-		physics(gather(flush_scratch(), entities.allocated(), Entity::Collider, [&](Entity& ent) { return RigidBody{ get_entity_genhandle(ent), &ent.shape, &ent.space, (has_all(ent.flags, Entity::Rigidbody) ? &ent.body : null) }; }));
-		audio(gather(flush_scratch(), entities.allocated(), Entity::Sound, [&](Entity& ent) { return tuple(&ent.audio_source, (const Spacial2D*)&ent.space); }), &pov);
-		rendering(gather(flush_scratch(), entities.allocated(), Entity::Sprite, [&](const Entity& ent) { return sprite_data(trs_2d(ent.space.transform), ent.sprite, ent.render_rect.dimensions, ent.render_rect.depth); }), pov.transform);
+			i.space.velocity.translation = controls::move_top_down(i.space.velocity.translation, i.ctrl.input, i.ctrl.speed, i.ctrl.accel, clock.dt);
+
+		flush_scratch();
+		physics(
+			gather(as_v_alloc(scratch), entities.allocated(), Entity::Collider, [](Entity& ent) { return RigidBody{ get_entity_genhandle(ent), &ent.shape, &ent.space, (has_all(ent.flags, Entity::Rigidbody) ? &ent.body : null) }; }),
+			map(as_v_alloc(scratch), entities.allocated(), [](Entity& ent) { return &ent.space; }),
+			physics.iteration_count(clock.current)
+		);
+		audio(gather(flush_scratch(), entities.allocated(), Entity::Sound, [](Entity& ent) { return tuple(&ent.audio_source, (const Spacial2D*)&ent.space); }), &pov);
+		rendering(gather(flush_scratch(), entities.allocated(), Entity::Sprite, [](const Entity& ent) { return sprite_data(trs_2d(ent.space.transform), ent.sprite, ent.render_rect.dimensions, ent.render_rect.depth); }), pov.transform);
 		return true;
 	}
 
@@ -303,7 +297,6 @@ struct PlaygroundScene {
 
 		if (ph.show_window) {
 			if (begin_editor(ph)) {
-				EditorWidget("Gravity", gravity);
 				ph.editor_window(physics);
 			} end_editor();
 		}

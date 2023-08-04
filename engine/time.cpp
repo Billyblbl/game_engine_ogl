@@ -3,6 +3,7 @@
 
 #include <blblstd.hpp>
 #include <chrono>
+#include <imgui_extension.cpp>
 
 namespace Time {
 
@@ -43,6 +44,20 @@ namespace Time {
 		return should_tick;
 	}
 
+
 } // namespace Time
+
+bool EditorWidget(const cstr label, Time::Clock& clock, bool foldable = true) {
+	bool changed = false;
+	if (!foldable || ImGui::TreeNode(label)) {
+		if (!foldable)
+			ImGui::Text(label);
+		changed |= EditorWidget("Current", clock.current);
+		changed |= EditorWidget("Delta time", clock.dt);
+		if (foldable)
+			ImGui::TreePop();
+	}
+	return changed;
+}
 
 #endif

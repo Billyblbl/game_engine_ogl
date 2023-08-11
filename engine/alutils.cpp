@@ -2,6 +2,7 @@
 # define GALUTILS
 
 #include <blblstd.hpp>
+#include <math.cpp>
 #include <AL/al.h>
 #include <AL/alc.h>
 #include <AL/alext.h>

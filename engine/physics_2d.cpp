@@ -535,6 +535,7 @@ tuple<Array<Polygon>, Array<v2f32>> decompose_concave_poly(Polygon polygon, Allo
 
 struct Collision2D {
 	enum : u8 {
+		DetectOnly = 0,
 		Physical = 1 << 0,
 		Linear = 1 << 1,
 		Angular = 1 << 2,
@@ -545,11 +546,11 @@ struct Collision2D {
 };
 
 u8 collision_type(Body* b1, Body* b2) {
-	u8 flags = 0;
+	u8 flags = Collision2D::DetectOnly;
 	if (b1 && b2)
 		flags |= Collision2D::Physical;
 	else
-		return 0;
+		return Collision2D::DetectOnly;
 	if (b1->inverse_mass > 0 || b2->inverse_mass > 0)
 		flags |= Collision2D::Linear;
 	if (b1->inverse_inertia > 0 || b2->inverse_inertia > 0)
@@ -580,12 +581,12 @@ tuple<Transform2D, Transform2D> contact_response(
 ) {
 	using namespace glm;
 	auto normal = normalize(contact.penetration);
-	auto ctc_rvel = velocity_at_point(ents[1].spacial->velocity, contact.levers[1]) - velocity_at_point(ents[0].spacial->velocity, contact.levers[0]);
-	auto tangent = orthogonal_axis(normal) * sign(dot(orthogonal_axis(normal), ctc_rvel));
+	auto contact_relative_vel = velocity_at_point(ents[1].spacial->velocity, contact.levers[1]) - velocity_at_point(ents[0].spacial->velocity, contact.levers[0]);
+	auto tangent = orthogonal_axis(normal) * sign(dot(orthogonal_axis(normal), contact_relative_vel));
 
-	auto cancel = [&](v2f32 v, v2f32 d)->f32 { return length(d) > 0 && length(v) > 0 ? -dot(v, d) : 0; };
-	f32 normal_impulse = cancel(ctc_rvel, normal);//cancel(ctc_rvel, normal);
-	f32 friction_impulse = cancel(ctc_rvel, tangent);//cancel(ctc_rvel, tangent);
+	auto cancel = [](v2f32 v, v2f32 d)->f32 { return length(d) > 0 && length(v) > 0 ? -dot(v, d) : 0; };
+	f32 normal_impulse = cancel(contact_relative_vel, normal);
+	f32 friction_impulse = cancel(contact_relative_vel, tangent);
 
 	auto overcome_static = abs(friction_impulse) > abs(normal_impulse * static_friction);
 
@@ -650,7 +651,7 @@ struct Physics2D {
 	static constexpr u64 PhysicsMemory = (MAX_ENTITIES * MAX_ENTITIES * sizeof(Collision2D) + MAX_ENTITIES * MAX_ENTITIES * sizeof(Contact2D) * MaxContactPerCollision);
 	Array<Collision2D> collisions = {};
 	Arena physics_scratch = create_virtual_arena(PhysicsMemory);
-	f32 dt = 1.f / 240.f;
+	f32 dt = 1.f / 60.f;
 	u32 max_ticks = 5;
 	v2f32 gravity = v2f32(0);
 	f32 tpu = 0;
@@ -678,7 +679,7 @@ struct Physics2D {
 	}
 
 	inline u32 iteration_count(f32 real_time) { return u32(glm::clamp(i32((real_time - time) / dt), i32(0), i32(max_ticks))); }
- 
+
 	struct Editor : public SystemEditor {
 		ShapeRenderer debug_draw = load_shape_renderer();
 		bool debug = false;

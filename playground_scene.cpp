@@ -91,6 +91,8 @@ struct PlaygroundScene {
 	Physics2D physics;
 	Audio audio;
 
+	AudioClip clip;
+
 	List<Entity> entities;
 
 	AnimationGrid<rtf32, 2> anim;
@@ -101,27 +103,49 @@ struct PlaygroundScene {
 		rendering.camera = { v3f32(16.f, 9.f, 1000.f) * 4.f, v3f32(0) };
 		entities = List{ alloc_array<Entity>(std_allocator, MAX_ENTITIES), 0 };
 
+		clip = load_clip_file("audio/file_example_OOG_1MG.ogg");
+		auto& buffer = audio.buffers.push(create_audio_buffer());
+		write_audio_clip(buffer, clip);
+
 		anim = load_animation_grid<rtf32, 2>(assets.test_character_anim_path, std_allocator);
 		clock = Time::start();
+		static v2f32 player_polygon[] = { v2f32(-1, -1) / 2.f, v2f32(+1, -1) / 2.f, v2f32(+1, +1) / 2.f, v2f32(-1, +1) / 2.f };
+		auto player_sprite = load_into(assets.test_character_spritesheet_path, rendering.atlas, v2u32(0), 0);
 		player = (
 			[&]() {
-				static v2f32 player_polygon[] = { v2f32(-1, -1) / 2.f, v2f32(+1, -1) / 2.f, v2f32(+1, +1) / 2.f, v2f32(-1, +1) / 2.f };
-				auto& ent = allocate_entity(entities, "player", Entity::Sprite | Entity::Rigidbody | Entity::Controllable);
+				auto& ent = allocate_entity(entities, "player", Entity::Sprite | Entity::Rigidbody | Entity::Controllable | Entity::Sound);
 				ent.space = { identity_2d, null_transform_2d, null_transform_2d };
-				ent.space.transform.translation += v2f32(0, 10);
-				ent.sprite = load_into(assets.test_character_spritesheet_path, rendering.atlas, v2u32(0), 0);
+				ent.space.transform.translation += v2f32(0);
+				ent.sprite = player_sprite;
 				ent.render_rect = { v2f32(1), 1 };
 				ent.body.inverse_inertia = 0.f;
 				ent.body.inverse_mass = 1.f;
-				ent.body.restitution = .3f;
-				ent.body.friction = .5f;
-				ent.shape = make_shape_2d<Shape2D::Polygon>(larray(player_polygon));
+				ent.body.restitution = .5f;
+				ent.body.friction = .3f;
+				ent.shape = make_shape_2d<Shape2D::Circle>(v3f32(v2f32(0), .5f));
 				ent.ctrl = { 10, 100, 1, v2f32(0), 0 };
+				ent.audio_source = create_audio_source();
+				ent.audio_source.set<BUFFER>(buffer.id);
 				return get_entity_genhandle(ent);
 			}
 		());
 
+		srand(time(0));
+		auto frand = [](f32range range)->f32 { return range.min + fmodf(f32(rand()) / f32(rand() % 0xFFFFFF + 1), 1) * (range.max - range.min); };
 
+		for (auto i : u64xrange{ 0, 20 }) {
+			auto& ent = allocate_entity(entities, "test_ent", Entity::Sprite | Entity::Rigidbody);
+			ent.space = { identity_2d, null_transform_2d, null_transform_2d };
+			ent.space.transform.translation += v2f32(frand({ -10, 10 }), frand({ -10, 10 }));
+			ent.space.velocity.translation += v2f32(frand({ -1, 1 }), frand({ -1, 1 }));
+			ent.sprite = player_sprite;
+			ent.render_rect = { v2f32(1), 1 };
+			ent.body.inverse_inertia = 1.f;
+			ent.body.inverse_mass = 1.f;
+			ent.body.restitution = .3f;
+			ent.body.friction = .5f;
+			ent.shape = make_shape_2d<Shape2D::Polygon>(larray(player_polygon));
+		}
 
 		{// misc scene content
 			static v2f32 test_polygon[] = { v2f32(-1, -1), v2f32(+1, -1), v2f32(+1, +1), v2f32(-1, +1) };
@@ -135,62 +159,103 @@ struct PlaygroundScene {
 			for (auto sub_poly : test_poly_decomposed)
 				test_poly_decomposed_shapes.push(make_shape_2d<Shape2D::Polygon>(sub_poly));
 
-			{
-				auto& ent = allocate_entity(entities, "concave1", Entity::Rigidbody);
-				ent.space.transform.translation = v2f32(0, 3);
-				ent.body.inverse_inertia = .1f;
-				ent.body.inverse_mass = 1.f;
-				ent.body.restitution = .3f;
-				ent.body.friction = .8f;
-				ent.shape = make_shape_2d<Shape2D::Concave>(test_poly_decomposed_shapes.allocated());
-			}
+			// {
+			// 	auto& ent = allocate_entity(entities, "concave1", Entity::Rigidbody);
+			// 	ent.space.transform.translation = v2f32(0, 3);
+			// 	ent.body.inverse_inertia = .1f;
+			// 	ent.body.inverse_mass = 1.f;
+			// 	ent.body.restitution = .3f;
+			// 	ent.body.friction = .8f;
+			// 	ent.shape = make_shape_2d<Shape2D::Concave>(test_poly_decomposed_shapes.allocated());
+			// }
 
-			{
-				auto& ent = allocate_entity(entities, "body1", Entity::Rigidbody);
-				ent.space.transform.translation = test_polygon[0] * 2.f + v2f32(0, 10);
-				ent.body.inverse_inertia = 1;
-				ent.body.inverse_mass = 1.f;
-				ent.body.restitution = .5f;
-				ent.body.friction = .5f;
-				ent.shape = make_shape_2d<Shape2D::Polygon>(larray(test_polygon));
-			}
+			// {
+			// 	auto& ent = allocate_entity(entities, "body1", Entity::Rigidbody);
+			// 	ent.space.transform.translation = test_polygon[0] * 2.f + v2f32(0, 10);
+			// 	ent.body.inverse_inertia = 1;
+			// 	ent.body.inverse_mass = 1.f;
+			// 	ent.body.restitution = .5f;
+			// 	ent.body.friction = .5f;
+			// 	ent.shape = make_shape_2d<Shape2D::Polygon>(larray(test_polygon));
+			// }
 
-			{
-				auto& ent = allocate_entity(entities, "body2", Entity::Rigidbody);
-				ent.space.transform.translation = test_polygon[1] * 2.f + v2f32(0, 10);
-				ent.body.inverse_inertia = 1;
-				ent.body.inverse_mass = 1.f;
-				ent.body.restitution = .5f;
-				ent.body.friction = .5f;
-				ent.shape = make_shape_2d<Shape2D::Circle>(v3f32(0, 0, 1));
-			}
+			// {
+			// 	auto& ent = allocate_entity(entities, "body2", Entity::Rigidbody);
+			// 	ent.space.transform.translation = test_polygon[1] * 2.f + v2f32(0, 10);
+			// 	ent.body.inverse_inertia = 1;
+			// 	ent.body.inverse_mass = 1.f;
+			// 	ent.body.restitution = .5f;
+			// 	ent.body.friction = .5f;
+			// 	// ent.shape = make_shape_2d<Shape2D::Circle>(v3f32(0, 0, 1));
+			// 	ent.shape = make_shape_2d<Shape2D::Polygon>(larray(test_polygon));
+			// }
 
-			{
-				auto& ent = allocate_entity(entities, "body3", Entity::Rigidbody);
-				ent.space.transform.translation = test_polygon[2] * 2.f + v2f32(0, 10);
-				ent.body.inverse_inertia = 1;
-				ent.body.inverse_mass = 1.f;
-				ent.body.restitution = .5f;
-				ent.body.friction = .5f;
-				ent.shape = make_shape_2d<Shape2D::Polygon>(larray(test_polygon));
-			}
+			// {
+			// 	auto& ent = allocate_entity(entities, "body3", Entity::Rigidbody);
+			// 	ent.space.transform.translation = test_polygon[2] * 2.f + v2f32(0, 10);
+			// 	ent.body.inverse_inertia = 1;
+			// 	ent.body.inverse_mass = 1.f;
+			// 	ent.body.restitution = .5f;
+			// 	ent.body.friction = .5f;
+			// 	ent.shape = make_shape_2d<Shape2D::Polygon>(larray(test_polygon));
+			// }
 
-			{
-				auto& ent = allocate_entity(entities, "body4", Entity::Rigidbody);
-				ent.space.transform.translation = test_polygon[3] * 2.f + v2f32(0, 10);
-				ent.body.inverse_inertia = 1;
-				ent.body.inverse_mass = 1.f;
-				ent.body.restitution = .5f;
-				ent.body.friction = .5f;
-				ent.shape = make_shape_2d<Shape2D::Polygon>(larray(test_polygon));
-			}
+			// {
+			// 	auto& ent = allocate_entity(entities, "body4", Entity::Rigidbody);
+			// 	ent.space.transform.translation = test_polygon[3] * 2.f + v2f32(0, 10);
+			// 	ent.body.inverse_inertia = 1;
+			// 	ent.body.inverse_mass = 1.f;
+			// 	ent.body.restitution = .5f;
+			// 	ent.body.friction = .5f;
+			// 	ent.shape = make_shape_2d<Shape2D::Polygon>(larray(test_polygon));
+			// }
 
+			// {
+			// 	auto& ent = allocate_entity(entities, "body1", Entity::Rigidbody);
+			// 	ent.space.transform.translation = test_polygon[0] * 2.f + v2f32(5, 15);
+			// 	ent.body.inverse_inertia = 1;
+			// 	ent.body.inverse_mass = 1.f;
+			// 	ent.body.restitution = .5f;
+			// 	ent.body.friction = .5f;
+			// 	ent.shape = make_shape_2d<Shape2D::Polygon>(larray(test_polygon));
+			// }
+
+			// {
+			// 	auto& ent = allocate_entity(entities, "body2", Entity::Rigidbody);
+			// 	ent.space.transform.translation = test_polygon[1] * 2.f + v2f32(5, 15);
+			// 	ent.body.inverse_inertia = 1;
+			// 	ent.body.inverse_mass = 1.f;
+			// 	ent.body.restitution = .5f;
+			// 	ent.body.friction = .5f;
+			// 	// ent.shape = make_shape_2d<Shape2D::Circle>(v3f32(0, 0, 1));
+			// 	ent.shape = make_shape_2d<Shape2D::Polygon>(larray(test_polygon));
+			// }
+
+			// {
+			// 	auto& ent = allocate_entity(entities, "body3", Entity::Rigidbody);
+			// 	ent.space.transform.translation = test_polygon[2] * 2.f + v2f32(5, 15);
+			// 	ent.body.inverse_inertia = 1;
+			// 	ent.body.inverse_mass = 1.f;
+			// 	ent.body.restitution = .5f;
+			// 	ent.body.friction = .5f;
+			// 	ent.shape = make_shape_2d<Shape2D::Polygon>(larray(test_polygon));
+			// }
+
+			// {
+			// 	auto& ent = allocate_entity(entities, "body4", Entity::Rigidbody);
+			// 	ent.space.transform.translation = test_polygon[3] * 2.f + v2f32(5, 15);
+			// 	ent.body.inverse_inertia = 1;
+			// 	ent.body.inverse_mass = 1.f;
+			// 	ent.body.restitution = .5f;
+			// 	ent.body.friction = .5f;
+			// 	ent.shape = make_shape_2d<Shape2D::Polygon>(larray(test_polygon));
+			// }
 			{
 				auto& ent = allocate_entity(entities, "static1", Entity::Rigidbody);
-				ent.space.transform.translation = v2f32(0, -2.5) - v2f32(0, -5);
+				ent.space.transform.translation = v2f32(0, -15);
 				ent.body.inverse_inertia = 0;
 				ent.body.inverse_mass = 0;
-				ent.body.restitution = .5f;
+				ent.body.restitution = .8f;
 				ent.body.friction = .5f;
 				ent.shape = make_shape_2d<Shape2D::Polygon>(larray(test_polygon2));
 			}
@@ -198,7 +263,7 @@ struct PlaygroundScene {
 			{
 				auto& ent = allocate_entity(entities, "static2", Entity::Rigidbody);
 				Transform2D transform;
-				transform.translation = v2f32(10, 3) - v2f32(0, -5);
+				transform.translation = v2f32(+7, -10);
 				transform.rotation = 0;
 				transform.scale = v2f32(3);
 				ent.space.transform = transform;
@@ -212,7 +277,7 @@ struct PlaygroundScene {
 			{
 				auto& ent = allocate_entity(entities, "static3", Entity::Rigidbody);
 				Transform2D transform;
-				transform.translation = v2f32(-10, 3) - v2f32(0, -5);
+				transform.translation = v2f32(-7, -10);
 				transform.rotation = -90;
 				transform.scale = v2f32(3);
 				ent.space.transform = transform;
@@ -327,6 +392,13 @@ bool editor_test(App& app) {
 
 	PlaygroundScene scene;
 	auto pg_ed = scene.default_editor();
+	auto& [rd, au, ph, ent, misc] = pg_ed;
+	rd.show_window = true;
+	au.show_window = true;
+	ph.show_window = true;
+	ent.show_window = true;
+	misc.show_window = true;
+
 	add_editors(sub_editors, pg_ed);
 
 	while (update(app, editor_test)) {

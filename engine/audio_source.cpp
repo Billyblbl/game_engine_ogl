@@ -114,8 +114,30 @@ template<> void set_source_prop<ALuint>(ALuint source, AL_Property property, ALu
 
 struct AudioSource {
 	ALuint id;
+	AL_SourceState state;
+	u64 byte_offset;
 	template<AL_Property P> inline auto get() { return get_source_prop<prop_t<P>>(id, P); }
-	template<AL_Property P> inline AudioSource set(prop_t<P> value) { return (set_source_prop<prop_t<P>>(id, P, value), *this); }
+	template<AL_Property P> inline AudioSource set(prop_t<P> value) {
+		set_source_prop<prop_t<P>>(id, P, value);
+		cache_push();
+		return *this;
+	}
+
+	void cache_push() {
+		state = get<SOURCE_STATE>();
+		byte_offset = get<BYTE_OFFSET>();
+	}
+
+	void cache_pop() {
+		switch (state) {
+		case INITIAL: rewind(); break;
+		case PLAYING: play(); break;
+		case PAUSED: pause(); break;
+		case STOPPED: stop(); break;
+		}
+		set<BYTE_OFFSET>(byte_offset);
+	}
+
 	inline void play() { AL_GUARD(alSourcePlay(id)); }
 	inline void pause() { AL_GUARD(alSourcePause(id)); }
 	inline void stop() { AL_GUARD(alSourceStop(id)); }
@@ -129,7 +151,7 @@ struct AudioSource {
 AudioSource create_audio_source() {
 	ALuint id;
 	AL_GUARD(alGenSources(1, &id));
-	return { id };
+	return { id, INITIAL, 0 };
 }
 
 void destroy(AudioSource& source) {

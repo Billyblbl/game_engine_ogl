@@ -29,4 +29,4 @@ $(APP_MODULE): $(BUILD_DIR) $(APP_SRC)
 
 $(APP): $(APP_MODULE) $(VORBIS_MODULE) $(IMGUI_MODULE) $(BLBLSTD_MODULE)
 	@echo -e "Linking $(COLOR)app executable$(NOCOLOR)"
-	@$(CXX) $(CFLAGS) $^ $(INC:%=-I%) $(LIB:%=-L%) $(LDFLAGS) -o $@
+	@$(CXX) $(CFLAGS) $^ $(LIB:%=-L%) $(LDFLAGS) -o $@

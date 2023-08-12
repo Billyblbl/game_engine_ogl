@@ -131,7 +131,7 @@ struct PlaygroundScene {
 		());
 
 		srand(time(0));
-		auto frand = [](f32range range)->f32 { return range.min + fmodf(f32(rand()) / f32(rand() % 0xFFFFFF + 1), 1) * (range.max - range.min); };
+		auto frand = [](f32range range)->f32 { return range.min + fmodf(f32(rand()) / f32(rand() % 0xFFFFFF + 1), 1.f) * (range.max - range.min); };
 
 		for (auto i : u64xrange{ 0, 20 }) {
 			auto& ent = allocate_entity(entities, "test_ent", Entity::Sprite | Entity::Rigidbody);

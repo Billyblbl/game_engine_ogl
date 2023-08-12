@@ -351,6 +351,10 @@ tuple<Transform2D, Transform2D> lever_impulsion(v2f32 impulse, Array<const v2f32
 	using namespace glm;
 	if (length(impulse) <= 0) return { null_transform_2d, null_transform_2d };
 
+	assert(!isnan(f32(inverse_masses[0] + inverse_masses[1] +
+		pow(dot(orthogonal_axis(lever[0]), normalize(impulse)), 2) * inverse_inertias[0] +
+		pow(dot(orthogonal_axis(lever[1]), normalize(impulse)), 2) * inverse_inertias[1])));
+
 	auto attenuated = impulse / f32(inverse_masses[0] + inverse_masses[1] +
 		pow(dot(orthogonal_axis(lever[0]), normalize(impulse)), 2) * inverse_inertias[0] +
 		pow(dot(orthogonal_axis(lever[1]), normalize(impulse)), 2) * inverse_inertias[1]);

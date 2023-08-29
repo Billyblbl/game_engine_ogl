@@ -486,7 +486,7 @@ inline WindingOrder poly_wo(Polygon poly) {
 	return double_signed_area(poly) > 0 ? AntiClockwise : Clockwise;
 }
 
-inline bool convex_at(Polygon poly, i64 i, WindingOrder wo = Clockwise) {
+WindingOrder wo_at(Polygon poly, i64 i) {
 	using namespace glm;
 	i64 n = poly.size();
 	v2f32 verts[] = {
@@ -495,8 +495,10 @@ inline bool convex_at(Polygon poly, i64 i, WindingOrder wo = Clockwise) {
 		poly[modidx(i + 1, poly.size())]
 	};
 	v2f32 edges[] = { verts[1] - verts[0], verts[2] - verts[1] };
-	return WindingOrder(u8(sign(cross(v3f32(edges[0], 0), v3f32(edges[1], 0)).z))) != -wo;
+	return WindingOrder(i8(sign(cross(v3f32(edges[0], 0), v3f32(edges[1], 0)).z)));
 }
+
+inline bool convex_at(Polygon poly, i64 i, WindingOrder wo = Clockwise) { return wo_at(poly, i) != -wo; }
 
 inline bool is_convex(Polygon poly, WindingOrder wo) {
 	if (wo == Unknown)

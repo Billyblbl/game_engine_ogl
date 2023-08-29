@@ -87,6 +87,15 @@ u8 piece_mask(bool* markings, v2u64 dimensions, v2i32 cell, u8 nb_mask) {
 
 Array<Segment<v2f32>> _outline_segments;
 
+Array<v2f32> decimate(Alloc allocator, Array<v2f32> poly) {
+	auto pruned = List{ duplicate_array(allocator, poly), poly.size() };
+	i64 idx = 0;
+	while ((idx = linear_search_idx(pruned.allocated(), [&](v2f32, i64 i) { return wo_at(pruned.allocated(), i) == WindingOrder::Unknown; }, idx)) >= 0)
+		pruned.remove_ordered(idx);
+
+	return pruned.shrink_to_content(allocator);
+}
+
 Array<Segment<v2f32>> create_pieces_ms(Alloc allocator, bool* markings, v2u64 dimensions, Array<v2i32> pixels) {
 
 	auto scratch = create_virtual_arena(5000000); defer{ destroy_virtual_arena(scratch); };//TODO replace with thread local arena scheme
@@ -204,9 +213,10 @@ Shape2D generate_shape(Alloc allocator, const Image& source, auto is_collider) {
 			printf("Welding contour pieces\n");
 			auto contour = weld_segments(as_v_alloc(scratch), pieces);
 			_contour_welded = duplicate_array(std_allocator, contour);
-			//TODO prune uneeded vertices / optimize polygon
-			printf("Ear clipping polygon\n");
-			auto [sub_polys, vertices] = ear_clip(contour, as_v_alloc(scratch));
+			printf("Pruning contour vertices (%lu)\n", contour.size());
+			auto pruned = decimate(as_v_alloc(scratch), contour);
+			printf("Ear clipping polygon (%lu)\n", pruned.size());
+			auto [sub_polys, vertices] = ear_clip(pruned, as_v_alloc(scratch));
 			printf("Ear clipping complete : %lu polygons, %lu vertices\n", sub_polys.size(), vertices.size());
 
 			_test_outlines_decomposed.push_range(map(as_v_alloc(scratch), sub_polys, [](Polygon poly) { return duplicate_array(std_allocator, poly); }));

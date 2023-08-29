@@ -4,23 +4,7 @@
 #include <rendering.cpp>
 #include <textures.cpp>
 #include <imgui_extension.cpp>
-
-#define STB_IMAGE_IMPLEMENTATION
-#include <stb_image.h>
-
-int gl_to_stb_channels(GLenum GLChannels) {
-	switch (GLChannels) {
-	case GL_RED: return STBI_grey;
-	case GL_RG: return STBI_grey_alpha;
-	case GL_RGB: return STBI_rgb;
-	case GL_RGBA: return STBI_rgb_alpha;
-	case GL_RED_INTEGER: return STBI_grey;
-	case GL_RG_INTEGER: return STBI_grey_alpha;
-	case GL_RGB_INTEGER: return STBI_rgb;
-	case GL_RGBA_INTEGER: return STBI_rgb_alpha;
-	default: return 0;
-	}
-}
+#include <image.cpp>
 
 struct SpriteCursor {
 	rtf32 uv_rect;
@@ -40,17 +24,8 @@ bool EditorWidget(const cstr label, SpriteCursor& data) {
 constexpr SpriteCursor null_sprite = { { v2f32(0), v2f32(0) }, 0 };
 constexpr SpriteCursor full_texture(u32 index) { return { { v2f32(0), v2f32(1) }, index }; }
 
-tuple<SrcFormat, v2u32, Array<u8>> load_image(const cstr path) {
-	int width, height, channels = 0;
-	auto* img = stbi_load(path, &width, &height, &channels, 0);
-	printf("Loading image %s:%ix%i-%i\n", path, width, height, channels);
-	if (img == null)
-		return fail_ret(stbi_failure_reason(), tuple(SrcFormat{}, v2u32(0), Array<u8>{}));
-	return tuple(Formats<u8>[channels], v2u32(width, height), carray((u8*)img, width * height * channels));
-}
-
 TexBuffer load_texture(const cstr path, GPUFormat target_format = RGBA32F, TexType type = TX2D) {
-	auto [format, dimensions, data] = load_image(path); defer{ stbi_image_free(data.data()); };
+	auto [format, dimensions, data, _] = load_image(path); defer{ stbi_image_free(data.data()); };
 	if (dimensions.x * dimensions.y == 0)
 		return fail_ret("can't create texture without image", null_tex);
 	return create_texture(data, format, type, v4u32(dimensions, 1, 1), target_format);
@@ -67,7 +42,7 @@ inline rtf32 rect_in_rect(rtf32 reference, rtf32 rect) {
 }
 
 SpriteCursor load_into(const cstr path, TexBuffer& texture, v2u32 upper_left = v2u32(0), u32 page = 0) {
-	auto [format, dimensions, data] = load_image(path); defer{ stbi_image_free(data.data()); };
+	auto [format, dimensions, data, _] = load_image(path); defer{ stbi_image_free(data.data()); };
 	auto rect = rtu32{ upper_left, upper_left + dimensions };
 	if (data.size() > 0 &&
 		expect(texture.dimensions.x >= dimensions.x && texture.dimensions.y >= dimensions.y) &&

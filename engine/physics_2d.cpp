@@ -43,6 +43,8 @@ template<Shape2D::Type type> Shape2D make_shape_2d(auto&& init) {
 	return shape;
 }
 
+constexpr Shape2D null_shape = { Shape2D::None, {} };
+
 Array<v2f32> make_box_poly(Array<v2f32> buffer, v2f32 dimensions, v2f32 center) {
 	assert(buffer.size() >= 4);
 	buffer[0] = center + v2f32(-dimensions.x, dimensions.y) / 2.f;
@@ -437,11 +439,12 @@ usize write_polygon(FILE* file, Array<v2f32> polygon) {
 using Polygon = Array<v2f32>;
 
 enum WindingOrder : i8 {
-	Clockwise = 1,
-	AntiClockwise = -1
+	Unknown = 0,
+	Clockwise = -1,
+	AntiClockwise = 1
 };
 
-bool is_convex(Polygon poly) {
+inline bool is_convex(Polygon poly) {
 	if (poly.size() < 3)
 		return false;
 
@@ -465,6 +468,49 @@ bool is_convex(Polygon poly) {
 
 }
 
+inline f32 double_signed_area(Polygon poly) {
+	f32 signed_area = 0;
+	for (auto i : u64xrange{ 0, poly.size() }) {
+		v2f32 A = poly[i];
+		v2f32 B = poly[(i + 1) % poly.size()];
+		signed_area += A.x * B.y - B.x * A.y;
+	}
+	return signed_area;
+}
+
+inline f32 signed_area(Polygon poly) {
+	return double_signed_area(poly) / 2;
+}
+
+inline WindingOrder poly_wo(Polygon poly) {
+	return double_signed_area(poly) > 0 ? AntiClockwise : Clockwise;
+}
+
+inline bool convex_at(Polygon poly, i64 i, WindingOrder wo = Clockwise) {
+	using namespace glm;
+	i64 n = poly.size();
+	v2f32 verts[] = {
+		poly[modidx(i - 1, poly.size())],
+		poly[modidx(i, poly.size())],
+		poly[modidx(i + 1, poly.size())]
+	};
+	v2f32 edges[] = { verts[1] - verts[0], verts[2] - verts[1] };
+	return WindingOrder(u8(sign(cross(v3f32(edges[0], 0), v3f32(edges[1], 0)).z))) != -wo;
+}
+
+inline bool is_convex(Polygon poly, WindingOrder wo) {
+	if (wo == Unknown)
+		return is_convex(poly);
+
+	using namespace glm;
+	if (poly.size() < 3)
+		return false;
+
+	for (auto i : u64xrange{ 0, poly.size() }) if (!convex_at(poly, i, wo))
+		return false;
+	return true;
+}
+
 bool intersect_poly_poly(Array<v2f32> p1, Array<v2f32> p2) {
 	auto s1 = make_shape_2d<Shape2D::Polygon>(p1);
 	auto s2 = make_shape_2d<Shape2D::Polygon>(p2);
@@ -474,63 +520,72 @@ bool intersect_poly_poly(Array<v2f32> p1, Array<v2f32> p2) {
 	return i;
 }
 
-tuple<Array<Polygon>, Array<v2f32>> decompose_concave_poly(Polygon polygon, Alloc allocator = std_allocator) {
+//*from https://mathworld.wolfram.com/TriangleInterior.html#:~:text=The%20simplest%20way%20to%20determine,it%20lies%20outside%20the%20triangle.
+bool intersect_tri_point(Polygon triangle, v2f32 point) {
+	using namespace glm;
+	auto det = [](v2f64 u, v2f64 v) -> f64 { return u.x * v.y - u.y * v.x; };
 
-	if (polygon.size() < 4) {
+	v2f64 v = point;
+	v2f64 v0 = v2f64(triangle[0]);
+	v2f64 v1 = v2f64(triangle[1]) - v0;
+	v2f64 v2 = v2f64(triangle[2]) - v0;
+
+	f64 a = +(det(v, v2) - det(v0, v2)) / det(v1, v2);
+	f64 b = -(det(v, v1) - det(v0, v1)) / det(v1, v2);
+
+	return (a >= 0.f) && (b >= 0.f) && (a + b <= 1.f);
+}
+
+//* mostly from https://www.youtube.com/watch?v=QAdfkylpYwc&t=265s&ab_channel=Two-BitCoding
+tuple<Array<Polygon>, Array<v2f32>> ear_clip(Polygon polygon, Alloc allocator = std_allocator) {
+
+	if (polygon.size() < 4 || is_convex(polygon)) {
 		auto p = duplicate_array(allocator, polygon);
 		auto dec = alloc_array<Polygon>(allocator, 1);
 		dec[0] = p;
 		return { dec, p };
 	}
 
-	List<v2f32> vertices = { alloc_array<v2f32>(allocator, polygon.size()), 0 };
-	List<u64range> sub_poly_indices = { alloc_array<u64range>(allocator, polygon.size() - 2), 0 }; defer{ dealloc_array(allocator, sub_poly_indices.capacity); }; // exclusive ranges
-	u64 poly_start = 0;
+	auto scratch = create_virtual_arena(5000000); defer{ destroy_virtual_arena(scratch); };//TODO replace with thread local arena scheme
 
-	auto to_decompose = List{ alloc_array<u64range>(allocator, polygon.size()), 0 }; // inclusive ranges
-	to_decompose.push(array_indices(polygon));
+	auto wo = poly_wo(polygon);
+	auto remaining = List{ duplicate_array(as_v_alloc(scratch), polygon), polygon.size() };
+	auto poly_verts = List{ alloc_array<v2f32>(allocator, (polygon.size() - 2) * 3), 0 };
+	auto polys = List{ alloc_array<Polygon>(allocator, polygon.size() - 2), 0 };
 
-	while (to_decompose.current > 0) {
-		assert(sub_poly_indices.current < polygon.size());
-		auto poly = to_decompose.pop();
-		u64range ear_poly = { 0, 0 }; // inclusive range
-		for (auto i : u64xrange{ poly.min, poly.max + 1 }) {
-			auto index = i % polygon.size();
-			vertices.push_growing(allocator, polygon[index]);
-			u64range leftover = { i + 1, poly.max };
+	struct Triangle { v2f32 points[3]; };
 
-			//* Need to copy from polygon because the indices we have need to be wrapped around with % size, and we need an actual Array<v2f32> out of it
-			v2f32 leftover_vertices[leftover.size() + 1];
-			auto leftover_poly = List{ carray(leftover_vertices, leftover.size() + 1), 0 };
-			for (auto j : u64xrange{ leftover.min, leftover.max + 1 })
-				leftover_poly.push(polygon[j % polygon.size()]);
-
-			auto current_poly = vertices.allocated().subspan(poly_start, vertices.current - poly_start);
-			if (current_poly.size() < 3) continue;
-			if (!is_convex(current_poly) || intersect_poly_poly(current_poly, leftover_poly.allocated())) {//* breaks convex -> start ear poly
-				vertices.pop();
-				if (ear_poly.min == ear_poly.max)
-					ear_poly.min = i - 1;
-				ear_poly.max = i + 1;
-			} else if (ear_poly.min != ear_poly.max) {// *finished ear polygon
-				to_decompose.push_growing(allocator, ear_poly);
-				assert(to_decompose.allocated().back().size() + 1 > 2);
-				ear_poly = { 0, 0 };
-			}
+	auto angle_triangle = (
+		[&](i64 i) -> Triangle {
+			return { {
+				remaining.allocated()[modidx(i - 1, remaining.current)],
+				remaining.allocated()[modidx(i, remaining.current)],
+				remaining.allocated()[modidx(i + 1, remaining.current)]
+			} };
 		}
-		if (ear_poly.min != ear_poly.max)// *finished ear polygon
-			to_decompose.push_growing(allocator, ear_poly);
-		sub_poly_indices.push_growing(allocator, { poly_start, vertices.current });
-		poly_start = vertices.current;
-	}
+	);
 
-	//* Build the polygon array from the indices ranges
-	//* Need this index & rebuild system because when vertices grows it would invalidate Array<v2f32>s referencing its content
-	vertices.shrink_to_content(allocator);
-	auto sub_polys = map(allocator, sub_poly_indices.allocated(), [&](u64range r) { return vertices.allocated().subspan(r.min, r.max - r.min); });
-	for (auto p : sub_polys)
-		assert(is_convex(p));
-	return { sub_polys, vertices.allocated() };
+	auto is_ear = (
+		[&](v2f32 corner, i64 i) -> bool {
+			auto tri = angle_triangle(i);
+			if (!convex_at(remaining.allocated(), i, wo))
+				return false;
+			//* if there's a point of the remaining polygon that isn't part of the triangle yet still intersects with it
+			for (auto v : remaining.allocated()) if (linear_search(larray(tri.points), v) < 0 && intersect_tri_point(larray(tri.points), v))
+				return false;
+			return true;
+		}
+	);
+
+	while (remaining.current > 3 && !is_convex(remaining.allocated(), wo)) {
+		auto ear = linear_search_idx(remaining.allocated(), is_ear);
+		assert(ear >= 0);
+		auto tri = angle_triangle(ear);
+		polys.push(poly_verts.push_range(larray(tri.points)));
+		remaining.remove_ordered(ear);
+	}
+	polys.push(poly_verts.push_range(remaining.allocated()));
+	return { polys.allocated(), poly_verts.allocated() };
 }
 
 #include <system_editor.cpp>
@@ -665,7 +720,7 @@ struct Physics2D {
 		auto heuristic_collision_count = collisions.size() * 2;
 		collisions = {};
 		reset_virtual_arena(physics_scratch);
-		tpu = average({tpu, f32(iterations)});
+		tpu = average({ tpu, f32(iterations) });
 		if (iterations == 0)
 			return {};
 		auto collisions_acc = List{ alloc_array<Collision2D>(as_v_alloc(physics_scratch), heuristic_collision_count), 0 };
@@ -676,7 +731,7 @@ struct Physics2D {
 				rb.spacial->velocity.translation += gravity * dt;
 			for (auto s : ents)
 				euler_integrate(*s, dt);
-			last_tick_collisions =  collisions_acc.push_range_growing(as_v_alloc(physics_scratch), simulate_collisions(as_v_alloc(physics_scratch), rbs));
+			last_tick_collisions = collisions_acc.push_range_growing(as_v_alloc(physics_scratch), simulate_collisions(as_v_alloc(physics_scratch), rbs));
 		}
 		collisions = collisions_acc.allocated();
 		return last_tick_collisions;

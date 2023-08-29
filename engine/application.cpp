@@ -85,9 +85,9 @@ bool init_ogl(App& app, bool debug = true) {
 	}
 
 	GL_GUARD(glViewport(0, 0, app.pixel_dimensions.x, app.pixel_dimensions.y));
-	GL_GUARD(glEnable(GL_CULL_FACE));
-	// GL_GUARD(glDisable(GL_CULL_FACE));
-	GL_GUARD(glCullFace(GL_BACK));
+	// GL_GUARD(glEnable(GL_CULL_FACE));
+	GL_GUARD(glDisable(GL_CULL_FACE));
+	// GL_GUARD(glCullFace(GL_BACK));
 	// GL_GUARD(glCullFace(GL_FRONT));
 	GL_GUARD(glEnable(GL_DEPTH_TEST));
 	GL_GUARD(glDepthFunc(GL_LEQUAL));

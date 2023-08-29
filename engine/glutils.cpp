@@ -4,6 +4,7 @@
 #include <blblstd.hpp>
 #include <cstdio>
 #include <optional>
+#include <math.cpp>
 #include <GLFW/glfw3.h> // Will drag system OpenGL headers
 
 #define serialise_macro(d) lstr(#d)

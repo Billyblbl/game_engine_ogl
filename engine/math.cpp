@@ -81,6 +81,7 @@ template<typename P> struct reg_polytope {
 	P max;
 	template<typename OP> operator reg_polytope<OP>() { return { OP(min), OP(max) }; }
 	Segment<P> diagonal() { return { min, max }; }
+	bool contain(P p) { return glm::all(glm::lessThan(p, max)) && glm::all(glm::lessThan(min, p)); }
 };
 
 template<typename P> auto width(reg_polytope<P> p) { return p.max.x - p.min.x; }
@@ -177,5 +178,44 @@ using tsi8 = reg_polytope<v4i8>;
 using tsi16 = reg_polytope<v4i16>;
 using tsi32 = reg_polytope<v4i32>;
 using tsi64 = reg_polytope<v4i64>;
+
+template<typename V> struct grid_iterator {
+	V dimensions;
+	V current;
+
+	auto& operator++() {
+		for (auto i : u64xrange{ 0 , dimensions.length() }) {
+			if (++current[i] < dimensions[i])
+				return *this;
+			else if (i < dimensions.length() - 1)
+				current[i] = 0;
+			else {
+				current = dimensions;
+				return *this;
+			}
+		}
+		return *this;
+	}
+
+	auto operator*() { return current; };
+	bool operator!=(grid_iterator<V> rhs) { return current != rhs.current; }
+};
+
+template<typename V> using grid_range = it_range<grid_iterator<V>>;
+
+using r2u32 = grid_range<v2u32>;
+using r2u64 = grid_range<v2u64>;
+
+using r2i32 = grid_range<v2i32>;
+using r2i64 = grid_range<v2i64>;
+
+i64 modidx(i64 index, i64 size) { return ((index % size) + size) % size; }
+
+auto range2(v2u64 dimensions) {
+	return r2u64{
+		grid_iterator<v2u64>{ dimensions, v2u64(0) },
+		grid_iterator<v2u64>{ dimensions, dimensions },
+	};
+}
 
 #endif

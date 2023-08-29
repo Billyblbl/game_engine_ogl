@@ -578,7 +578,8 @@ tuple<Array<Polygon>, Array<v2f32>> ear_clip(Polygon polygon, Alloc allocator = 
 	);
 
 	while (remaining.current > 3 && !is_convex(remaining.allocated(), wo)) {
-		auto ear = linear_search_idx(remaining.allocated(), is_ear);
+		auto reflex = linear_search_idx(remaining.allocated(), [&](v2f32, i64 i) { return !convex_at(remaining.allocated(), i, wo); });
+		auto ear = linear_search_idx(remaining.allocated(), is_ear, reflex + remaining.current - 1);
 		assert(ear >= 0);
 		auto tri = angle_triangle(ear);
 		polys.push(poly_verts.push_range(larray(tri.points)));

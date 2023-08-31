@@ -156,7 +156,7 @@ struct PlaygroundScene {
 			ent.body.inverse_mass = 1.f;
 			ent.body.restitution = .3f;
 			ent.body.friction = .8f;
-			ent.shape = generate_shape(std_allocator, load_image("./test_shape_texture_concave.png"), [](Array<const byte> pixel_mem) { return cast<v4u8>(pixel_mem)[0].a > 128; });
+			ent.shape = generate_shape(std_allocator, load_image("./test_shape_texture_all_pieces.png"), [](Array<const byte> pixel_mem) { return cast<v4u8>(pixel_mem)[0].a > 128; });
 		}
 
 		{// misc scene content
@@ -386,16 +386,17 @@ struct PlaygroundScene {
 				}
 			}
 
-			sync(ph.debug_draw.render_info, { trs_2d(_test_outline_transform_decomposed), v4f32(1, 1, 1, 1) });
-			if (_segments) {
-				for (auto _test_outline_poly_seg : _outline_segments) {
+			if (_segments) for (auto _segments : _outline_segments.allocated()) {
+				sync(ph.debug_draw.render_info, { trs_2d(_test_outline_transform_decomposed), v4f32(1, 1, 1, 1) });
+				for (auto _test_outline_poly_seg : _segments) {
 					ph.debug_draw.draw_line({ _test_outline_poly_seg.A, _test_outline_poly_seg.B }, ph.view_projection_matrix, false);
 				}
 				sync(ph.debug_draw.render_info, { trs_2d(_test_outline_transform_decomposed), v4f32(0, 1, 0, 1) });
-				for (auto _test_outline_poly_seg : _outline_segments) {
+				for (auto _test_outline_poly_seg : _segments) {
 					ph.debug_draw.draw_line({ _test_outline_poly_seg.A, (_test_outline_poly_seg.A + _test_outline_poly_seg.B) / 2.f }, ph.view_projection_matrix, false);
 				}
 			}
+			sync(ph.debug_draw.render_info, { trs_2d(_test_outline_transform_decomposed), v4f32(1, 1, 1, 1) });
 
 			if (_welded) for (auto i : u64xrange{ 0, _contour_welded.size() }) {
 				if (i == 0)
@@ -432,8 +433,8 @@ struct PlaygroundScene {
 				EditorWidget("Decomp index", _decomp_index);
 				EditorWidget("segments", _segments);
 				EditorWidget("welded", _welded);
-				EditorWidget("segments list", _outline_segments);
-				EditorWidget("welded poly", _contour_welded);
+				// EditorWidget("segments list", _outline_segments);
+				// EditorWidget("welded poly", _contour_welded);
 				ph.editor_window(physics);
 			} end_editor();
 		}

@@ -85,7 +85,8 @@ u8 piece_mask(bool* markings, v2u64 dimensions, v2i32 cell, u8 nb_mask) {
 	return mask;
 }
 
-Array<Segment<v2f32>> _outline_segments;
+Array<Segment<v2f32>> _outline_segments_last;
+List<Array<Segment<v2f32>>> _outline_segments;
 
 Array<v2f32> decimate(Alloc allocator, Array<v2f32> poly) {
 	auto pruned = List{ duplicate_array(allocator, poly), poly.size() };
@@ -103,7 +104,7 @@ Array<Segment<v2f32>> create_pieces_ms(Alloc allocator, bool* markings, v2u64 di
 	v2i32 pieces_offsets[] = { v2i32(0), v2i32(1, 0), v2i32(0, 1), v2i32(1) };
 
 	bool secondary_markings[dimensions.y + 1][dimensions.x + 1];
-	auto segments = List{ alloc_array<Segment<v2f32>>(allocator, pixels.size() * 4), 0 };
+	auto segments = List{ alloc_array<Segment<v2f32>>(allocator, pixels.size() * 4 * 2), 0 };
 
 	// TODO test that ALL pieces are properly oriented
 	auto create_piece_geometry = (
@@ -124,7 +125,7 @@ Array<Segment<v2f32>> create_pieces_ms(Alloc allocator, bool* markings, v2u64 di
 				{ v2f32(.5f, 1), v2f32(1, .5f) }, { v2f32(.5f, 0), v2f32(0, .5f) }, //10
 				{ v2f32(.5f, 1), v2f32(1, .5f) }, //11
 
-				{ v2f32(0, .5f), v2f32(1, .5f) }, //12
+				{ v2f32(1, .5f), v2f32(0, .5f) }, //12 { v2f32(0, .5f), v2f32(1, .5f) }
 				{ v2f32(1, .5f), v2f32(.5f, 0) }, //13
 				{ v2f32(.5f, 0), v2f32(0, .5f) }, //14
 				//14
@@ -151,7 +152,7 @@ Array<Segment<v2f32>> create_pieces_ms(Alloc allocator, bool* markings, v2u64 di
 		segments.push_range(create_piece_geometry(piece, samples));
 	}
 
-	_outline_segments = duplicate_array(std_allocator, segments.allocated());
+	_outline_segments_last = _outline_segments.push_growing(std_allocator, duplicate_array(std_allocator, segments.allocated()));
 	return segments.shrink_to_content(allocator);
 }
 
@@ -202,7 +203,7 @@ Shape2D generate_shape(Alloc allocator, const Image& source, auto is_collider) {
 
 	for (auto pixel : range2(source.dimensions)) {
 		if (!markings[pixel.y][pixel.x] && is_collider(source[v2u64(pixel)])) {
-			auto outline_pixels = flood_outline(as_v_alloc(scratch), &markings[0][0], pixel, source.dimensions, flood_filter, false);
+			auto outline_pixels = flood_outline(as_v_alloc(scratch), &markings[0][0], pixel, source.dimensions, flood_filter);
 			printf("Marking used pixels\n");
 			for (auto coord : outline_pixels)
 				markings[coord.y][coord.x] = true;

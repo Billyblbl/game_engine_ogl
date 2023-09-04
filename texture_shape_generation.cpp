@@ -35,12 +35,12 @@ Image& flood_fill(
 	return dest;
 }
 
-Array<v2i32> flood_outline(Alloc allocator, bool* markings, v2i32 start, v2u64 dimensions, auto mask, bool corner = true) {
+Array<v2i32> flood_outline(Alloc allocator, auto markings_view, v2i32 start, v2u64 dimensions, auto mask, bool corner = true) {
 	auto size = dimensions.x * dimensions.y;
 	List<v2i32> outline = { alloc_array<v2i32>(allocator, size), 0 };
 	List<v2i32> to_fill = { alloc_array<v2i32>(allocator, size), 0 };
 	to_fill.push(start);
-	markings[start.x + start.y * dimensions.x] = true;
+	markings_view(start) = true;
 
 	while (to_fill.current > 0) {
 		auto coord = to_fill.pop();
@@ -48,9 +48,9 @@ Array<v2i32> flood_outline(Alloc allocator, bool* markings, v2i32 start, v2u64 d
 		for (v2i32 nb : larray(grid_neigbhours).subspan(0, corner ? 8 : 4)) {
 			auto px = coord + nb;
 			if (mask(px)) {
-				if (!markings[px.x + px.y * dimensions.x]) {
+				if (!markings_view(px)) {
 					to_fill.push(px);
-					markings[px.x + px.y * dimensions.x] = true;
+					markings_view(px) = true;
 				}
 			} else
 				is_outline = true;
@@ -85,9 +85,6 @@ u8 piece_mask(bool* markings, v2u64 dimensions, v2i32 cell, u8 nb_mask) {
 	return mask;
 }
 
-Array<Segment<v2f32>> _outline_segments_last;
-List<Array<Segment<v2f32>>> _outline_segments;
-
 Array<v2f32> decimate(Alloc allocator, Array<v2f32> poly) {
 	auto pruned = List{ duplicate_array(allocator, poly), poly.size() };
 	i64 idx = 0;
@@ -97,16 +94,14 @@ Array<v2f32> decimate(Alloc allocator, Array<v2f32> poly) {
 	return pruned.shrink_to_content(allocator);
 }
 
-Array<Segment<v2f32>> create_pieces_ms(Alloc allocator, bool* markings, v2u64 dimensions, Array<v2i32> pixels) {
-
+//* selective marching squares
+Array<Segment<v2f32>> marchsq_contour_segments(Alloc allocator, v2u64 dimensions, Array<v2i32> pixels, auto sampler) {
 	auto scratch = create_virtual_arena(5000000); defer{ destroy_virtual_arena(scratch); };//TODO replace with thread local arena scheme
 
 	v2i32 pieces_offsets[] = { v2i32(0), v2i32(1, 0), v2i32(0, 1), v2i32(1) };
-
 	bool secondary_markings[dimensions.y + 1][dimensions.x + 1];
 	auto segments = List{ alloc_array<Segment<v2f32>>(allocator, pixels.size() * 4 * 2), 0 };
 
-	// TODO test that ALL pieces are properly oriented
 	auto create_piece_geometry = (
 		[&](v2i32 piece, u8 samples) -> Array<const Segment<v2f32>> {
 			static const Segment<v2f32> sgmts[] = {
@@ -125,7 +120,7 @@ Array<Segment<v2f32>> create_pieces_ms(Alloc allocator, bool* markings, v2u64 di
 				{ v2f32(.5f, 1), v2f32(1, .5f) }, { v2f32(.5f, 0), v2f32(0, .5f) }, //10
 				{ v2f32(.5f, 1), v2f32(1, .5f) }, //11
 
-				{ v2f32(1, .5f), v2f32(0, .5f) }, //12 { v2f32(0, .5f), v2f32(1, .5f) }
+				{ v2f32(1, .5f), v2f32(0, .5f) }, //12
 				{ v2f32(1, .5f), v2f32(.5f, 0) }, //13
 				{ v2f32(.5f, 0), v2f32(0, .5f) }, //14
 				//14
@@ -148,11 +143,9 @@ Array<Segment<v2f32>> create_pieces_ms(Alloc allocator, bool* markings, v2u64 di
 		v2i32 sample_targets[] = { piece - v2i32(1), piece - v2i32(0, 1), piece, piece - v2i32(1, 0) };
 		u8 samples = 0;
 		for (auto i : u32xrange{ 0, array_size(sample_targets) })
-			samples |= markings[sample_targets[i].x + sample_targets[i].y * dimensions.x] ? 1 << i : 0;
+			samples |= sampler(sample_targets[i]) ? 1 << i : 0;
 		segments.push_range(create_piece_geometry(piece, samples));
 	}
-
-	_outline_segments_last = _outline_segments.push_growing(std_allocator, duplicate_array(std_allocator, segments.allocated()));
 	return segments.shrink_to_content(allocator);
 }
 
@@ -164,8 +157,12 @@ Array<v2f32> weld_segments(Alloc allocator, Array<Segment<v2f32>> pieces) {
 		i64 index = 0;
 		if (i > 0)
 			index = best_fit_search(input.allocated(), [&](const Segment<v2f32>& piece) { return -glm::distance(piece.A, outline.allocated().back()); });
+#if 1
+		assert(index >= 0);
+#else
 		if (index < 0)
 			return outline.allocated();
+#endif
 		outline.push(input.allocated()[index].B);
 		input.swap_out(index);
 	}
@@ -175,68 +172,47 @@ Array<v2f32> weld_segments(Alloc allocator, Array<Segment<v2f32>> pieces) {
 #define for2(i, r) for (auto y : u32xrange{ r.min.y, r.max.y } ) for (auto x : u32xrange { r.min.x, r.max.x}) if (i = v2u32(x, y); true)
 // for2(v2u32 pixel, (rtu32{ v2u32(0), source.dimensions })) if (free_spot(source[v2i32(x, y)]) && is_collider(source[v2i32(x, y)])) {
 
-Polygon _test_outline;
-Polygon _contour_welded;
+Array<Array<v2f32>> outline_polygons(Alloc allocator, const Image& source, rtu64 clip, const m3x3f32& transform, auto is_collider, u64 expected_poly_count = 8) {
+	auto clip_dims = dims_p2(clip);
+	bool markings[clip_dims.y][clip_dims.x];
+	memset(markings, 0, clip_dims.y * clip_dims.x);
+	auto sample_markings = [marks = &markings[0][0], &clip_dims](v2i32 coord)->bool& { return marks[coord.y * clip_dims.x + coord.x]; };
+	auto flood_filter = [&](v2i64 coord) { return clip.contain(v2i64(clip.min) + coord) && is_collider(source[v2i64(clip.min) + coord]); };
 
-Polygon _test_outlines_decomposed_buff[100000];
-List<Polygon> _test_outlines_decomposed = { larray(_test_outlines_decomposed_buff), 0 };
+	auto scratch = create_virtual_arena(5000000); defer{ destroy_virtual_arena(scratch); }; //TODO replace with thread local storage scratch
+	auto polygons = List{ alloc_array<Polygon>(allocator, expected_poly_count), 0 };
 
-//* completely untested
-//TODO test
-Shape2D generate_shape(Alloc allocator, const Image& source, auto is_collider) {
-	printf("Generating shape from image\n");
-	printf("Format : { type : %s, channels %s, channel count %u, channel size %u }\n", GLtoString(source.format.type).data(), GLtoString(source.format.type).data(), source.format.channel_count, source.format.channel_size);
-	printf("Dimensions : (%f,%f)\n", source.dimensions.x, source.dimensions.y);
-	printf("Pixel size : %lu\n", source.pixel_size);
-
-	//TODO replace with thread local storage scratch
-	auto scratch = create_virtual_arena(5000000); defer{ destroy_virtual_arena(scratch); };
-
-	bool markings[source.dimensions.x][source.dimensions.y];
-	auto size = source.dimensions.x * source.dimensions.y;
-	memset(markings, 0, size);
-
-	auto polygons = List{ alloc_array<Polygon>(as_v_alloc(scratch), 100), 0 };
-	u64 vertex_count = 0;
-
-	auto flood_filter = [&](v2i32 coord) { return inside(source.dimensions, coord) && is_collider(source[v2u64(coord)]); };
-
-	for (auto pixel : range2(source.dimensions)) {
-		if (!markings[pixel.y][pixel.x] && is_collider(source[v2u64(pixel)])) {
-			auto outline_pixels = flood_outline(as_v_alloc(scratch), &markings[0][0], pixel, source.dimensions, flood_filter);
-			printf("Marking used pixels\n");
-			for (auto coord : outline_pixels)
-				markings[coord.y][coord.x] = true;
-
-			printf("Creating marching squares contour pieces\n");
-			//TODO add target rect sourced transformation
-			auto pieces = create_pieces_ms(as_v_alloc(scratch), &markings[0][0], source.dimensions, outline_pixels);
-			printf("Welding contour pieces\n");
-			auto contour = weld_segments(as_v_alloc(scratch), pieces);
-			_contour_welded = duplicate_array(std_allocator, contour);
-			printf("Pruning contour vertices (%lu)\n", contour.size());
-			auto pruned = decimate(as_v_alloc(scratch), contour);
-			printf("Ear clipping polygon (%lu)\n", pruned.size());
-			auto [sub_polys, vertices] = ear_clip(pruned, as_v_alloc(scratch));
-			printf("Ear clipping complete : %lu polygons, %lu vertices\n", sub_polys.size(), vertices.size());
-
-			_test_outlines_decomposed.push_range(map(as_v_alloc(scratch), sub_polys, [](Polygon poly) { return duplicate_array(std_allocator, poly); }));
-
-			vertex_count += vertices.size();
-			polygons.push_range_growing(as_v_alloc(scratch), sub_polys);
-		}
+	for (auto view_px : range2(clip_dims)) if (!sample_markings(view_px) && is_collider(source[clip.min + view_px])) {
+		auto outline_pixels = flood_outline(as_v_alloc(scratch), sample_markings, view_px, clip_dims, flood_filter);
+		for (auto coord : outline_pixels) markings[coord.y][coord.x] = true;
+		auto segments = marchsq_contour_segments(as_v_alloc(scratch), clip_dims, outline_pixels, sample_markings);
+		auto contour = weld_segments(as_v_alloc(scratch), segments);
+		auto pruned = decimate(as_v_alloc(scratch), contour);
+		auto transformed = map(allocator, pruned, [&](v2f32 p)->v2f32 { return v3f32(p, 1) * transform; });
+		polygons.push_growing(allocator, transformed);
 	}
-
-	if (polygons.current == 0)
-		return null_shape;
-
-	if (polygons.current == 1)
-		return make_shape_2d<Shape2D::Polygon>(duplicate_array(allocator, polygons.allocated()[0]));
-
-	auto vertices = List{ alloc_array<v2f32>(allocator, vertex_count), 0 };
-	auto shapes = map(allocator, polygons.allocated(), [&](Array<v2f32> poly) -> Shape2D { return make_shape_2d<Shape2D::Polygon>(vertices.push_range(poly)); });
-	return make_shape_2d<Shape2D::Concave>(shapes);
+	return polygons.allocated();
 }
 
+Shape2D create_concave_poly_shape(Alloc allocator, Polygon poly) {
+	static u64 i = 0;
+	printf("poly %llu : ", i++);
+	for (auto v : poly)
+		printf("(x: %f, y: %f)%s", v.x, v.y, (v == poly.back() ? "\n" : ", "));
+
+	auto [sub_polys, vertices] = ear_clip(allocator, poly);
+	//TODO check if all sub_polys are correctly accounted for, we have some missing vertices in some cases
+	//* inconsistent bug, no multithreading so shouldn't be a race condition, f32 inaccuracy between runs doing something ?
+	if (sub_polys.size() == 0)
+		return null_shape;
+	if (sub_polys.size() == 1)
+		return make_shape_2d<Shape2D::Polygon>(sub_polys.front());
+	return make_shape_2d<Shape2D::Concave>(map(allocator, sub_polys, [](Array<v2f32> poly) -> Shape2D { return make_shape_2d<Shape2D::Polygon>(poly); }));
+}
+
+Shape2D create_polyshape(Alloc allocator, Array<Polygon> polygons) {
+	//TODO check if all sub_polys are correctly accounted for, we have some missing vertices in some cases
+	return make_shape_2d<Shape2D::Concave>(map(allocator, polygons, [&](Array<v2f32> poly) -> Shape2D { return create_concave_poly_shape(allocator, poly); }));
+}
 
 #endif

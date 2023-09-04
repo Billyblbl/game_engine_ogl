@@ -156,7 +156,10 @@ struct PlaygroundScene {
 			ent.body.inverse_mass = 1.f;
 			ent.body.restitution = .3f;
 			ent.body.friction = .8f;
-			ent.shape = generate_shape(std_allocator, load_image("./test_shape_texture_all_pieces.png"), [](Array<const byte> pixel_mem) { return cast<v4u8>(pixel_mem)[0].a > 128; });
+			// ent.shape = generate_shape(std_allocator, load_image("./test_shape_texture_all_pieces.png"), [](Array<const byte> pixel_mem) { return cast<v4u8>(pixel_mem)[0].a > 128; });
+
+			auto img = load_image("./test_shape_texture_all_pieces.png"); defer { unload(img); };
+			ent.shape = create_polyshape(std_allocator, outline_polygons(std_allocator, img, {v2u64(0), img.dimensions}, m3x3f32(1), [](Array<const byte> pixel_mem) { return cast<v4u8>(pixel_mem)[0].a > 128; }));
 		}
 
 		{// misc scene content
@@ -164,7 +167,7 @@ struct PlaygroundScene {
 			static v2f32 test_polygon2[] = { v2f32(-1000, -1), v2f32(+1000, -1), v2f32(+1000, +1), v2f32(-1000, +1) };
 
 			static v2f32 test_polygon_concave[] = { v2f32(-1, -1), v2f32(+1, -1), v2f32(+1, +1), v2f32(-1, +1), v2f32(-.5, 0) };
-			auto [test_poly_decomposed, test_poly_decomposed_vertices] = ear_clip(larray(test_polygon_concave));
+			auto [test_poly_decomposed, test_poly_decomposed_vertices] = ear_clip(std_allocator, larray(test_polygon_concave));
 			static List<Shape2D> test_poly_decomposed_shapes = { alloc_array<Shape2D>(std_allocator, test_poly_decomposed.size()), 0 };
 
 			test_poly_decomposed_shapes.current = 0;
@@ -354,60 +357,9 @@ struct PlaygroundScene {
 	void editor(tuple<SystemEditor, SystemEditor, Physics2D::Editor, SystemEditor, SystemEditor>& ed) {
 		auto& [rd, au, ph, ent, misc] = ed;
 		static auto debug_scratch = create_virtual_arena(1 << 19);
-		static Transform2D _test_outline_transform;
-		static Transform2D _test_outline_transform_decomposed;
-		static bool _decomp = false;
-		static bool _decomp_individual = false;
-		static bool _segments = false;
-		static bool _welded = false;
-		static u32 _decomp_index = 0;
 		if (ph.debug) {
 			auto vp = rendering.get_vp_matrix(pov.transform);
 			if (ph.colliders) ph.draw_shapes(gather(as_v_alloc(reset_virtual_arena(debug_scratch)), entities.allocated(), Entity::Collider, [&](Entity& ent) { return tuple(&ent.shape, &ent.space); }), vp);
-
-			sync(ph.debug_draw.render_info, { trs_2d(_test_outline_transform), v4f32(1, 1, 1, 1) });
-			for (auto i : u64xrange{ 0, _test_outline.size() })
-				ph.debug_draw.draw_line({ _test_outline[i], _test_outline[(i + 1) % _test_outline.size()] }, ph.view_projection_matrix, false);
-
-			wait_gpu();
-
-
-			sync(ph.debug_draw.render_info, { trs_2d(_test_outline_transform_decomposed), v4f32(1, 1, 1, 1) });
-			if (_decomp) for (auto _test_outline_poly : _test_outlines_decomposed.allocated()) {
-				for (auto i : u64xrange{ 0, _test_outline_poly.size() })
-					ph.debug_draw.draw_line({ _test_outline_poly[i], _test_outline_poly[(i + 1) % _test_outline_poly.size()] }, ph.view_projection_matrix, false);
-			}
-
-			sync(ph.debug_draw.render_info, { trs_2d(_test_outline_transform_decomposed), v4f32(1, 0, 1, 1) });
-			if (_decomp_individual) {
-				auto _test_outline_poly = _test_outlines_decomposed.allocated()[_decomp_index % _test_outlines_decomposed.current];
-				for (auto i : u64xrange{ 0, _test_outline_poly.size() }) {
-					ph.debug_draw.draw_line({ _test_outline_poly[i], _test_outline_poly[(i + 1) % _test_outline_poly.size()] }, ph.view_projection_matrix, false);
-				}
-			}
-
-			if (_segments) for (auto _segments : _outline_segments.allocated()) {
-				sync(ph.debug_draw.render_info, { trs_2d(_test_outline_transform_decomposed), v4f32(1, 1, 1, 1) });
-				for (auto _test_outline_poly_seg : _segments) {
-					ph.debug_draw.draw_line({ _test_outline_poly_seg.A, _test_outline_poly_seg.B }, ph.view_projection_matrix, false);
-				}
-				sync(ph.debug_draw.render_info, { trs_2d(_test_outline_transform_decomposed), v4f32(0, 1, 0, 1) });
-				for (auto _test_outline_poly_seg : _segments) {
-					ph.debug_draw.draw_line({ _test_outline_poly_seg.A, (_test_outline_poly_seg.A + _test_outline_poly_seg.B) / 2.f }, ph.view_projection_matrix, false);
-				}
-			}
-			sync(ph.debug_draw.render_info, { trs_2d(_test_outline_transform_decomposed), v4f32(1, 1, 1, 1) });
-
-			if (_welded) for (auto i : u64xrange{ 0, _contour_welded.size() }) {
-				if (i == 0)
-					sync(ph.debug_draw.render_info, { trs_2d(_test_outline_transform_decomposed), v4f32(1, 0, 0, 1) });
-				else if (i == _contour_welded.size() - 1)
-					sync(ph.debug_draw.render_info, { trs_2d(_test_outline_transform_decomposed), v4f32(1, 0, 1, 1) });
-				else if (i == 1)
-					sync(ph.debug_draw.render_info, { trs_2d(_test_outline_transform_decomposed), v4f32(1, 1, 1, 1) });
-				ph.debug_draw.draw_line({ _contour_welded[i], _contour_welded[(i + 1) % _contour_welded.size()] }, ph.view_projection_matrix, false);
-			}
-
 			if (ph.collisions) ph.draw_collisions(physics.collisions, vp, &Entity::space);
 		}
 
@@ -425,16 +377,6 @@ struct PlaygroundScene {
 
 		if (ph.show_window) {
 			if (begin_editor(ph)) {
-				EditorWidget("Test outline transform", _test_outline_transform);
-				EditorWidget("Test outline transform decomposed", _test_outline_transform_decomposed);
-				EditorWidget("Decomp", _decomp);
-				EditorWidget("Decomp individual", _decomp_individual);
-				ImGui::InputInt("Decomp index i", (i32*)&_decomp_index);
-				EditorWidget("Decomp index", _decomp_index);
-				EditorWidget("segments", _segments);
-				EditorWidget("welded", _welded);
-				// EditorWidget("segments list", _outline_segments);
-				// EditorWidget("welded poly", _contour_welded);
 				ph.editor_window(physics);
 			} end_editor();
 		}

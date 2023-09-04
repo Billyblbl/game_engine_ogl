@@ -313,18 +313,15 @@ bool EditorWidget(const cstr label, Contact2D& contact) {
 
 Array<Contact2D> intersect_concave(List<Contact2D>& intersections, const Shape2D& s1, const Shape2D& s2, const m4x4f32& t1, const m4x4f32& t2) {
 	using namespace glm;
-
 	auto start = intersections.current;
 
 	if (s1.type != Shape2D::Concave && s2.type != Shape2D::Concave) {
 		auto [collided, pen] = intersect_convex(support_function_of(s1, t1), support_function_of(s2, t2));
-
 		if (collided) {
 			auto offset_t1 = translate(t1, v3f32(-pen, 0));
 			auto [ctct1, ctct2] = contacts_segment(support_function_of(s1, offset_t1), support_function_of(s2, t2), normalize(pen));
 			auto av_contact = average({ ctct1, ctct2 });
 			v2f32 world_cmass[] = { t1 * v4f32(0, 0, 0, 1), t2 * v4f32(0, 0, 0, 1) };
-
 			intersections.push({ pen, { av_contact - world_cmass[0], av_contact - world_cmass[1] }, length(ctct2 - ctct1) });
 		}
 	} else {
@@ -332,7 +329,6 @@ Array<Contact2D> intersect_concave(List<Contact2D>& intersections, const Shape2D
 			for (auto& sub_shape2 : (s2.type == Shape2D::Concave) ? s2.composite : carray(&s2, 1))
 				intersect_concave(intersections, sub_shape1, sub_shape2, t1, t2);
 	}
-
 	return intersections.allocated().subspan(start);
 }
 
@@ -539,7 +535,7 @@ bool intersect_tri_point(Polygon triangle, v2f32 point) {
 }
 
 //* mostly from https://www.youtube.com/watch?v=QAdfkylpYwc&t=265s&ab_channel=Two-BitCoding
-tuple<Array<Polygon>, Array<v2f32>> ear_clip(Polygon polygon, Alloc allocator = std_allocator) {
+tuple<Array<Polygon>, Array<v2f32>> ear_clip(Alloc allocator, Polygon polygon) {
 
 	if (polygon.size() < 4 || is_convex(polygon)) {
 		auto p = duplicate_array(allocator, polygon);
@@ -552,8 +548,8 @@ tuple<Array<Polygon>, Array<v2f32>> ear_clip(Polygon polygon, Alloc allocator = 
 
 	auto wo = poly_wo(polygon);
 	auto remaining = List{ duplicate_array(as_v_alloc(scratch), polygon), polygon.size() };
-	auto poly_verts = List{ alloc_array<v2f32>(allocator, (polygon.size() - 2) * 3), 0 };
 	auto polys = List{ alloc_array<Polygon>(allocator, polygon.size() - 2), 0 };
+	auto poly_verts = List{ alloc_array<v2f32>(allocator, (polygon.size() - 2) * 3), 0 };
 
 	struct Triangle { v2f32 points[3]; };
 
@@ -561,7 +557,7 @@ tuple<Array<Polygon>, Array<v2f32>> ear_clip(Polygon polygon, Alloc allocator = 
 		[&](i64 i) -> Triangle {
 			return { {
 				remaining.allocated()[modidx(i - 1, remaining.current)],
-				remaining.allocated()[modidx(i, remaining.current)],
+				remaining.allocated()[modidx(i * 1, remaining.current)],
 				remaining.allocated()[modidx(i + 1, remaining.current)]
 			} };
 		}
@@ -588,7 +584,7 @@ tuple<Array<Polygon>, Array<v2f32>> ear_clip(Polygon polygon, Alloc allocator = 
 		remaining.remove_ordered(ear);
 	}
 	polys.push(poly_verts.push_range(remaining.allocated()));
-	return { polys.allocated(), poly_verts.allocated() };
+	return { polys.allocated(), poly_verts.shrink_to_content(allocator) };
 }
 
 #include <system_editor.cpp>
@@ -642,7 +638,7 @@ tuple<Transform2D, Transform2D> contact_response(
 	f32 static_friction
 ) {
 	using namespace glm;
-	auto normal = normalize(contact.penetration);
+	auto normal = length2(contact.penetration) > 0 ? normalize(contact.penetration) : v2f32(0);
 	auto contact_relative_vel = velocity_at_point(ents[1].spacial->velocity, contact.levers[1]) - velocity_at_point(ents[0].spacial->velocity, contact.levers[0]);
 	auto tangent = orthogonal_axis(normal) * sign(dot(orthogonal_axis(normal), contact_relative_vel));
 

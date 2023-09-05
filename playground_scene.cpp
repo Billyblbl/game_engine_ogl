@@ -98,6 +98,7 @@ struct PlaygroundScene {
 	List<Entity> entities;
 
 	AnimationGrid<rtf32, 2> anim;
+	AnimationGrid<Shape2D, 2> shape_anim;
 	Time::Clock clock;
 	EntityHandle player;
 
@@ -111,20 +112,20 @@ struct PlaygroundScene {
 
 		anim = load_animation_grid<rtf32, 2>(assets.test_character_anim_path, std_allocator);
 		clock = Time::start();
-		static v2f32 player_polygon[] = { v2f32(-1, -1) / 2.f, v2f32(+1, -1) / 2.f, v2f32(+1, +1) / 2.f, v2f32(-1, +1) / 2.f };
-		auto player_sprite = load_into(assets.test_character_spritesheet_path, rendering.atlas, v2u32(0), 0);
+
+		auto img = load_image(assets.test_character_spritesheet_path); defer{ unload(img); };
+		shape_anim = create_animated_shape(std_allocator, img, anim, [](Array<const byte> pixel_mem) { return cast<v4u8>(pixel_mem)[0].a > 128; }); //TODO free resource / make an arena for this resource ?
 		player = (
 			[&]() {
 				auto& ent = allocate_entity(entities, "player", Entity::Sprite | Entity::Rigidbody | Entity::Controllable | Entity::Sound);
 				ent.space = { identity_2d, null_transform_2d, null_transform_2d };
 				ent.space.transform.translation += v2f32(0);
-				ent.sprite = player_sprite;
 				ent.render_rect = { v2f32(1), 1 };
+				ent.sprite = load_into(img, rendering.atlas);
 				ent.body.inverse_inertia = 0.f;
 				ent.body.inverse_mass = 1.f;
 				ent.body.restitution = .5f;
 				ent.body.friction = .3f;
-				ent.shape = make_shape_2d<Shape2D::Circle>(v3f32(v2f32(0), .5f));
 				ent.ctrl = { 10, 100, 1, v2f32(0), 0 };
 				ent.audio_source = create_audio_source();
 				ent.audio_source.set<BUFFER>(buffer.id);
@@ -158,8 +159,8 @@ struct PlaygroundScene {
 			ent.body.friction = .8f;
 			// ent.shape = generate_shape(std_allocator, load_image("./test_shape_texture_all_pieces.png"), [](Array<const byte> pixel_mem) { return cast<v4u8>(pixel_mem)[0].a > 128; });
 
-			auto img = load_image("./test_shape_texture_all_pieces.png"); defer { unload(img); };
-			ent.shape = create_polyshape(std_allocator, outline_polygons(std_allocator, img, {v2u64(0), img.dimensions}, m3x3f32(1), [](Array<const byte> pixel_mem) { return cast<v4u8>(pixel_mem)[0].a > 128; }));
+			auto img = load_image("./test_shape_texture_all_pieces.png"); defer{ unload(img); };
+			ent.shape = create_polyshape(std_allocator, outline_polygons(std_allocator, img, { v2u64(0), img.dimensions }, m3x3f32(1), [](Array<const byte> pixel_mem) { return cast<v4u8>(pixel_mem)[0].a > 128; }));
 		}
 
 		{// misc scene content
@@ -323,8 +324,11 @@ struct PlaygroundScene {
 
 		if (player.valid()) {// player controller
 			player->content<Entity>().ctrl.input = controls::keyboard_plane(Input::WASD);
-			if (has_all(player->flags, Entity::Sprite))
-				player->content<Entity>().sprite.uv_rect = controls::animate(player->content<Entity>().ctrl, anim, clock.current);
+			if (has_all(player->flags, Entity::Sprite)) {
+				auto [uv_rect, shape] = controls::animate(player->content<Entity>().ctrl, anim, shape_anim, clock.current);
+				player->content<Entity>().sprite.uv_rect = uv_rect;
+				player->content<Entity>().shape = shape;
+			}
 		}
 
 		pov = (player.valid() ? player->content<Entity>().space : Spacial2D{ identity_2d, null_transform_2d, null_transform_2d });

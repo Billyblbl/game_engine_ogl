@@ -34,16 +34,18 @@ namespace controls {
 	};
 
 	// rtf32 animate(TopDownControl& ctrl, AnimationGrid<rtf32, 3>& animation, f32 time) { //TODO speed parameter
-	rtf32 animate(TopDownControl& ctrl, AnimationGrid<rtf32, 2>& animation, f32 time) {
+	tuple<rtf32, Shape2D> animate(TopDownControl& ctrl, const AnimationGrid<rtf32, 2>& animation, const AnimationGrid<Shape2D, 2>& shape_animation, f32 time) {
 		auto walking = length(ctrl.input) > 0.1f;
 		if (walking)
 			ctrl.look_angle = orientedAngle(v2f32(0, 1), ctrl.input);
-		return animate_character_spritesheet(animation.keyframes, v3u32(animation.dimensions, 1),
-			v3f32(
-				walking ? time * ctrl.speed / ctrl.walk_cycle_duration : 0,
-				ctrl.look_angle / (2 * pi<f32>()),
-				0 //TODO speed variation
-			)
+		auto coord = v3f32(
+			walking ? time * ctrl.speed / ctrl.walk_cycle_duration : 0,
+			ctrl.look_angle / (2 * pi<f32>()),
+			0 //TODO speed variation
+		);
+		return tuple(
+			animate_character_spritesheet(animation.keyframes, v3u32(animation.dimensions, 1), coord),
+			animate_grid(shape_animation.keyframes, v3u32(shape_animation.dimensions, 1), coord, AnimationConfig<3>(AnimRepeat, AnimRepeat, AnimClamp))
 		);
 	}
 

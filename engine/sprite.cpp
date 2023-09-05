@@ -52,6 +52,16 @@ SpriteCursor load_into(const cstr path, TexBuffer& texture, v2u32 upper_left = v
 		return {};
 }
 
+SpriteCursor load_into(const Image& img, TexBuffer& texture, v2u32 upper_left = v2u32(0), u32 page = 0) {
+	auto rect = rtu32{ upper_left, upper_left + img.dimensions };
+	if (img.data.size() > 0 &&
+		expect(texture.dimensions.x >= img.dimensions.x && texture.dimensions.y >= img.dimensions.y) &&
+		upload_texture_data(texture, cast<byte>(img.data), img.format, slice_to_area<2>(rect, page)))
+		return SpriteCursor{ ratio(rect, texture.dimensions), page };
+	else
+		return {};
+}
+
 using AtlasPage = List<rtu32>;
 using Atlas = Array<AtlasPage>;
 

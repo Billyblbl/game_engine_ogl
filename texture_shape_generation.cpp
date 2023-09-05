@@ -2,7 +2,7 @@
 # define GTEXTURE_SHAPE_GENERATION
 
 #include <blblstd.hpp>
-#include <physics_2d.cpp>
+#include <polygon.cpp>
 #include <sprite.cpp>
 #include <image.cpp>
 
@@ -100,6 +100,8 @@ Array<Segment<v2f32>> marchsq_contour_segments(Alloc allocator, v2u64 dimensions
 
 	v2i32 pieces_offsets[] = { v2i32(0), v2i32(1, 0), v2i32(0, 1), v2i32(1) };
 	bool secondary_markings[dimensions.y + 1][dimensions.x + 1];
+	memset(secondary_markings, 0, (dimensions.y + 1)* (dimensions.x + 1));
+
 	auto segments = List{ alloc_array<Segment<v2f32>>(allocator, pixels.size() * 4 * 2), 0 };
 
 	auto create_piece_geometry = (
@@ -154,9 +156,7 @@ Array<v2f32> weld_segments(Alloc allocator, Array<Segment<v2f32>> pieces) {
 	auto outline = List{ alloc_array<v2f32>(allocator, pieces.size()), 0 };
 
 	for (auto i : u64xrange{ 0, pieces.size() }) {
-		i64 index = 0;
-		if (i > 0)
-			index = best_fit_search(input.allocated(), [&](const Segment<v2f32>& piece) { return -glm::distance(piece.A, outline.allocated().back()); });
+		i64 index = (i > 0) ? best_fit_search(input.allocated(), [&](const Segment<v2f32>& piece) { return -glm::distance(piece.A, outline.allocated().back()); }) : 0;
 #if 1
 		assert(index >= 0);
 #else
@@ -192,27 +192,6 @@ Array<Array<v2f32>> outline_polygons(Alloc allocator, const Image& source, rtu64
 		polygons.push_growing(allocator, transformed);
 	}
 	return polygons.allocated();
-}
-
-Shape2D create_concave_poly_shape(Alloc allocator, Polygon poly) {
-	static u64 i = 0;
-	printf("poly %llu : ", i++);
-	for (auto v : poly)
-		printf("(x: %f, y: %f)%s", v.x, v.y, (v == poly.back() ? "\n" : ", "));
-
-	auto [sub_polys, vertices] = ear_clip(allocator, poly);
-	//TODO check if all sub_polys are correctly accounted for, we have some missing vertices in some cases
-	//* inconsistent bug, no multithreading so shouldn't be a race condition, f32 inaccuracy between runs doing something ?
-	if (sub_polys.size() == 0)
-		return null_shape;
-	if (sub_polys.size() == 1)
-		return make_shape_2d<Shape2D::Polygon>(sub_polys.front());
-	return make_shape_2d<Shape2D::Concave>(map(allocator, sub_polys, [](Array<v2f32> poly) -> Shape2D { return make_shape_2d<Shape2D::Polygon>(poly); }));
-}
-
-Shape2D create_polyshape(Alloc allocator, Array<Polygon> polygons) {
-	//TODO check if all sub_polys are correctly accounted for, we have some missing vertices in some cases
-	return make_shape_2d<Shape2D::Concave>(map(allocator, polygons, [&](Array<v2f32> poly) -> Shape2D { return create_concave_poly_shape(allocator, poly); }));
 }
 
 #endif

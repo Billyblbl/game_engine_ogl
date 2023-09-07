@@ -218,7 +218,7 @@ constexpr v4u8 RGBA_idx = v4u8(0, 1, 2, 3);
 inline auto channel_filter(u8 channel, u8 threshold = 128) { return [=](Array<const byte> pixel)->bool { return cast<u8>(pixel)[channel] > threshold; }; }
 inline auto alpha_filter(u8 threshold = 128) { return channel_filter(RGBA_idx.a, threshold); }
 inline auto bit_filter(u8 bit_index = 0) { return [=](Array<const byte> pixel) { return cast<u8>(pixel)[bit_index / 8] & (1 << (bit_index % 8)); }; }
-template<typename U> inline auto mask_filter(U mask) { return [=](Array<const byte> pixel){ return return (cast<U>(pixel)[0] & mask) == mask; }; }
+template<typename U> inline auto mask_filter(U mask) { return [=](Array<const byte> pixel){  return (cast<U>(pixel)[0] & mask) == mask; }; }
 
 #pragma endregion standard filters
 

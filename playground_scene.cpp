@@ -114,7 +114,7 @@ struct PlaygroundScene {
 		clock = Time::start();
 
 		auto img = load_image(assets.test_character_spritesheet_path); defer{ unload(img); };
-		shape_anim = create_animated_shape(std_allocator, img, anim, [](Array<const byte> pixel_mem) { return cast<v4u8>(pixel_mem)[0].a > 128; }); //TODO free resource / make an arena for this resource ?
+		shape_anim = create_animated_shape(std_allocator, img, anim, alpha_filter()); //TODO free resource / make an arena for this resource ?
 		player = (
 			[&]() {
 				auto& ent = allocate_entity(entities, "player", Entity::Sprite | Entity::Rigidbody | Entity::Controllable | Entity::Sound);
@@ -160,7 +160,7 @@ struct PlaygroundScene {
 			// ent.shape = generate_shape(std_allocator, load_image("./test_shape_texture_all_pieces.png"), [](Array<const byte> pixel_mem) { return cast<v4u8>(pixel_mem)[0].a > 128; });
 
 			auto img = load_image("./test_shape_texture_all_pieces.png"); defer{ unload(img); };
-			ent.shape = create_polyshape(std_allocator, outline_polygons(std_allocator, img, { v2u64(0), img.dimensions }, m3x3f32(1), [](Array<const byte> pixel_mem) { return cast<v4u8>(pixel_mem)[0].a > 128; }));
+			ent.shape = create_polyshape(std_allocator, outline_polygons(std_allocator, img, { v2u64(0), img.dimensions }, m3x3f32(1), alpha_filter()));
 		}
 
 		{// misc scene content

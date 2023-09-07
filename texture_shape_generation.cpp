@@ -203,15 +203,23 @@ Shape2D create_frame_shape(Alloc allocator, const Image& source, rtf32 clip, aut
 		v2u64(clip.max.x * source.dimensions.x, clip.max.y * source.dimensions.y)
 	};
 	auto dims = dims_p2(pixel_clip);
-	// auto transform = glm::translate(m3x3f32(1), -v2f32(.5f)) * glm::scale(m3x3f32(1), v2f32(1.f / dims.x, -1.f / dims.y));//TODO parameterises this, currently uses assumed render rect of 1x1 with origin at its center
-	// auto transform = glm::translate(glm::scale(m3x3f32(1), v2f32(1.f / dims.x, -1.f / dims.y)), -v2f32(10));//TODO parameterises this, currently uses assumed render rect of 1x1 with origin at its center
 	auto transform = glm::scale(glm::translate(m3x3f32(1), v2f32(-.5f, .5f)), v2f32(1.f / dims.x, -1.f / dims.y));//TODO parameterises this, currently uses assumed render rect of 1x1 with origin at its center
 	auto outlines = outline_polygons(allocator, source, pixel_clip, transform, is_collider);
 	return create_polyshape(allocator, outlines);
 }
 
-template<i32 D> AnimationGrid<Shape2D, D> create_animated_shape(Alloc allocator, const Image& source, AnimationGrid<rtf32, D> animation, auto is_collider) {
+template<i32 D> AnimationGrid<Shape2D, D> create_animated_shape(Alloc allocator, const Image& source, const AnimationGrid<rtf32, D>& animation, auto is_collider) {
 	return { map(allocator, animation.keyframes, [&](rtf32 clip) { return create_frame_shape(allocator, source, clip, is_collider); }), animation.dimensions };
 }
+
+#pragma region standard filters
+
+constexpr v4u8 RGBA_idx = v4u8(0, 1, 2, 3);
+inline auto channel_filter(u8 channel, u8 threshold = 128) { return [=](Array<const byte> pixel)->bool { return cast<u8>(pixel)[channel] > threshold; }; }
+inline auto alpha_filter(u8 threshold = 128) { return channel_filter(RGBA_idx.a, threshold); }
+inline auto bit_filter(u8 bit_index = 0) { return [=](Array<const byte> pixel) { return cast<u8>(pixel)[bit_index / 8] & (1 << (bit_index % 8)); }; }
+template<typename U> inline auto mask_filter(U mask) { return [=](Array<const byte> pixel){ return return (cast<U>(pixel)[0] & mask) == mask; }; }
+
+#pragma endregion standard filters
 
 #endif

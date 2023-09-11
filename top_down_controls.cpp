@@ -13,9 +13,6 @@ namespace controls {
 	// x = time
 	// y = angle
 	// z = speed
-	rtf32 animate_character_spritesheet(Array<const rtf32> keyframes, v3u32 dimensions, v3f32 coordinates) {
-		return animate_grid(keyframes, dimensions, coordinates, AnimationConfig<3>(AnimRepeat, AnimRepeat, AnimClamp));
-	}
 
 	constexpr auto VECTOR_LENGTH_THRESHOLD = 0.000001f;
 
@@ -31,22 +28,25 @@ namespace controls {
 		//states
 		v2f32 input;
 		f32 look_angle;
+		f32 velocity_mag;
 	};
 
-	// rtf32 animate(TopDownControl& ctrl, AnimationGrid<rtf32, 3>& animation, f32 time) { //TODO speed parameter
-	tuple<rtf32, Shape2D> animate(TopDownControl& ctrl, const AnimationGrid<rtf32, 2>& animation, const AnimationGrid<Shape2D, 2>& shape_animation, f32 time) {
-		auto walking = length(ctrl.input) > 0.1f;
+	v3f32 locomotion(TopDownControl& ctrl, f32 time) {
+		auto walking = length(ctrl.input) > 0.01f;
 		if (walking)
 			ctrl.look_angle = orientedAngle(v2f32(0, 1), ctrl.input);
-		auto coord = v3f32(
+		return v3f32(
 			walking ? time * ctrl.speed / ctrl.walk_cycle_duration : 0,
 			ctrl.look_angle / (2 * pi<f32>()),
-			0 //TODO speed variation
+			ctrl.speed > 0 ? ctrl.velocity_mag / ctrl.speed : 0
 		);
-		return tuple(
-			animate_character_spritesheet(animation.keyframes, v3u32(animation.dimensions, 1), coord),
-			animate_grid(shape_animation.keyframes, v3u32(shape_animation.dimensions, 1), coord, AnimationConfig<3>(AnimRepeat, AnimRepeat, AnimClamp))
-		);
+	}
+
+	void animate_character(TopDownControl& ctrl, SpriteCursor* sprite, Shape2D* shape, SpriteCursor spritesheet, AnimationGrid<rtu32, 3>* animation, AnimationGrid<Shape2D, 3>* shape_animation, f32 time) {
+		auto coord = locomotion(ctrl, time);
+		auto config = AnimationConfig<3>(AnimRepeat, AnimRepeat, AnimClamp);
+		if (sprite) *sprite = sub_sprite(spritesheet, animate(*animation, coord, config));
+		if (shape) *shape = animate(*shape_animation, coord, config);
 	}
 
 	v2f32 move_top_down(v2f32 velocity, v2f32 input, f32 speed, f32 accel, f32 time) {
@@ -56,6 +56,12 @@ namespace controls {
 		return velocity += effective_accel;
 	}
 
+	struct CharacterLocomotionAnimationData {
+		AnimationGrid<rtu32, 3> frames;
+		AnimationGrid<Shape2D, 3> shapes;
+		SpriteCursor spritesheet;
+	};
+
 }
 
 bool EditorWidget(const cstr label, controls::TopDownControl& data) {
@@ -64,6 +70,7 @@ bool EditorWidget(const cstr label, controls::TopDownControl& data) {
 		changed |= EditorWidget("speed", data.speed);
 		changed |= EditorWidget("accel", data.accel);
 		changed |= EditorWidget("walk cycke duration", data.walk_cycle_duration);
+		changed |= EditorWidget("current velocity", data.velocity_mag);
 		changed |= EditorWidget("input", data.input);
 		changed |= EditorWidget("look angle", data.look_angle);
 		ImGui::TreePop();

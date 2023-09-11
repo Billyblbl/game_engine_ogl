@@ -38,11 +38,11 @@ layout(std140, binding = 0) uniform Scene {
 #ifdef VERTEX_SHADER
 
 layout(location = 0) in vec2 position;
-layout(location = 1) in vec2 uv;
+layout(location = 1) in vec2 vert_uv;
 
 void main() {
 	gl_Position = view_matrix * instances[gl_InstanceID].matrix * vec4(position, instances[gl_InstanceID].dimensions.z, 1.0);
-	frag_uv = rect_to_world(instances[gl_InstanceID].uv_rect, uv);
+	frag_uv = rect_to_world(instances[gl_InstanceID].uv_rect, vert_uv);
 	instance = gl_InstanceID;
 }
 

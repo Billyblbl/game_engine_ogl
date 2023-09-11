@@ -197,19 +197,15 @@ Array<Array<v2f32>> outline_polygons(Alloc allocator, const Image& source, rtu64
 #include <shape_2d.cpp>
 #include <animation.cpp>
 
-Shape2D create_frame_shape(Alloc allocator, const Image& source, rtf32 clip, auto is_collider) {
-	rtu64 pixel_clip = {
-		v2u64(clip.min.x * source.dimensions.x, clip.min.y * source.dimensions.y),
-		v2u64(clip.max.x * source.dimensions.x, clip.max.y * source.dimensions.y)
-	};
-	auto dims = dims_p2(pixel_clip);
+Shape2D create_frame_shape(Alloc allocator, const Image& source, rtu32 clip, auto is_collider) {
+	auto dims = dims_p2(clip);
 	auto transform = glm::scale(glm::translate(m3x3f32(1), v2f32(-.5f, .5f)), v2f32(1.f / dims.x, -1.f / dims.y));//TODO parameterises this, currently uses assumed render rect of 1x1 with origin at its center
-	auto outlines = outline_polygons(allocator, source, pixel_clip, transform, is_collider);
+	auto outlines = outline_polygons(allocator, source, clip, transform, is_collider);
 	return create_polyshape(allocator, outlines);
 }
 
-template<i32 D> AnimationGrid<Shape2D, D> create_animated_shape(Alloc allocator, const Image& source, const AnimationGrid<rtf32, D>& animation, auto is_collider) {
-	return { map(allocator, animation.keyframes, [&](rtf32 clip) { return create_frame_shape(allocator, source, clip, is_collider); }), animation.dimensions };
+template<i32 D> AnimationGrid<Shape2D, D> create_animated_shape(Alloc allocator, const Image& source, const AnimationGrid<rtu32, D>& animation, auto is_collider) {
+	return { map(allocator, animation.keyframes, [&](rtu32 clip) { return create_frame_shape(allocator, source, clip, is_collider); }), animation.dimensions };
 }
 
 #pragma region standard filters

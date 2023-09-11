@@ -61,7 +61,8 @@ Segment<v2f32> support(const Shape2D& shape, v2f32 direction) {
 			supports[i] = support(shape.composite[i], direction);
 		return support_point_cloud(cast<v2f32>(carray(supports, shape.composite.size())), direction);
 	};
-	default: return fail_ret("Unimplemented support function", Segment<v2f32>{});
+	// default: return fail_ret("Unimplemented support function", Segment<v2f32>{});
+	default: assert(("Unimplemented support function", false));
 	}
 	return {};
 }

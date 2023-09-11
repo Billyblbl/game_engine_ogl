@@ -53,7 +53,7 @@ template<typename Keyframe, i32 D> AnimationGrid<Keyframe, D> load_animation_gri
 template<typename Keyframe, i32 D> void unload(AnimationGrid<Keyframe, D>& animation, Alloc allocator) {
 	dealloc_array(allocator, animation.keyframes);
 	animation.keyframes = {};
-	animation.dimensions = v2f32(0);
+	animation.dimensions = glm::vec<D, u32>(0);
 }
 
 // Index = ∑(i=0 to D-1)(coordinates[i] * ∏(j=i+1 to D-1)(dimensions[j]))
@@ -67,27 +67,29 @@ template<i32 D> u32 coord_to_index(glm::vec<D, u32> dimensions, glm::vec<D, u32>
 	return sum;
 }
 
-enum AnimationWrap {
-	AnimRepeat,
-	AnimClamp,
-	AnimMirror
-};
-
+enum AnimationWrap { AnimRepeat, AnimClamp, AnimMirror };
 template<i32 D> using AnimationConfig = glm::vec<D, AnimationWrap>;
 
-template<i32 D> glm::vec<D, f32> wrap(glm::vec<D, f32> coord, AnimationConfig<D> config) {
-	auto res = glm::vec<D, f32>(0);
-	for (auto i : u64xrange{ 0, D }) switch (config[i]) {
-	case AnimRepeat: res[i] = glm::mod(coord[i], 1.f); break;
-	case AnimClamp: res[i] = glm::clamp(coord[i], 0.f, 1.f); break;
-	case AnimMirror: break; //TODO implement mirror
+f32 wrap(f32 value, AnimationWrap w) {
+	using namespace glm;
+	switch (w) {
+	case AnimRepeat: return mod(value, 1.f);
+	case AnimClamp: return clamp(value, 0.f, 1.f);
+	case AnimMirror: return mod(value, 2.f) < 1.f ? mod(value, 1.f) : 1.f - mod(value, 1.f);
 	}
+	return 0;
+}
+
+template<i32 D> glm::vec<D, f32> wrap(glm::vec<D, f32> coord, AnimationConfig<D> config) {
+	using namespace glm;
+	auto res = vec<D, f32>(0);
+	for (auto i : u64xrange{ 0, D })
+		res[i] = wrap(coord[i], config[i]);
 	return res;
 }
 
-template<typename Keyframe, i32 D> Keyframe animate_grid(Array<Keyframe> keyframes, glm::vec<D, u32> dimensions, glm::vec<D, f32> coord, AnimationConfig<D> config) {
-	return keyframes[coord_to_index(dimensions, glm::vec<D, u32>(glm::vec<D, f32>(dimensions) * wrap(coord, config)))];
+template<typename Keyframe, i32 D> Keyframe animate(AnimationGrid<Keyframe, D> anim, glm::vec<D, f32> coord, AnimationConfig<D> config) {
+	return anim.keyframes[coord_to_index(anim.dimensions, glm::vec<D, u32>(glm::vec<D, f32>(anim.dimensions) * wrap(coord, config)))];
 }
-
 
 #endif

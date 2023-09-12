@@ -204,7 +204,7 @@ Shape2D create_frame_shape(Alloc allocator, const Image& source, rtu32 clip, aut
 	return create_polyshape(allocator, outlines);
 }
 
-template<i32 D> AnimationGrid<Shape2D, D> create_animated_shape(Alloc allocator, const Image& source, const AnimationGrid<rtu32, D>& animation, auto is_collider) {
+AnimationGrid<Shape2D> create_animated_shape(Alloc allocator, const Image& source, const AnimationGrid<rtu32>& animation, auto is_collider) {
 	return { map(allocator, animation.keyframes, [&](rtu32 clip) { return create_frame_shape(allocator, source, clip, is_collider); }), animation.dimensions };
 }
 

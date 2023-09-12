@@ -96,17 +96,17 @@ struct PlaygroundScene {
 	Rendering rendering;
 	Physics2D physics;
 	Audio audio;
-
-	AudioClip clip;
+	Time::Clock clock;
 
 	List<Entity> entities;
 
-	AnimationGrid<rtu32, 3> anim;
-	AnimationGrid<Shape2D, 3> shape_anim;
-	Time::Clock clock;
-	EntityHandle player;
 
+	AudioClip clip;
+	AnimationGrid<rtu32> anim;
+	AnimationGrid<Shape2D> shape_anim;
 	SpriteCursor spritesheet;
+
+	EntityHandle player;
 
 	PlaygroundScene() {
 		rendering.camera = { v3f32(16.f, 9.f, 1000.f) * 4.f, v3f32(0) };
@@ -116,7 +116,7 @@ struct PlaygroundScene {
 		auto& buffer = audio.buffers.push(create_audio_buffer());
 		write_audio_clip(buffer, clip);
 		auto img = load_image(assets.test_character_spritesheet_path); defer{ unload(img); };
-		anim = load_animation_grid<rtu32, 3>(assets.test_character_anim_path, std_allocator);
+		anim = load_animation_grid<rtu32>(assets.test_character_anim_path, std_allocator);
 		clock = Time::start();
 		spritesheet = load_into(img, rendering.atlas);
 		shape_anim = create_animated_shape(std_allocator, img, anim, alpha_filter()); //TODO free resource / make an arena for this resource ?

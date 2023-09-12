@@ -16,7 +16,7 @@ namespace controls {
 
 	constexpr auto VECTOR_LENGTH_THRESHOLD = 0.000001f;
 
-	inline auto safe_normalise(auto input) { return length2(input) < VECTOR_LENGTH_THRESHOLD ? v2f32(0) : normalize(input); }
+	inline auto safe_normalise(auto input) { return length2(input) < VECTOR_LENGTH_THRESHOLD ? decltype(input)(0) : normalize(input); }
 	inline v2f32 keyboard_plane(CompositeKeybind<2> keybinds = WASD) { return safe_normalise(key_axis(keybinds)); }
 
 	struct TopDownControl {
@@ -42,11 +42,11 @@ namespace controls {
 		);
 	}
 
-	void animate_character(TopDownControl& ctrl, SpriteCursor* sprite, Shape2D* shape, SpriteCursor spritesheet, AnimationGrid<rtu32, 3>* animation, AnimationGrid<Shape2D, 3>* shape_animation, f32 time) {
+	void animate_character(TopDownControl& ctrl, SpriteCursor* sprite, Shape2D* shape, SpriteCursor spritesheet, AnimationGrid<rtu32>* animation, AnimationGrid<Shape2D>* shape_animation, f32 time) {
 		auto coord = locomotion(ctrl, time);
-		auto config = AnimationConfig<3>(AnimRepeat, AnimRepeat, AnimClamp);
-		if (sprite) *sprite = sub_sprite(spritesheet, animate(*animation, coord, config));
-		if (shape) *shape = animate(*shape_animation, coord, config);
+		auto config = LAnimationConfig{ AnimRepeat, AnimRepeat, AnimClamp };
+		if (sprite) *sprite = sub_sprite(spritesheet, animate(*animation, coord, larray(config)));
+		if (shape) *shape = animate(*shape_animation, coord, larray(config));
 	}
 
 	v2f32 move_top_down(v2f32 velocity, v2f32 input, f32 speed, f32 accel, f32 time) {
@@ -57,8 +57,8 @@ namespace controls {
 	}
 
 	struct CharacterLocomotionAnimationData {
-		AnimationGrid<rtu32, 3> frames;
-		AnimationGrid<Shape2D, 3> shapes;
+		AnimationGrid<rtu32> frames;
+		AnimationGrid<Shape2D> shapes;
 		SpriteCursor spritesheet;
 	};
 

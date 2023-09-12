@@ -195,11 +195,16 @@ bool EditorWidget(const cstr label, bool& data) {
 	return ImGui::Checkbox(label, &data);
 }
 
-bool EditorWidget(const cstr label, rtf32& data) {
+template<typename T> bool EditorWidget(const cstr label, reg_polytope<T>& data, bool embed = true) {
 	bool changed = false;
-	ImGui::Text(label);
-	changed |= EditorWidget("Min Corner", data.min);
-	changed |= EditorWidget("Max Corner", data.max);
+	if (embed)
+		ImGui::Text(label);
+	if (embed || ImGui::TreeNode(label)) {
+		changed |= EditorWidget("Min corner", data.min);
+		changed |= EditorWidget("Max corner", data.max);
+		if (!embed)
+			ImGui::TreePop();
+	}
 	return changed;
 }
 

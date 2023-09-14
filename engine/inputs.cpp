@@ -407,11 +407,7 @@ namespace Input {
 		return context;
 	}
 
-	struct AxisButtonState { ButtonState pos, neg; };
-	struct AxisKeybind { KB::Key pos, neg; };
-
-	template<i32 D> using CompositeButtonState = glm::vec<D, AxisButtonState>;
-	template<i32 D> using CompositeKeybind = glm::vec<D, AxisKeybind>;
+	template<i32 D> using CompositeButtonState = glm::vec<D, ButtonState>;
 
 	inline f32 composite(ButtonState neg, ButtonState pos) {
 		f32 value = 0.f;
@@ -429,21 +425,6 @@ namespace Input {
 		return input;
 	}
 
-	inline ButtonState get_key(KB::Key key) { return get_context().key_states[KB::index_of(key)]; }
-	template<i32 D> inline CompositeButtonState<D> get_composite_keys(CompositeKeybind<D> keys) {
-		CompositeButtonState<D> input;
-		for (auto i : i32xrange{ 0, D })
-			input[i] = { get_key(keys[i].pos), get_key(keys[i].neg) };
-		return input;
-	}
-
-	inline f32 key_axis(KB::Key neg, KB::Key pos) { return composite(get_key(neg), get_key(pos)); }
-	template<i32 D> inline glm::vec<D, f32> key_axis(CompositeKeybind<D> keys) { return composite(get_composite_keys(keys)); }
-
-	constexpr auto WASD = CompositeKeybind<2>({ KB::K_D, KB::K_A }, { KB::K_W, KB::K_S });
-	constexpr auto ZQSD = CompositeKeybind<2>({ KB::K_D, KB::K_Q }, { KB::K_Z, KB::K_S });
-	constexpr auto IJKL = CompositeKeybind<2>({ KB::K_L, KB::K_J }, { KB::K_I, KB::K_K });
-	constexpr auto Arrows = CompositeKeybind<2>({ KB::K_RIGHT, KB::K_LEFT }, { KB::K_UP, KB::K_DOWN });
 
 	void context_key_callback(
 		GLFWwindow* window,
@@ -519,7 +500,7 @@ namespace Input {
 		bool shortcut(Array<const Key> keys, bool* selected = null) {
 			auto downed = false;
 			for (auto key : keys) {
-				auto state = get_key(key);
+				auto state = get_context().key_states[index_of(key)];
 				if ((state & Pressed) == 0)
 					return false;
 				if ((state & Down))
@@ -530,13 +511,106 @@ namespace Input {
 			return downed;
 		}
 
-		bool shortcut(LiteralArray<Key> keys, bool* selected = null) {
-			return shortcut(larray(keys), selected);
-		}
+		bool shortcut(LiteralArray<Key> keys, bool* selected = null) { return shortcut(larray(keys), selected); }
 
 	}
 
+	struct ButtonSource {
+		enum Type { None, KB_Key, GP_Button } type;
+		union { KB::Key key; GP::Button button; };
+	};
+	template<i32 D> using ButtonSourceD = glm::vec<D, ButtonSource>;
 
+	struct AxisSource {
+		enum Type { None, GP_Axis, Button_Axis } type;
+		union { GP::Axis axis; ButtonSourceD<2> button_axis; };
+	};
+	template<i32 D> using AxisSourceD = glm::vec<D, AxisSource>;
+
+	GP::State& get_gamepad(u8 device) {
+		if (i32 index = linear_search(get_context().gamepads.indices, device); index < 0)
+			return fail_ret("Invalid input device", get_context().gamepads.states[0]);
+		else
+			return get_context().gamepads.states[index];
+	}
+
+	ButtonState poll(u8 device, const ButtonSource& source) {
+		auto key = [&]() {return get_context().key_states[KB::index_of(source.key)]; };
+		auto button = [&]() {return get_gamepad(device).buttons[source.button];};
+
+		switch (source.type) {
+		case ButtonSource::KB_Key: return key();
+		case ButtonSource::GP_Button: return button();
+		default: return fail_ret("Invalid input source for button, only accepts KB_key or GP_button", ButtonState::None);
+		}
+	}
+
+	f32 poll(u8 device, const AxisSource& source) {
+		auto comp = [&]() { return composite(poll(device, source.button_axis[0]), poll(device, source.button_axis[1])); };
+		auto axis = [&]() { return get_gamepad(device).axises[source.axis]; };
+
+		switch (source.type) {
+		case AxisSource::Button_Axis: return comp();
+		case AxisSource::GP_Axis: return axis();
+		default: return fail_ret("Invalid input source for single axis, only accpts KB_C_Key, GP_Axis, GP_C_Button", ButtonState::None);
+		}
+	}
+
+	template<i32 D> CompositeButtonState<D> poll(u8 device, const ButtonSourceD<D>& bindings) {
+		CompositeButtonState<D> res;
+		for (auto i : u64xrange{ 0, D })
+			res[i] = poll(device, bindings[i]);
+		return res;
+	}
+
+	template<i32 D> glm::vec<D, f32> poll(u8 device, const AxisSourceD<D>& bindings) {
+		glm::vec<D, f32> res;
+		for (auto i : u64xrange{ 0, D })
+			res[i] = poll(device, bindings[i]);
+		return res;
+	}
+
+	ButtonSource make_source(GP::Button button) {
+		ButtonSource source;
+		source.type = ButtonSource::GP_Button;
+		source.button = button;
+		return source;
+	}
+
+	ButtonSource make_source(KB::Key key) {
+		ButtonSource source;
+		source.type = ButtonSource::KB_Key;
+		source.key = key;
+		return source;
+	}
+
+	AxisSource make_source(GP::Axis axis) {
+		AxisSource source;
+		source.type = AxisSource::GP_Axis;
+		source.axis = axis;
+		return source;
+	}
+
+	AxisSource make_source(ButtonSourceD<2> button_axis) {
+		AxisSource source;
+		source.type = AxisSource::Button_Axis;
+		source.button_axis = button_axis;
+		return source;
+	}
+
+	template<typename... T> auto make_source(const T&&... sources) {
+		constexpr usize size = sizeof...(sources);
+		using tuple_type = tuple<T...>;
+		using res_type = decltype(make_source(std::get<0>(tuple_type{})));
+		using vec = glm::vec<size, res_type>;
+		return vec(make_source(sources)...);
+	}
+
+	const AxisSourceD<2> LS = make_source(GP::LEFT_X, GP::LEFT_Y);
+	const AxisSourceD<2> RS = make_source(GP::RIGHT_X, GP::RIGHT_Y);
+	const AxisSourceD<2> WASD = make_source(make_source(KB::K_A, KB::K_D), make_source(KB::K_S, KB::K_W));
+	const AxisSourceD<2> ZQSD = make_source(make_source(KB::K_Q, KB::K_D), make_source(KB::K_S, KB::K_Z));
+	const AxisSourceD<2> Arrows = make_source(make_source(KB::K_LEFT, KB::K_RIGHT), make_source(KB::K_DOWN, KB::K_UP));
 }
 
 #endif

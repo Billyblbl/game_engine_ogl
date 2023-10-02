@@ -247,7 +247,7 @@ struct PlaygroundScene {
 				physics.step_sim(spacial);
 				physics.resolve_collisions(rigidbodies);
 			}
-			for (auto [ctrl, _] : ctrls) ctrl->locomotion.grounded = false;
+			for (auto [ctrl, _] : ctrls) ctrl->grounded = false;
 			for (auto& col : physics.collisions.allocated()) {
 				for (auto i : u64xrange{ 0, 2 }) if (has_all(col.entities[i]->flags, Entity::Controllable)) {
 					auto& ent = col.entities[i]->content<Entity>();

@@ -21,24 +21,17 @@ Segment<v2f32> support_circle(v2f32 center, f32 radius, v2f32 direction) {
 	return { point, point };
 }
 
+constexpr f32 support_epsilon = 0.0001f;
 Segment<v2f32> support_point_cloud(Array<v2f32> vertices, v2f32 direction) {
-	struct {
-		f32 dot = std::numeric_limits<f32>::lowest();
-		v2f32 point;
-	} buff[2];
-	auto supports = List{ larray(buff), 0 };
-	for (auto v : vertices) {
-		auto dot = glm::dot(v, glm::normalize(direction));
-		if (dot > supports.allocated()[0].dot) {
-			supports.current = 0;
-			supports.push({ dot, v });
-		} else if (supports.current < supports.capacity.size() && dot == supports.allocated()[0].dot) {//TODO check if this == is enough or if it needs an epsilon comp
-			supports.push({ dot, v });
-		}
-	}
-	while (supports.current < supports.capacity.size())
-		supports.push(supports.allocated().back());
-	return { supports.allocated()[0].point, supports.allocated()[1].point };
+	using namespace glm;
+	f32 buff[vertices.size()];;
+	auto dir = normalize(direction);
+	auto arena = as_arena(carray(buff, vertices.size()));
+	auto dots = map(as_stack(arena), vertices, [=](v2f32 v){ return dot(v, dir); });
+	auto iA = best_fit_search(dots, fit_highest<f32>);
+	auto iB = linear_search_idx(dots, [&](f32 d, i32 i) { return i != iA && distance(d, dots[iA]) < support_epsilon; });
+	if (iB < 0) iB = iA;
+	return { vertices[iA], vertices[iB] };
 }
 
 Segment<v2f32> support_polygon(Array<v2f32> vertices, v2f32 direction) {
@@ -61,7 +54,7 @@ Segment<v2f32> support(const Shape2D& shape, v2f32 direction) {
 			supports[i] = support(shape.composite[i], direction);
 		return support_point_cloud(cast<v2f32>(carray(supports, shape.composite.size())), direction);
 	};
-	// default: return fail_ret("Unimplemented support function", Segment<v2f32>{});
+														 // default: return fail_ret("Unimplemented support function", Segment<v2f32>{});
 	default: assert(("Unimplemented support function", false));
 	}
 	return {};
@@ -450,7 +443,7 @@ Array<Collision2D> simulate_collisions(Alloc allocator, Array<RigidBody> entitie
 struct Physics2D {
 
 	static constexpr u64 PhysicsMemory = (MAX_ENTITIES * MAX_ENTITIES * sizeof(Collision2D) + MAX_ENTITIES * MAX_ENTITIES * sizeof(Contact2D) * MaxContactPerCollision);
-	Array<Collision2D> collisions = {};
+	List<Collision2D> collisions = {};
 	Arena physics_scratch = create_virtual_arena(PhysicsMemory);
 	f32 dt = 1.f / 60.f;
 	u32 max_ticks = 5;
@@ -458,25 +451,25 @@ struct Physics2D {
 	f32 tpu = 0;
 	f32 time;
 
-	Array<Collision2D> operator()(Array<RigidBody> rbs, Array<Spacial2D*> ents, u32 iterations = 1) {
-		auto heuristic_collision_count = collisions.size() * 2;
-		collisions = {};
-		reset_virtual_arena(physics_scratch);
-		tpu = average({ tpu, f32(iterations) });
-		if (iterations == 0)
-			return {};
-		auto collisions_acc = List{ alloc_array<Collision2D>(as_v_alloc(physics_scratch), heuristic_collision_count), 0 };
-		Array<Collision2D> last_tick_collisions = {};
-		for (auto i : u32xrange{ 0, iterations }) {
-			time += dt;
-			for (auto& rb : rbs) if (rb.body && rb.body->inverse_mass > 0)
-				rb.spacial->velocity.translation += gravity * dt;
-			for (auto s : ents)
-				euler_integrate(*s, dt);
-			last_tick_collisions = collisions_acc.push_range_growing(as_v_alloc(physics_scratch), simulate_collisions(as_v_alloc(physics_scratch), rbs));
-		}
-		collisions = collisions_acc.allocated();
-		return last_tick_collisions;
+	Alloc flush_state(u64 estimated_collisions_count = 10) {
+		u64 heuristic_collision_count = max(estimated_collisions_count, collisions.current * 2);
+		collisions = List{ alloc_array<Collision2D>(as_v_alloc(reset_virtual_arena(physics_scratch)), heuristic_collision_count), 0 };
+		return as_v_alloc(physics_scratch);
+	}
+
+	void apply_gravity(Array<tuple<Body*, Spacial2D*, f32>> bodies) {
+		for (auto& [bd, sp, sc] : bodies) if (bd && bd->inverse_mass > 0)
+			sp->velocity.translation += gravity * dt * sc;
+	}
+
+	void step_sim(Array<Spacial2D*> ents) {
+		time += dt;
+		for (auto s : ents)
+			euler_integrate(*s, dt);
+	}
+
+	Array<Collision2D> resolve_collisions(Array<RigidBody> rbs) {
+		return collisions.push_range_growing(as_v_alloc(physics_scratch), simulate_collisions(as_v_alloc(physics_scratch), rbs));
 	}
 
 	inline u32 iteration_count(f32 real_time) { return u32(glm::clamp(i32((real_time - time) / dt), i32(0), i32(max_ticks))); }
@@ -532,7 +525,7 @@ struct Physics2D {
 			if (ImGui::TreeNode("Collisions")) {
 				defer{ ImGui::TreePop(); };
 				auto id = 0;
-				for (auto [contacts, entities, physical] : system.collisions) {
+				for (auto [contacts, entities, physical] : system.collisions.allocated()) {
 					char buffer[999];
 					snprintf(buffer, sizeof(buffer), "%u:%s:%s", id, entities[0]->name.data(), entities[1]->name.data());
 					ImGui::PushID(id++);

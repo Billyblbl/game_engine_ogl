@@ -13,9 +13,9 @@
 
 constexpr auto flag_index_count = 32;
 
-template<typename T, typename G, G T::* gen> struct genhandle {
+template<typename T, u64 T::* gen> struct genhandle {
 	T* ptr;
-	G generation;
+	u64 generation;
 	bool valid() { return ptr != null && ptr->*(gen) <= generation; }
 	T* try_get() { return valid() ? ptr : null; }
 	T* operator->() { return (assert(valid()), ptr); }
@@ -24,7 +24,7 @@ template<typename T, typename G, G T::* gen> struct genhandle {
 
 template<typename T, typename U> concept castable = std::derived_from<T, U> || std::same_as<T, U>;
 
-template<typename T, typename G, G T::* gen> genhandle<T, G, gen> get_genhandle(T& slot) {
+template<typename T, u64 T::* gen> genhandle<T, gen> get_genhandle(T& slot) {
 	return { &slot, slot.*(gen) };
 }
 
@@ -39,31 +39,27 @@ struct EntitySlot {
 	u64 flags = 0;
 	u64 generation = 0;
 	string name = "__entity__";
-	bool available() { return !has_one(flags, AllocatedEntity | PendingRelease); }
+	bool available() const { return !has_one(flags, AllocatedEntity | PendingRelease); }
 	void grab() { flags |= AllocatedEntity; }
 	void discard() { flags = (flags & ~AllocatedEntity) | PendingRelease; }
 	void recycle() { flags = 0; generation++; }
-	template<typename T> T& content() { return static_cast<T&>(*this); }
+	template<typename T> inline T& content() { return static_cast<T&>(*this); }
 };
 
-using EntityHandle = genhandle<EntitySlot, u64, &EntitySlot::generation>;
+template<typename T> concept EntityLayout = castable<T, EntitySlot>;
+using EntityHandle = genhandle<EntitySlot, &EntitySlot::generation>;
 
-template<castable<EntitySlot> E> inline E& allocate_entity(List<E>& entities, string name = "__entity__", u64 flags = 0) {
-	E* slot = null;
-	for (auto& ent : entities.allocated()) if (ent.available()) {
-		slot = &ent;
-		break;
-	}
-	if (slot == null)
-		slot = &entities.push({});
-	slot->grab();
-	slot->name = name;
-	slot->flags |= flags;
-	return *slot;
+template<EntityLayout E> inline E& allocate_entity(List<E>& entities, string name = "__entity__", u64 flags = 0) {
+	auto i = linear_search(entities.allocated(), [](const E& ent){ return ent.available(); });
+	auto& slot = i < 0 ? entities.push({}) : entities.allocated()[i];
+	slot.grab();
+	slot.name = name;
+	slot.flags |= flags;
+	return slot;
 }
 
-EntityHandle get_entity_genhandle(EntitySlot& ent) {
-	return get_genhandle<EntitySlot, u64, &EntitySlot::generation>(ent);
+inline EntityHandle get_entity_genhandle(EntitySlot& ent) {
+	return get_genhandle<EntitySlot, &EntitySlot::generation>(ent);
 }
 
 template<castable<EntitySlot> E, typename F = u64> auto gather(Alloc allocator, Array<E> entities, F flags, auto mapper) {

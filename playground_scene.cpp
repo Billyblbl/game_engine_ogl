@@ -11,6 +11,7 @@
 #include <math.cpp>
 #include <animation.cpp>
 #include <top_down_controls.cpp>
+#include <sidescroll_controls.cpp>
 #include <entity.cpp>
 #include <sprite.cpp>
 #include <audio.cpp>
@@ -69,8 +70,7 @@ struct Entity : public EntitySlot {
 	Spacial2D space;
 	AudioSource audio_source;
 	Sprite sprite;
-	// SpriteCursor sprite;
-	// struct { v2f32 dimensions; f32 depth; } render_rect;
+	SidescrollControl ssctrl;
 	Shape2D shape;
 	Body body;
 	controls::TopDownControl ctrl;
@@ -88,6 +88,7 @@ bool EditorWidget(const cstr label, Entity& ent) {
 		changed |= EditorWidget("Shape", ent.shape);
 		changed |= EditorWidget("Body", ent.body);
 		changed |= EditorWidget("Controller", ent.ctrl);
+		changed |= EditorWidget("SSController", ent.ssctrl);
 	}
 	return changed;
 }
@@ -133,7 +134,7 @@ struct PlaygroundScene {
 				ent.sprite.depth = 1;
 				ent.body.inverse_inertia = 0.f;
 				ent.body.inverse_mass = 1.f;
-				ent.body.restitution = .5f;
+				ent.body.restitution = .0f;
 				ent.body.friction = .3f;
 				ent.ctrl = { 10, 100, 1, v2f32(0), 0 };
 				ent.audio_source = create_audio_source();//TODO delete_audio_source -> change into a resource ? wont be shared tho, could instead deal with it with the reintroduction of the 'pending deletion' flag
@@ -148,7 +149,7 @@ struct PlaygroundScene {
 
 		{// misc scene content
 
-			for (auto i : u64xrange{ 0, 20 }) {
+			for (auto i : u64xrange{ 0, 0 }) {
 				auto& ent = allocate_entity(entities, "test_ent", Entity::Draw | Entity::Rigidbody);
 				ent.space = { identity_2d, null_transform_2d, null_transform_2d };
 				ent.space.transform.translation += v2f32(frand({ -10, 10 }), frand({ -10, 10 }));
@@ -220,15 +221,10 @@ struct PlaygroundScene {
 		auto flush_scratch = [&]() -> Alloc { return as_v_alloc(reset_virtual_arena(scratch)); };
 
 		if (player.valid()) // player controller
-			player->content<Entity>().ctrl.input = controls::keyboard_plane(Input::WASD);
+			player_input(player->content<Entity>().ssctrl);
 
 		pov = (player.valid() ? player->content<Entity>().space : Spacial2D{ identity_2d, null_transform_2d, null_transform_2d });
 		pov.transform.rotation = 0;
-
-		for (auto& e : entities.allocated()) if (has_all(e.flags, Entity::Controllable)) {
-			e.space.velocity.translation = controls::move_top_down(e.space.velocity.translation, e.ctrl.input, e.ctrl.speed, e.ctrl.accel, clock.dt);
-			e.ctrl.velocity_mag = length(e.space.velocity.translation);
-		}
 
 		for (auto [ctrl, sprite, shape] : gather(flush_scratch(), entities.allocated(), Entity::Animated, [](Entity& ent) { return tuple(&ent.ctrl, has_all(ent.flags, Entity::Draw) ? &ent.sprite.cursor : null, has_all(ent.flags, Entity::Collider) ? &ent.shape : null); })) {
 			//TODO dispatch to the right animation function
@@ -237,12 +233,38 @@ struct PlaygroundScene {
 			animate_character(*ctrl, sprite, shape, spritesheet, &anim, &shape_anim, clock.current);
 		}
 
-		flush_scratch();
-		physics(
-			gather(as_v_alloc(scratch), entities.allocated(), Entity::Collider, [](Entity& ent) { return RigidBody{ get_entity_genhandle(ent), &ent.shape, &ent.space, (has_all(ent.flags, Entity::Rigidbody) ? &ent.body : null) }; }),
-			map(as_v_alloc(scratch), entities.allocated(), [](Entity& ent) { return &ent.space; }),
-			physics.iteration_count(clock.current)
-		);
+		if (flush_scratch(); auto it_count = physics.iteration_count(clock.current) > 0) { // TODO test this
+			using namespace glm;
+			physics.flush_state();
+			auto gravity_dir = normalize(physics.gravity);
+			auto ctrls = gather(as_v_alloc(scratch), entities.allocated(), Entity::Controllable, [](Entity& ent) { return tuple(&ent.ssctrl, &ent.space.velocity.translation);});
+			auto physical = gather(as_v_alloc(scratch), entities.allocated(), Entity::Physical, [](Entity& ent) { return tuple(&ent.body, &ent.space, has_all(ent.flags, Entity::Controllable) && ent.ssctrl.falling ? ent.ssctrl.fall_multiplier : 1.f); });
+			auto spacial = map(as_v_alloc(scratch), entities.allocated(), [](Entity& ent) { return &ent.space; });
+			auto rigidbodies = gather(as_v_alloc(scratch), entities.allocated(), Entity::Collider, [](Entity& ent) { return RigidBody{ get_entity_genhandle(ent), &ent.shape, &ent.space, (has_all(ent.flags, Entity::Rigidbody) ? &ent.body : null) }; });
+			for (auto i : u64xrange{ 0, it_count }) {
+				for (auto [ctrl, vel] : ctrls) *vel = control(*ctrl, *vel, physics.gravity, clock.current);
+				physics.apply_gravity(physical);
+				physics.step_sim(spacial);
+				physics.resolve_collisions(rigidbodies);
+			}
+			for (auto [ctrl, _] : ctrls) ctrl->locomotion.grounded = false;
+			for (auto& col : physics.collisions.allocated()) {
+				for (auto i : u64xrange{ 0, 2 }) if (has_all(col.entities[i]->flags, Entity::Controllable)) {
+					auto& ent = col.entities[i]->content<Entity>();
+					auto mat = trs_2d(ent.space.transform);
+					auto grounding_contact = (
+						[&](const Contact2D& ctc) {
+							auto lever = normalize(ctc.levers[i]);
+							auto normal = normalize(ctc.penetration);
+							return dot(lever, gravity_dir) > 0 && angle(normal, gravity_dir) < ent.ssctrl.max_slope;
+						}
+					);
+					if (ent.ssctrl.grounded = (linear_search(col.contacts, grounding_contact) >= 0))
+						ent.ssctrl.falling = false;
+				}
+			}
+		}
+
 		audio(gather(flush_scratch(), entities.allocated(), Entity::Sound, [](Entity& ent) { return tuple(&ent.audio_source, (const Spacial2D*)&ent.space); }), &pov);
 		rendering(gather(flush_scratch(), entities.allocated(), Entity::Draw, [&](const Entity& ent) { return instance_of(ent.sprite, trs_2d(ent.space.transform), rendering.atlas.dimensions); }), pov.transform);
 		return true;
@@ -264,7 +286,7 @@ struct PlaygroundScene {
 		if (ph.debug) {
 			auto vp = rendering.get_vp_matrix(pov.transform);
 			if (ph.colliders) ph.draw_shapes(gather(as_v_alloc(reset_virtual_arena(debug_scratch)), entities.allocated(), Entity::Collider, [&](Entity& ent) { return tuple(&ent.shape, &ent.space); }), vp);
-			if (ph.collisions) ph.draw_collisions(physics.collisions, vp, &Entity::space);
+			if (ph.collisions) ph.draw_collisions(physics.collisions.allocated(), vp, &Entity::space);
 		}
 
 		if (rd.show_window) {

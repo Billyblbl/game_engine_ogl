@@ -42,12 +42,15 @@ INC += $(OPENAL)
 INC += $(IMGUI)/backends
 INC += $(GLFW)/include
 INC += $(GLEW)/include
+INC += $(XML2)/include/libxml2
 INC += $(BLBLSTD)/src
 
 LIB += $(GLFW)/lib
 LIB += $(GLEW)/lib
+LIB += $(XML2)/lib
 
 LDFLAGS += -lglfw3
 LDFLAGS += -lglew32
 LDFLAGS += -lopengl32
 LDFLAGS += -lopenal
+LDFLAGS += -lxml2

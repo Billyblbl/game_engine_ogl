@@ -202,7 +202,7 @@ struct Rendering {
 	FrameBuffer fbf;
 	v4f32 clear_color;
 
-	Rendering(string pipeline = "./shaders/sprite.glsl", u32 max_draw_batch = 256, v4u32 atlas_dimensions = v4u32(256, 256, 256, 1)) {
+	Rendering(string pipeline = "./shaders/sprite.glsl", u32 max_draw_batch = 256, v4u32 atlas_dimensions = v4u32(1920, 1080, 10, 1)) {
 		camera = { v3f32(16.f, 9.f, 1000.f) / 2.f, v3f32(0) };
 		draw = load_sprite_renderer(pipeline.data(), max_draw_batch);
 		atlas = create_texture(TX2DARR, atlas_dimensions);

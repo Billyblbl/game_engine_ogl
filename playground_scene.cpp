@@ -38,6 +38,8 @@ const struct {
 	cstrp test_character_anim_path = "test_character.anim";
 	cstrp draw_pipeline = "./shaders/sprite.glsl";
 	cstrp test_sound = "./audio/file_example_OOG_1MG.ogg";
+	cstrp test_sidescroll_path = "12_Animated_Character_Template.png";
+	cstrp sidescroll_character_animation_recipe_path = "test_sidescroll_character.xml";
 	v2f32 test_character_anim_cells[4][4] = {
 		{v2f32(0, 3), v2f32(1, 3), v2f32(2, 3), v2f32(3, 3)},
 		{v2f32(0, 1), v2f32(1, 1), v2f32(2, 1), v2f32(3, 1)},
@@ -73,7 +75,8 @@ struct Entity : public EntitySlot {
 	SidescrollControl ssctrl;
 	Shape2D shape;
 	Body body;
-	controls::TopDownControl ctrl;
+	Animator anim;
+	// controls::TopDownControl ctrl;
 };
 
 bool EditorWidget(const cstr label, Entity& ent) {
@@ -87,8 +90,9 @@ bool EditorWidget(const cstr label, Entity& ent) {
 		changed |= EditorWidget("Sprite", ent.sprite);
 		changed |= EditorWidget("Shape", ent.shape);
 		changed |= EditorWidget("Body", ent.body);
-		changed |= EditorWidget("Controller", ent.ctrl);
-		changed |= EditorWidget("SSController", ent.ssctrl);
+		// changed |= EditorWidget("Controller", ent.ctrl);
+		changed |= EditorWidget("Controller", ent.ssctrl);
+		changed |= EditorWidget("Animator", ent.anim);
 	}
 	return changed;
 }
@@ -101,11 +105,9 @@ struct PlaygroundScene {
 
 	List<Entity> entities;
 
-
 	AudioClip clip;
-	AnimationGrid<rtu32> anim;
-	AnimationGrid<Shape2D> shape_anim;
 	SpriteCursor spritesheet;
+	Array<SpriteAnimation> animations;
 
 	EntityHandle player;
 
@@ -113,21 +115,18 @@ struct PlaygroundScene {
 		rendering.camera = { v3f32(16.f, 9.f, 1000.f) * 4.f, v3f32(0) };
 		entities = List{ alloc_array<Entity>(std_allocator, MAX_ENTITIES), 0 };
 
-		clip = load_clip_file("audio/file_example_OOG_1MG.ogg");
-		auto& buffer = audio.buffers.push(create_audio_buffer());
-		write_audio_clip(buffer, clip);
-		auto img = load_image(assets.test_character_spritesheet_path); defer{ unload(img); };
-		anim = load_animation_grid<rtu32>(assets.test_character_anim_path, std_allocator);
-		clock = Time::start();
+		auto img = load_image(assets.test_sidescroll_path); defer{ unload(img); };
 		spritesheet = load_into(img, rendering.atlas);
-		shape_anim = create_animated_shape(std_allocator, img, anim, alpha_filter()); //TODO free resource / make an arena for this resource ?
+
+		auto layout = build_layout(std_allocator, assets.sidescroll_character_animation_recipe_path);
+		animations = build_sidescroll_character_animations(std_allocator, layout, img.dimensions);
 
 		static v2f32 test_polygon[] = { v2f32(-1, -1) / 2.f, v2f32(+1, -1) / 2.f, v2f32(+1, +1) / 2.f, v2f32(-1, +1) / 2.f };
 		static v2f32 floor_poly[] = { v2f32(-1000, -1), v2f32(+1000, -1), v2f32(+1000, +1), v2f32(-1000, +1) };
 
 		player = (
 			[&]() {
-				auto& ent = allocate_entity(entities, "player", Entity::Draw | Entity::Physical | Entity::Collider | Entity::Controllable | Entity::Sound);
+				auto& ent = allocate_entity(entities, "player", Entity::Draw | Entity::Physical | Entity::Collider | Entity::Controllable);
 				ent.space = { identity_2d, null_transform_2d, null_transform_2d };
 				ent.sprite.cursor = spritesheet;
 				ent.sprite.dimensions = v2f32(1);
@@ -136,9 +135,7 @@ struct PlaygroundScene {
 				ent.body.inverse_mass = 1.f;
 				ent.body.restitution = .0f;
 				ent.body.friction = .3f;
-				ent.ctrl = { 10, 100, 1, v2f32(0), 0 };
-				ent.audio_source = create_audio_source();//TODO delete_audio_source -> change into a resource ? wont be shared tho, could instead deal with it with the reintroduction of the 'pending deletion' flag
-				ent.audio_source.set<BUFFER>(buffer.id);
+				// ent.ctrl = { 10, 100, 1, v2f32(0), 0 };
 				ent.shape = make_shape_2d<Shape2D::Polygon>(larray(test_polygon));
 				return get_entity_genhandle(ent);
 			}
@@ -202,12 +199,14 @@ struct PlaygroundScene {
 			// 	ent.shape = make_shape_2d<Shape2D::Line>(Segment<v2f32> { v2f32(-1), v2f32(1) });
 			// }
 		}
+
+		clock = Time::start();
 		fflush(stdout);
 		wait_gpu();
 	}
 
 	~PlaygroundScene() {
-		unload(anim, std_allocator);
+		// unload(anim, std_allocator);
 		dealloc_array(std_allocator, entities.capacity);
 	}
 
@@ -225,29 +224,27 @@ struct PlaygroundScene {
 
 		pov = (player.valid() ? player->content<Entity>().space : Spacial2D{ identity_2d, null_transform_2d, null_transform_2d });
 		pov.transform.rotation = 0;
+		pov.transform.scale.x = abs(pov.transform.scale.x);
 
-		for (auto [ctrl, sprite, shape] : gather(flush_scratch(), entities.allocated(), Entity::Animated, [](Entity& ent) { return tuple(&ent.ctrl, has_all(ent.flags, Entity::Draw) ? &ent.sprite.cursor : null, has_all(ent.flags, Entity::Collider) ? &ent.shape : null); })) {
-			//TODO dispatch to the right animation function
-			//? the animation system probably can't just be given every possible piece of data it might need like that, how do we gather ?
-			//* possible "subsystem" animation scheme, where an animation component informs which subsytem needs to be run
-			animate_character(*ctrl, sprite, shape, spritesheet, &anim, &shape_anim, clock.current);
+		for (auto [ctrl, anim, sprite] : gather(flush_scratch(), entities.allocated(), Entity::Animated, [](Entity& ent) { return tuple(&ent.ssctrl, &ent.anim, &ent.sprite.cursor); })) {
+			sprite->view = animate_sidescroll_character(*anim, animations, *ctrl, clock.current);
 		}
 
 		if (flush_scratch(); auto it_count = physics.iteration_count(clock.current) > 0) { // TODO test this
 			using namespace glm;
 			physics.flush_state();
 			auto gravity_dir = normalize(physics.gravity);
-			auto ctrls = gather(as_v_alloc(scratch), entities.allocated(), Entity::Controllable, [](Entity& ent) { return tuple(&ent.ssctrl, &ent.space.velocity.translation);});
+			auto ctrls = gather(as_v_alloc(scratch), entities.allocated(), Entity::Controllable, [](Entity& ent) { return tuple(&ent.ssctrl, &ent.space.velocity.translation, &ent.space.transform.scale);});
 			auto physical = gather(as_v_alloc(scratch), entities.allocated(), Entity::Physical, [](Entity& ent) { return tuple(&ent.body, &ent.space, has_all(ent.flags, Entity::Controllable) && ent.ssctrl.falling ? ent.ssctrl.fall_multiplier : 1.f); });
 			auto spacial = map(as_v_alloc(scratch), entities.allocated(), [](Entity& ent) { return &ent.space; });
 			auto rigidbodies = gather(as_v_alloc(scratch), entities.allocated(), Entity::Collider, [](Entity& ent) { return RigidBody{ get_entity_genhandle(ent), &ent.shape, &ent.space, (has_all(ent.flags, Entity::Rigidbody) ? &ent.body : null) }; });
 			for (auto i : u64xrange{ 0, it_count }) {
-				for (auto [ctrl, vel] : ctrls) *vel = control(*ctrl, *vel, physics.gravity, clock.current);
+				for (auto [ctrl, vel, scale] : ctrls) *vel = control(*ctrl, *vel, *scale, physics.gravity, clock.current);
 				physics.apply_gravity(physical);
 				physics.step_sim(spacial);
 				physics.resolve_collisions(rigidbodies);
 			}
-			for (auto [ctrl, _] : ctrls) ctrl->grounded = false;
+			for (auto [ctrl, _, __] : ctrls) ctrl->grounded = false;
 			for (auto& col : physics.collisions.allocated()) {
 				for (auto i : u64xrange{ 0, 2 }) if (has_all(col.entities[i]->flags, Entity::Controllable)) {
 					auto& ent = col.entities[i]->content<Entity>();
@@ -317,7 +314,7 @@ struct PlaygroundScene {
 			if (begin_editor(misc)) {
 				ImGui::Text("Update index : %llu", update_count);
 				EditorWidget("Clock", clock);
-				EditorWidget("Animation Grid", anim);
+				// EditorWidget("Animation Grid", anim);
 			} end_editor();
 		}
 	}

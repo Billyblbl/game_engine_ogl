@@ -1,0 +1,113 @@
+<spritesheet name="test_sidescroll_character" x="7" y="12">
+
+	<sequence name="idle">
+		<cell x="0" y="0" />
+		<cell x="0" y="0" />
+		<cell x="1" y="0" />
+		<cell x="2" y="0" />
+		<cell x="2" y="0" />
+		<cell x="3" y="0" />
+	</sequence>
+
+	<grid name="locomotion">
+		<dimension x="6" y="2" />
+		<extent x="1" y="1" />
+		<config x="repeat" y="clamp" />
+
+		<cell x="0" y="1" />
+		<cell x="1" y="1" />
+		<cell x="2" y="1" />
+		<cell x="3" y="1" />
+		<cell x="4" y="1" />
+		<cell x="5" y="1" />
+
+		<cell x="0" y="2" />
+		<cell x="1" y="2" />
+		<cell x="2" y="2" />
+		<cell x="3" y="2" />
+		<cell x="4" y="2" />
+		<cell x="5" y="2" />
+
+	</grid>
+
+	<sequence name="jump" duration="0.2" wrap="clamp">
+		<cell x="0" y="3" />
+		<cell x="1" y="3" />
+		<cell x="2" y="3" />
+	</sequence>
+
+	<sequence name="fall">
+		<cell x="3" y="3" />
+		<cell x="4" y="3" />
+		<cell x="5" y="3" />
+	</sequence>
+
+	<sequence name="damaged">
+		<cell x="0" y="4" />
+		<cell x="1" y="4" />
+		<cell x="2" y="4" />
+	</sequence>
+
+	<sequence name="crouch">
+		<cell x="0" y="5" />
+		<cell x="1" y="5" />
+		<cell x="2" y="5" />
+		<cell x="3" y="5" />
+		<cell x="4" y="5" />
+		<cell x="5" y="5" />
+		<cell x="6" y="5" />
+	</sequence>
+
+	<sequence name="equip_knife">
+		<cell x="0" y="6" />
+		<cell x="1" y="6" />
+		<cell x="2" y="6" />
+		<cell x="3" y="6" />
+		<cell x="4" y="6" />
+	</sequence>
+
+	<sequence name="knife_v_swing">
+		<cell x="0" y="7" />
+		<cell x="1" y="7" />
+		<cell x="2" y="7" />
+		<cell x="3" y="7" />
+		<cell x="4" y="7" />
+		<cell x="5" y="7" />
+	</sequence>
+
+	<sequence name="roll">
+		<cell x="0" y="8" />
+		<cell x="1" y="8" />
+		<cell x="2" y="8" />
+		<cell x="3" y="8" />
+	</sequence>
+
+	<sequence name="punch_right">
+		<cell x="0" y="9" />
+		<cell x="1" y="9" />
+		<cell x="2" y="9" />
+		<cell x="3" y="9" />
+		<cell x="4" y="9" />
+		<cell x="5" y="9" />
+	</sequence>
+
+	<sequence name="punch_left">
+		<cell x="0" y="10" />
+		<cell x="1" y="10" />
+		<cell x="2" y="10" />
+		<cell x="3" y="10" />
+		<cell x="4" y="10" />
+		<cell x="5" y="10" />
+	</sequence>
+
+	<sequence name="knife_h_swing">
+		<cell x="0" y="11" />
+		<cell x="1" y="11" />
+		<cell x="2" y="11" />
+		<cell x="3" y="11" />
+		<cell x="4" y="11" />
+		<cell x="5" y="11" />
+		<cell x="6" y="11" />
+	</sequence>
+
+</spritesheet>

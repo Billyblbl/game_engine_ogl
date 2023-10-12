@@ -10,35 +10,50 @@ struct AnimationGridHeader {
 	usize keyframe_size;
 };
 
+enum AnimationWrap { AnimRepeat, AnimClamp, AnimMirror };
+using AnimationConfig = Array<const AnimationWrap>;
+using LAnimationConfig = LiteralArray<AnimationWrap>;
+
 template<typename Keyframe> struct AnimationGrid {
 	Array<Keyframe> keyframes;
 	Array<u32> dimensions;
+	Array<f32> extents;
+	Array<AnimationWrap> config;
 };
 
-template<typename Keyframe> usize write_animation_grid(FILE* file, Array<const Keyframe> keyframes, Array<u32> dimensions) {
-	auto header = AnimationGridHeader{ dimensions.size(), sizeof(Keyframe) };
+template<typename Keyframe> usize write_animation_grid(FILE* file, const AnimationGrid<Keyframe>& anim) {
+	auto header = AnimationGridHeader{ u32(anim.dimensions.size()), sizeof(Keyframe) };
 	auto written = fwrite(&header, sizeof(AnimationGridHeader), 1, file);
-	written += fwrite(dimensions.data(), dimensions.size_bytes(), 1, file);
-	written += fwrite(keyframes.data(), keyframes.size_bytes(), 1, file);
+	written += fwrite(anim.dimensions.data(), anim.dimensions.size_bytes(), 1, file);
+	written += fwrite(anim.extents.data(), anim.extents.size_bytes(), 1, file);
+	written += fwrite(anim.config.data(), anim.config.size_bytes(), 1, file);
+	written += fwrite(anim.keyframes.data(), anim.keyframes.size_bytes(), 1, file);
 	return written;
 }
 
-tuple<AnimationGridHeader, Buffer, Array<u32>, usize> read_animation_grid(FILE* file, Alloc allocator) {
+template<typename K> AnimationGrid<K> parse_animation_grid(FILE* file, Alloc allocator) {
 	AnimationGridHeader header;
 	auto read = fread(&header, sizeof(header), 1, file);
-	auto dimensions = alloc_array<u32>(allocator, header.dimensions_count);
-	read += fread(dimensions.data(), dimensions.size_bytes(), 1, file);
-	auto data = allocator.alloc(header.keyframe_size * fold(1, dimensions, [](u32 a, u32 b)->u32 { return b > 0 ? a * b : a; }));
-	read += fread(data.data(), data.size_bytes(), 1, file);
-	return { header, data, dimensions, read };
-}
+	assert(header.keyframe_size == sizeof(K));
 
-template<typename K> AnimationGrid<K> parse_animation_grid(FILE* file, Alloc allocator) {
-	auto [hd, buffer, dims, _] = read_animation_grid(file, allocator);
-	if (expect(hd.keyframe_size == sizeof(K)))
-		return { cast<K>(buffer), dims };
-	else
-		return fail_ret("Invalid animation format", AnimationGrid<K>{});
+	auto dimensions = alloc_array<u32>(allocator, header.dimensions_count);
+	auto extents = alloc_array<f32>(allocator, header.dimensions_count);
+	auto config = alloc_array<AnimationWrap>(allocator, header.dimensions_count);
+
+	read += fread(dimensions.data(), dimensions.size_bytes(), 1, file);
+	read += fread(extents.data(), extents.size_bytes(), 1, file);
+	read += fread(config.data(), config.size_bytes(), 1, file);
+
+	auto keyframes = alloc_array<K>(allocator, fold(1, dimensions, [](u32 a, u32 b)->u32 { return b > 0 ? a * b : a; }));
+	read += fread(keyframes.data(), keyframes.size_bytes(), 1, file);
+
+	AnimationGrid<K> grid;
+	grid.dimensions = dimensions;
+	grid.extents = extents;
+	grid.config = config;
+	grid.keyframes = keyframes;
+
+	return grid;
 }
 
 template<typename K> AnimationGrid<K> load_animation_grid(const cstr path, Alloc allocator) {
@@ -50,23 +65,17 @@ template<typename K> AnimationGrid<K> load_animation_grid(const cstr path, Alloc
 }
 
 template<typename K> void unload(AnimationGrid<K>& animation, Alloc allocator) {
-	dealloc_array(allocator, animation.dimensions);
 	dealloc_array(allocator, animation.keyframes);
+	dealloc_array(allocator, animation.config);
+	dealloc_array(allocator, animation.extents);
+	dealloc_array(allocator, animation.dimensions);
 	animation.dimensions = {};
+	animation.extents = {};
+	animation.config = {};
 	animation.keyframes = {};
 }
 
 // Index = ∑(i=0 to D-1)(coordinates[i] * ∏(j=i+1 to D-1)(dimensions[j]))
-template<i32 D> u32 coord_to_index(glm::vec<D, u32> dimensions, glm::vec<D, u32> coord) {
-	auto sum = 0;
-	auto prod = 1;
-	for (auto i : u64xrange{ 0, D }) {
-		sum += coord[i] * prod;
-		prod *= dimensions[i];
-	}
-	return sum;
-}
-
 u32 coord_to_index(Array<u32> dimensions, Array<u32> coord) {
 	auto sum = 0;
 	auto prod = 1;
@@ -77,47 +86,98 @@ u32 coord_to_index(Array<u32> dimensions, Array<u32> coord) {
 	return sum;
 }
 
-enum AnimationWrap { AnimRepeat, AnimClamp, AnimMirror };
-using AnimationConfig = Array<const AnimationWrap>;
-using LAnimationConfig = LiteralArray<AnimationWrap>;
+template<i32 D> u32 coord_to_index(glm::vec<D, u32> dimensions, glm::vec<D, u32> coord) {
+	auto sum = 0;
+	auto prod = 1;
+	for (auto i : u64xrange{ 0, D }) {
+		sum += coord[i] * prod;
+		prod *= dimensions[i];
+	}
+	return sum;
+}
 
-f32 wrap(f32 value, AnimationWrap w) {
+f32 wrap_one(f32 value, AnimationWrap w) {
 	using namespace glm;
+	
 	switch (w) {
 	case AnimRepeat: return mod(value, 1.f);
-	case AnimClamp: return clamp(value, 0.f, 1.f);
+	case AnimClamp: return clamp(value, std::nexttowardf(0.f, 1.f), std::nexttowardf(1.f, -1.f));
 	case AnimMirror: return mod(value, 2.f) < 1.f ? mod(value, 1.f) : 1.f - mod(value, 1.f);
 	}
 	return 0;
 }
 
-template<i32 D> glm::vec<D, f32> wrap(glm::vec<D, f32> coord, glm::vec<D, AnimationWrap> config) {
+template<i32 D> glm::vec<D, f32> wrap_one(glm::vec<D, f32> coord, glm::vec<D, AnimationWrap> config) {
 	using namespace glm;
 	auto res = vec<D, f32>(0);
 	for (auto i : u64xrange{ 0, D })
-		res[i] = wrap(coord[i], config[i]);
+		res[i] = wrap_one(coord[i], config[i]);
 	return res;
 }
 
-Array<f32> wrap(Array<f32> buffer, Array<f32> coord, AnimationConfig config) {
+Array<f32> wrap_one(Alloc allocator, Array<const f32> coord, AnimationConfig config) {
+	auto buffer = alloc_array<f32>(allocator, coord.size());
 	for (auto i : u64xrange{ 0, coord.size() })
-		buffer[i] = wrap(coord[i], config[i]);
+		buffer[i] = wrap_one(coord[i], config[i]);
 	return buffer;
 }
 
-template<typename Keyframe> Keyframe animate(AnimationGrid<Keyframe> anim, Array<f32> coord, AnimationConfig config) {
-	u64 size = coord.size() * sizeof(f32) + coord.size() * sizeof(u32);
-	byte buffer[size];
-	auto arena = as_arena(carray(buffer, size));
-	auto wrapped_coord = wrap(alloc_array<f32>(as_stack(arena), coord.size()), coord, config);
-	auto frame_coord = alloc_array<u32>(as_stack(arena), coord.size());
-	for (auto i : u64xrange{ 0, anim.dimensions.size() })
-		frame_coord[i] = wrapped_coord[i] * anim.dimensions[i];
-	auto index = coord_to_index(anim.dimensions, frame_coord);
-	return anim.keyframes[index];
+Array<f32> scale(Alloc allocator, Array<const f32> coord, Array<const f32> extents) {
+	auto buffer = alloc_array<f32>(allocator, coord.size());
+	for (auto i : u64xrange{ 0, coord.size() })
+		buffer[i] = coord[i] / extents[i];
+	return buffer;
 }
 
-template<typename Keyframe, i32 D> Keyframe animate(AnimationGrid<Keyframe> anim, glm::vec<D, f32> coord, AnimationConfig config) { return animate(anim, cast<f32>(carray(&coord, 1)), config); }
-template<typename Keyframe, i32 D> Keyframe animate(AnimationGrid<Keyframe> anim, glm::vec<D, f32> coord, LAnimationConfig config) { return animate(anim, cast<f32>(carray(&coord, 1)), larray(config)); }
+template<typename Keyframe> Keyframe& get_keyframe(AnimationGrid<Keyframe> anim, Array<u32> coord) {
+	return anim.keyframes[coord_to_index(anim.dimensions, coord)];
+}
+
+template<typename Keyframe, i32 D> Keyframe& get_keyframe(AnimationGrid<Keyframe> anim, glm::vec<D, u32> coord) {
+	return anim.keyframes[coord_to_index(anim.dimensions, cast<u32>(carray(&coord, 1)))];
+}
+
+template<typename Keyframe> const Keyframe& animate(AnimationGrid<Keyframe> anim, Array<const f32> coord) {
+	u64 size = coord.size() * sizeof(f32) + coord.size() * sizeof(u32) + coord.size() * sizeof(f32);
+	byte buffer[size];
+	auto arena = as_arena(carray(buffer, size));
+	auto scaled_coord = scale(as_stack(arena), coord, anim.extents);
+	auto wrapped_coord = wrap_one(as_stack(arena), coord, anim.config);
+	//TODO replace with a "map" call that takes index into account for wrapped_coord[i] access
+	auto frame_coord = alloc_array<u32>(as_stack(arena), coord.size());
+	for (auto i : u64xrange{ 0, min(anim.dimensions.size(), coord.size()) })
+		frame_coord[i] = wrapped_coord[i] * anim.dimensions[i];
+	return get_keyframe(anim, frame_coord);
+}
+
+template<typename Keyframe, i32 D> Keyframe animate(AnimationGrid<Keyframe> anim, LiteralArray<f32> coord) { return animate(anim, larray(coord)); }
+template<typename Keyframe, i32 D> Keyframe animate(AnimationGrid<Keyframe> anim, glm::vec<D, f32> coord) { return animate(anim, cast<f32>(carray(&coord, 1))); }
+
+struct Animator {
+	u32 current = 0;
+	f32 state_start = 0;
+
+	f32 state_time(f32 time) const { return time - state_start; }
+	u32 select_state(u32 state, f32 time) {
+		if (current != state) {
+			state_start = time;
+			current = state;
+		}
+		return state;
+	}
+};
+
+#include <imgui_extension.cpp>
+
+bool EditorWidget(const cstr label, Animator& anim) {
+	bool changed = false;
+	if (ImGui::TreeNode(label)) {
+		defer{ ImGui::TreePop(); };
+		changed |= EditorWidget("Current", anim.current);
+		changed |= EditorWidget("State start", anim.state_start);
+	}
+	return changed;
+
+}
 
 #endif

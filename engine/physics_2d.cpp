@@ -27,7 +27,7 @@ Segment<v2f32> support_point_cloud(Array<v2f32> vertices, v2f32 direction) {
 	f32 buff[vertices.size()];;
 	auto dir = normalize(direction);
 	auto arena = as_arena(carray(buff, vertices.size()));
-	auto dots = map(as_stack(arena), vertices, [=](v2f32 v){ return dot(v, dir); });
+	auto dots = map(as_stack(arena), vertices, [=](v2f32 v) { return dot(v, dir); });
 	auto iA = best_fit_search(dots, fit_highest<f32>);
 	auto iB = linear_search_idx(dots, [&](f32 d, i32 i) { return i != iA && distance(d, dots[iA]) < support_epsilon; });
 	if (iB < 0) iB = iA;
@@ -357,6 +357,7 @@ struct RigidBody {
 	Shape2D* shape;
 	Spacial2D* spacial;
 	Body* body;
+	f32 gravity_scale;
 };
 
 using RigidBodyComp = tuple<EntityHandle, Shape2D*, Spacial2D*, Body*>;
@@ -457,9 +458,9 @@ struct Physics2D {
 		return as_v_alloc(physics_scratch);
 	}
 
-	void apply_gravity(Array<tuple<Body*, Spacial2D*, f32>> bodies) {
-		for (auto& [bd, sp, sc] : bodies) if (bd && bd->inverse_mass > 0)
-			sp->velocity.translation += gravity * dt * sc;
+	void apply_gravity(Array<RigidBody> bodies) {
+		for (auto& rb : bodies) if (rb.body && rb.body->inverse_mass > 0)
+			rb.spacial->velocity.translation += gravity * dt * rb.gravity_scale;
 	}
 
 	void step_sim(Array<Spacial2D*> ents) {
@@ -473,6 +474,25 @@ struct Physics2D {
 	}
 
 	inline u32 iteration_count(f32 real_time) { return u32(glm::clamp(i32((real_time - time) / dt), i32(0), i32(max_ticks))); }
+
+	void operator()(Array<RigidBody> bodies, Array<Spacial2D*> entities, u32 iterations) {
+		flush_state();
+		for (auto i : u64xrange{ 0, iterations }) {
+			apply_gravity(bodies);
+			step_sim(entities);
+			resolve_collisions(bodies);
+		}
+	}
+
+	void operator()(Array<RigidBody> bodies, Array<Spacial2D*> entities, u32 iterations, auto fixed_update) {
+		flush_state();
+		for (auto i : u64xrange{ 0, iterations }) {
+			fixed_update(i);
+			apply_gravity(bodies);
+			step_sim(entities);
+			resolve_collisions(bodies);
+		}
+	}
 
 	struct Editor : public SystemEditor {
 		ShapeRenderer debug_draw = load_shape_renderer();

@@ -165,6 +165,11 @@ namespace ALListener {
 #include <inputs.cpp>
 #include <system_editor.cpp>
 
+struct Sound {
+	AudioSource* source;
+	Spacial2D* space;
+};
+
 struct Audio {
 	static constexpr auto MAX_AUDIO_BUFFER_COUNT = 10;
 	static constexpr string exts[] = { "ALC_SOFT_reopen_device" };
@@ -172,18 +177,16 @@ struct Audio {
 	List<AudioBuffer> buffers = { alloc_array<AudioBuffer>(std_allocator, MAX_AUDIO_BUFFER_COUNT), 0 };
 
 	~Audio() {
-		// for (auto&& buffer : buffers.allocated())
-		// 	destroy(buffer);
 		deinit_audio(data);
 	}
 
-	void migrate_audio(Array<tuple<AudioSource*, const Spacial2D*>> entities) {
+	void migrate_audio(Array<Sound> entities) {
 		data = reinit(data);
 		for (auto [source, _] : entities) if (source)
 			source->cache_pop();
 	}
 
-	void operator()(Array<tuple<AudioSource*, const Spacial2D*>> entities, Spacial2D* poh = nullptr) {
+	void operator()(Array<Sound> entities, Spacial2D* poh = nullptr) {
 		if (changed_audio(data))
 			migrate_audio(entities);
 		for (auto& [source, spacial] : entities) {

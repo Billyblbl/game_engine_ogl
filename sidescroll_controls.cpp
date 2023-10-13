@@ -107,12 +107,12 @@ void player_input(SidescrollControl& ctrl, const SidescrollControl::PlayerBindin
 	ctrl.actions.all = poll(bindings.device, bindings.actions.all);
 }
 
-v2f32 control(SidescrollControl& ctrl, v2f32& velocity, v2f32& scale, v2f32 gravity, f32 time) {
+v2f32 control(SidescrollControl& ctrl, v2f32& velocity, v2f32& scale, v2f32 gravity, f32 dt) {
 	using namespace glm;
 	using namespace Input;
 	f32 target_vel = ctrl.movement.x * ctrl.speed;
 	f32 target_accel = target_vel - velocity.x;
-	velocity.x += clamp(target_accel, -ctrl.accel * time, ctrl.accel * time);
+	velocity.x += clamp(target_accel, -ctrl.accel * dt, ctrl.accel * dt);
 	if (ctrl.grounded && (ctrl.actions.jump & Input::ButtonState::Down))
 		velocity.y = ctrl.jump_force;
 	else if (!ctrl.grounded && (!(ctrl.actions.jump & ButtonState::Pressed) || velocity.y < 0)) //* assumes gravity down
@@ -157,12 +157,46 @@ rtu32 animate_sidescroll_character(Animator& animator, Array<SpriteAnimation> an
 			else return IDLE;
 		}
 	(), time);
+	//? should the coordinates be stored in the animator and the actual rect animation dealt with by a specific anime_sprite functions ?
 	switch (state) {
 	case LOCOMOTION: return animate(animations[state], v2f32(animator.state_time(time), abs(ctrl.movement.x)));
 	case JUMP: return animate(animations[state], v1f32(animator.state_time(time)));
 	case FALL: return animate(animations[state], v1f32(animator.state_time(time)));
 	case IDLE: return animate(animations[state], v1f32(animator.state_time(time)));
 	default: return (assert(("Unimplemented state type", false)), rtu32{});
+	}
+}
+
+struct SidescrollCharacter {
+	SidescrollControl* ctrl;
+	Animator* anim;
+	Sprite* sprite;
+	Spacial2D* space;
+	Array<SpriteAnimation> animations;
+};
+
+template<> tuple<bool, SidescrollCharacter> use_as<SidescrollCharacter>(EntityHandle handle);
+
+void ground_characters(Array<SidescrollCharacter> characters, Array<Collision2D> collisions, v2f32 gravity_dir) {
+	for (auto& ch : characters) ch.ctrl->grounded = false;
+	for (auto& col : collisions) for (auto i : u64xrange{ 0, 2 }) if (auto [is_ctrl, ch] = use_as<SidescrollCharacter>(col.entities[i]); is_ctrl) {
+		auto grounding_contact = (
+			[&](const Contact2D& ctc) {
+				auto lever = normalize(ctc.levers[i]);
+				auto normal = normalize(ctc.penetration);
+				return dot(lever, gravity_dir) > 0 && angle(normal, gravity_dir) < ch.ctrl->max_slope;
+			}
+		);
+		if (ch.ctrl->grounded = (linear_search(col.contacts, grounding_contact) >= 0))
+			ch.ctrl->falling = false;
+	}
+}
+
+void update_characters(Array<SidescrollCharacter> characters, Array<Collision2D> collisions, v2f32 gravity, const Time::Clock& clock) {
+	ground_characters(characters, collisions, normalize(gravity));
+	for (auto& ch : characters) {
+		ch.space->velocity.translation = control(*ch.ctrl, ch.space->velocity.translation, ch.space->transform.scale, gravity, clock.dt);
+		ch.sprite->cursor.view = animate_sidescroll_character(*ch.anim, ch.animations, *ch.ctrl, clock.current);
 	}
 }
 

@@ -78,14 +78,14 @@ SpriteCursor load_into(const cstr path, TexBuffer& texture, v2u32 upper_left = v
 
 struct SpriteInstance {
 	m4x4f32 matrix;
-	rtf32 uv_rect;
+	rtu32 uv_rect;
 	v4f32 dimensions; //x, y -> rect dims, z -> rect depths, w -> altas page
 };
 
-SpriteInstance instance_of(const Sprite& sprite, const m4x4f32& matrix, v2u32 atlas_page_dims) {
+SpriteInstance instance_of(const Sprite& sprite, const m4x4f32& matrix) {
 	return {
 		matrix * glm::scale(v3f32(sprite.dimensions, 1)),
-		ratio(sprite.cursor.view, atlas_page_dims),
+		sprite.cursor.view,
 		v4f32(sprite.dimensions, sprite.depth, sprite.cursor.atlas_index)
 	};
 }
@@ -93,6 +93,7 @@ SpriteInstance instance_of(const Sprite& sprite, const m4x4f32& matrix, v2u32 at
 struct SpriteRenderer {
 	struct SceneData {
 		m4x4f32 view_projection;
+		v4u32 atlas_dimensions;
 		struct {
 			u32 start;
 			u32 end;
@@ -113,7 +114,7 @@ struct SpriteRenderer {
 		u32 content_size = min(sprites.size(), instances_buffer.content.size());
 		memcpy(instances_buffer.content.data(), sprites.data(), content_size * sizeof(SpriteInstance));
 		sync(instances_buffer);
-		sync(scene, { vp, { 0 , content_size} });
+		sync(scene, { vp, textures.dimensions, { 0 , content_size} });
 		pipeline(rect, scene.obj->instances_range.end - scene.obj->instances_range.start,
 			{
 				bind_to(textures, 0),

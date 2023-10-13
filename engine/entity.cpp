@@ -36,6 +36,12 @@ struct EntitySlot {
 		UserFlag = 1 << 2,
 		FlagIndexCount = entity_flag_count
 	};
+	static constexpr string BaseFlags[] = {
+		"None",
+		"Allocated",
+		"Pending Release",
+		"User Flag"
+	};
 	u64 flags = 0;
 	u64 generation = 0;
 	string name = "__entity__";
@@ -74,5 +80,20 @@ template<castable<EntitySlot> E, typename F = u64> auto gather(Alloc allocator, 
 	}
 	return list.allocated();
 }
+
+template<typename I> tuple<bool, I> use_as(EntityHandle handle);
+
+template<typename I, castable<EntitySlot> E> auto gather(Alloc allocator, Array<E> entities) {
+	auto list = List{ alloc_array<I>(allocator, entities.size()), 0 };
+	for (auto&& i : entities) {
+		auto [good, res] = use_as<I>(get_entity_genhandle(i));
+		if (good) list.push(res);
+	}
+	if (list.current > 0) {
+		list.shrink_to_content(allocator);
+	}
+	return list.allocated();
+}
+
 
 #endif

@@ -36,13 +36,13 @@ void destroy(AudioBuffer buffer) {
 	AL_GUARD(alDeleteBuffers(1 , &buffer.id));
 }
 
-Array<AudioBuffer> allocate_audio_buffers(Alloc allocator, usize count) {
-	auto buffers = alloc_array<AudioBuffer>(allocator, count);
+Array<AudioBuffer> allocate_audio_buffers(Arena& arena, usize count) {
+	auto buffers = arena.push_array<AudioBuffer>(count);
 	AL_GUARD(alGenBuffers(count, &buffers[0].id));
 	return buffers;
 }
 
-void deallocate(Alloc allocator, Array<AudioBuffer> buffers) {
+void deallocate(Arena& arena, Array<AudioBuffer> buffers) {
 	AL_GUARD(alDeleteBuffers(buffers.size(), &buffers[0].id));
 }
 

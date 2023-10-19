@@ -6,11 +6,11 @@
 
 using Polygon = Array<v2f32>;
 
-tuple<Polygon, usize> read_polygon(FILE* file, Alloc allocator) {
+tuple<Polygon, usize> read_polygon(FILE* file, Arena& arena) {
 	usize read = 0;
 	usize count = 0;
 	read += fread(&count, sizeof(usize), 1, file);
-	auto array = alloc_array<v2f32>(allocator, count);
+	auto array = arena.push_array<v2f32>(count);
 	read += fread(array.data(), sizeof(v2f32), count, file);
 	return tuple(array, read);
 }
@@ -117,30 +117,29 @@ bool intersect_tri_point(Polygon triangle, v2f32 point) {
 }
 
 //* mostly from https://www.youtube.com/watch?v=QAdfkylpYwc&t=265s&ab_channel=Two-BitCoding
-tuple<Array<Polygon>, Array<v2f32>> ear_clip(Alloc allocator, Polygon polygon, bool early_out = true) {
+tuple<Array<Polygon>, Array<v2f32>> ear_clip(Arena& arena, Polygon polygon, bool early_out = true) {
 
 	if (polygon.size() < 4 || is_convex(polygon)) {
-		auto p = duplicate_array(allocator, polygon);
-		auto dec = alloc_array<Polygon>(allocator, 1);
-		dec[0] = p;
+		auto p = arena.push_array(polygon);
+		auto dec = arena.push_array<Polygon>({ p });
 		return { dec, p };
 	}
 
-	auto scratch = create_virtual_arena(5000000); defer{ destroy_virtual_arena(scratch); };//TODO replace with thread local arena scheme
+	auto [scratch, scope] = scratch_push_scope(5000000); defer{ scratch_pop_scope(scratch, scope); };
 
 	auto wo = poly_wo(polygon);
-	auto remaining = List{ duplicate_array(as_v_alloc(scratch), polygon), polygon.size() };
-	auto polys = List{ alloc_array<Polygon>(allocator, polygon.size() - 2), 0 };
-	auto poly_verts = List{ alloc_array<v2f32>(allocator, (polygon.size() - 2) * 3), 0 };
+	auto remaining = List{ arena.push_array(polygon), polygon.size() };
+	auto polys = List{ arena.push_array<Polygon>(polygon.size() - 2) };
+	auto poly_verts = List{ arena.push_array<v2f32>((polygon.size() - 2) * 3), 0 };
 
 	struct Triangle { v2f32 points[3]; };
 
 	auto angle_triangle = (
 		[&](i64 i) -> Triangle {
 			return { {
-				remaining.allocated()[modidx(i - 1, remaining.current)],
-				remaining.allocated()[modidx(i * 1, remaining.current)],
-				remaining.allocated()[modidx(i + 1, remaining.current)]
+				remaining[modidx(i - 1, remaining.current)],
+				remaining[modidx(i * 1, remaining.current)],
+				remaining[modidx(i + 1, remaining.current)]
 			} };
 		}
 	);
@@ -148,25 +147,25 @@ tuple<Array<Polygon>, Array<v2f32>> ear_clip(Alloc allocator, Polygon polygon, b
 	auto is_ear = (
 		[&](v2f32 corner, i64 i) -> bool {
 			auto tri = angle_triangle(i);
-			if (!convex_at(remaining.allocated(), i, wo))
+			if (!convex_at(remaining.used(), i, wo))
 				return false;
 			//* if there's a point of the remaining polygon that isn't part of the triangle yet still intersects with it
-			for (auto v : remaining.allocated()) if (linear_search(larray(tri.points), v) < 0 && intersect_tri_point(larray(tri.points), v))
+			for (auto v : remaining.used()) if (linear_search(larray(tri.points), v) < 0 && intersect_tri_point(larray(tri.points), v))
 				return false;
 			return true;
 		}
 	);
 
-	while (remaining.current > 3 && !(early_out && is_convex(remaining.allocated(), wo))) {
-		auto reflex = linear_search_idx(remaining.allocated(), [&](v2f32, i64 i) { return !convex_at(remaining.allocated(), i, wo); });
-		auto ear = linear_search_idx(remaining.allocated(), is_ear, reflex + remaining.current - 1);
+	while (remaining.current > 3 && !(early_out && is_convex(remaining.used(), wo))) {
+		auto reflex = linear_search_idx(remaining.used(), [&](v2f32, i64 i) { return !convex_at(remaining.used(), i, wo); });
+		auto ear = linear_search_idx(remaining.used(), is_ear, reflex + remaining.current - 1);
 		assert(ear >= 0);
 		auto tri = angle_triangle(ear);
-		polys.push(poly_verts.push_range(larray(tri.points)));
+		polys.push(poly_verts.push(larray(tri.points)));
 		remaining.remove_ordered(ear);
 	}
-	polys.push(poly_verts.push_range(remaining.allocated()));
-	return { polys.allocated(), poly_verts.shrink_to_content(allocator) };
+	polys.push(poly_verts.push(remaining.used()));
+	return { polys.used(), poly_verts.shrink_to_content(arena) };
 }
 
 #endif

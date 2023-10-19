@@ -141,15 +141,17 @@ struct PlaygroundScene {
 
 	EntityHandle player;
 
+	Arena resources_arena = Arena::from_vmem(1 << 23);
+
 	PlaygroundScene() {
 		rendering.camera = { v3f32(16.f, 9.f, 1000.f) * 4.f, v3f32(0) };
-		entities = List{ alloc_array<Entity>(std_allocator, MAX_ENTITIES), 0 };
+		entities = List{ resources_arena.push_array<Entity>(MAX_ENTITIES), 0 };
 
 		auto img = load_image(assets.test_sidescroll_path); defer{ unload(img); };
 		spritesheet = load_into(img, rendering.atlas);
 
-		auto layout = build_layout(std_allocator, assets.sidescroll_character_animation_recipe_path);
-		animations = build_sidescroll_character_animations(std_allocator, layout, img.dimensions);
+		auto layout = build_layout(resources_arena, assets.sidescroll_character_animation_recipe_path);
+		animations = build_sidescroll_character_animations(resources_arena, layout, img.dimensions);
 
 		static v2f32 test_polygon[] = { v2f32(-1, -1) / 2.f, v2f32(+1, -1) / 2.f, v2f32(+1, +1) / 2.f, v2f32(-1, +1) / 2.f };
 		static v2f32 floor_poly[] = { v2f32(-1000, -1), v2f32(+1000, -1), v2f32(+1000, +1), v2f32(-1000, +1) };
@@ -241,8 +243,7 @@ struct PlaygroundScene {
 		defer{ update_count++; };
 		update(clock);
 		constexpr u64 SCRATCH_SIZE = (1ull << 21);
-		static auto scratch = create_virtual_arena(SCRATCH_SIZE);
-		auto flush_scratch = [&]() -> Alloc { return as_v_alloc(reset_virtual_arena(scratch)); };
+		auto [scratch, scope] = scratch_push_scope(SCRATCH_SIZE); defer{ scratch_pop_scope(scratch, scope); };
 
 		if (player.valid())
 			player_input(player->content<Entity>().ctrl);
@@ -251,17 +252,12 @@ struct PlaygroundScene {
 		pov.transform.rotation = 0;
 		pov.transform.scale.x = abs(pov.transform.scale.x);
 
-		flush_scratch();
-		if (auto it_count = physics.iteration_count(clock.current); it_count > 0) {
-			physics(
-				gather<RigidBody>(as_v_alloc(scratch), entities.allocated()),
-				gather<Spacial2D*>(as_v_alloc(scratch), entities.allocated()),
-				it_count
-			);
-		}
-		update_characters(gather<SidescrollCharacter>(flush_scratch(), entities.allocated()), physics.collisions.allocated(), physics.gravity, clock);
-		audio(gather<Sound>(flush_scratch(), entities.allocated()), &pov);
-		rendering(gather<SpriteInstance>(flush_scratch(), entities.allocated()), pov.transform);
+		scratch_pop_scope(scratch, scope);
+		if (auto it_count = physics.iteration_count(clock.current); it_count > 0)
+			physics(gather<RigidBody>(scratch, entities.used()), gather<Spacial2D*>(scratch, entities.used()), it_count );
+		update_characters(gather<SidescrollCharacter>(scratch_pop_scope(scratch, scope), entities.used()), physics.collisions.used(), physics.gravity, clock);
+		audio(gather<Sound>(scratch_pop_scope(scratch, scope), entities.used()), &pov);
+		rendering(gather<SpriteInstance>(scratch_pop_scope(scratch, scope), entities.used()), pov.transform);
 		return true;
 	}
 
@@ -277,11 +273,11 @@ struct PlaygroundScene {
 
 	void editor(tuple<SystemEditor, SystemEditor, Physics2D::Editor, SystemEditor, SystemEditor>& ed) {
 		auto& [rd, au, ph, ent, misc] = ed;
-		static auto debug_scratch = create_virtual_arena(1 << 19);
+		static auto debug_scratch = Arena::from_vmem(1 << 19);
 		if (ph.debug) {
 			auto vp = rendering.get_vp_matrix(pov.transform);
-			if (ph.colliders) ph.draw_shapes(gather(as_v_alloc(reset_virtual_arena(debug_scratch)), entities.allocated(), Entity::Collider, [&](Entity& ent) { return tuple(&ent.shape, &ent.space); }), vp);
-			if (ph.collisions) ph.draw_collisions(physics.collisions.allocated(), vp, &Entity::space);
+			if (ph.colliders) ph.draw_shapes(gather((debug_scratch.reset()), entities.used(), Entity::Collider, [&](Entity& ent) { return tuple(&ent.shape, &ent.space); }), vp);
+			if (ph.collisions) ph.draw_collisions(physics.collisions.used(), vp, &Entity::space);
 		}
 
 		if (rd.show_window) {
@@ -304,7 +300,7 @@ struct PlaygroundScene {
 
 		if (ent.show_window) {
 			if (begin_editor(ent)) {
-				EditorWidget("Entities", entities.allocated(), false);
+				EditorWidget("Entities", entities.used(), false);
 			} end_editor();
 		}
 
@@ -323,7 +319,7 @@ bool editor_test(App& app) {
 	ImGui::init_ogl_glfw(app.window); defer{ ImGui::shutdown_ogl_glfw(); };
 	auto editor = create_editor("Editor", "Alt+X", { Input::KB::K_LEFT_ALT, Input::KB::K_X });
 	editor.show_window = true;
-	auto sub_editors = List{ alloc_array<SystemEditor*>(std_allocator, 10), 0 }; defer{ dealloc_array(std_allocator, sub_editors.capacity); };
+	auto sub_editors = List{ cast<SystemEditor*>(virtual_reserve(10 * sizeof(SystemEditor*), true)), 0 };
 	sub_editors.push(&editor);
 
 	PlaygroundScene scene;
@@ -339,7 +335,7 @@ bool editor_test(App& app) {
 
 	while (update(app, editor_test)) {
 		scene();
-		shortcut_sub_editors(sub_editors.allocated());
+		shortcut_sub_editors(sub_editors.used());
 		if (editor.show_window) {
 			ImGui::NewFrame_OGL_GLFW(); defer{
 				ImGui::Render();
@@ -347,7 +343,7 @@ bool editor_test(App& app) {
 			};
 			if (ImGui::BeginMainMenuBar()) {
 				defer{ ImGui::EndMainMenuBar(); };
-				sub_editor_menu("Windows", sub_editors.allocated());
+				sub_editor_menu("Windows", sub_editors.used());
 				if (ImGui::BeginMenu("Actions")) {
 					defer{ ImGui::EndMenu(); };
 					if (ImGui::MenuItem("Break"))

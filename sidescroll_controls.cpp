@@ -128,8 +128,8 @@ v2f32 control(SidescrollControl& ctrl, v2f32& velocity, v2f32& scale, v2f32 grav
 }
 
 
-Array<SpriteAnimation> build_sidescroll_character_animations(Alloc allocator, const SpritesheetLayout& layout, v2u32 texture_dimensions) {
-	return build_animations(allocator, layout, texture_dimensions,
+Array<SpriteAnimation> build_sidescroll_character_animations(Arena& arena, const SpritesheetLayout& layout, v2u32 texture_dimensions) {
+	return build_animations(arena, layout, texture_dimensions,
 		{
 		"locomotion",
 		"idle",

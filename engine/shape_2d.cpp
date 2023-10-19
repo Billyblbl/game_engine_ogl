@@ -102,17 +102,17 @@ inline rtf32 aabb_shape(const Shape2D& shape, m4x4f32 transform) {
 	}
 }
 
-Shape2D create_concave_poly_shape(Alloc allocator, Polygon poly) {
-	auto [sub_polys, vertices] = ear_clip(allocator, poly);
+Shape2D create_concave_poly_shape(Arena& arena, Polygon poly) {
+	auto [sub_polys, vertices] = ear_clip(arena, poly);
 	if (sub_polys.size() == 0)
 		return null_shape;
 	if (sub_polys.size() == 1)
 		return make_shape_2d<Shape2D::Polygon>(sub_polys.front());
-	return make_shape_2d<Shape2D::Concave>(map(allocator, sub_polys, [](Array<v2f32> poly) -> Shape2D { return make_shape_2d<Shape2D::Polygon>(poly); }));
+	return make_shape_2d<Shape2D::Concave>(map(arena, sub_polys, [](Array<v2f32> poly) -> Shape2D { return make_shape_2d<Shape2D::Polygon>(poly); }));
 }
 
-Shape2D create_polyshape(Alloc allocator, Array<Polygon> polygons) {
-	return make_shape_2d<Shape2D::Concave>(map(allocator, polygons, [&](Array<v2f32> poly) -> Shape2D { return create_concave_poly_shape(allocator, poly); }));
+Shape2D create_polyshape(Arena& arena, Array<Polygon> polygons) {
+	return make_shape_2d<Shape2D::Concave>(map(arena, polygons, [&](Array<v2f32> poly) -> Shape2D { return create_concave_poly_shape(arena, poly); }));
 }
 
 #endif

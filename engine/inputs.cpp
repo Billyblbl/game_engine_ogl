@@ -475,7 +475,7 @@ namespace Input {
 				list.push(i);
 			}
 		}
-		return list.allocated();
+		return list.used();
 	}
 
 	Context& init_context(GLFWwindow* window) {

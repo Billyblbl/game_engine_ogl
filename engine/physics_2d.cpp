@@ -25,9 +25,9 @@ constexpr f32 support_epsilon = 0.0001f;
 Segment<v2f32> support_point_cloud(Array<v2f32> vertices, v2f32 direction) {
 	using namespace glm;
 	f32 buff[vertices.size()];;
+	auto arena = Arena::from_buffer(cast<byte>(carray(buff, vertices.size())));
 	auto dir = normalize(direction);
-	auto arena = as_arena(carray(buff, vertices.size()));
-	auto dots = map(as_stack(arena), vertices, [=](v2f32 v) { return dot(v, dir); });
+	auto dots = map((arena), vertices, [=](v2f32 v) { return dot(v, dir); });
 	auto iA = best_fit_search(dots, fit_highest<f32>);
 	auto iB = linear_search_idx(dots, [&](f32 d, i32 i) { return i != iA && distance(d, dots[iA]) < support_epsilon; });
 	if (iB < 0) iB = iA;
@@ -91,29 +91,29 @@ template<support_function F1, support_function F2> tuple<bool, tuple<v2f32, v2f3
 		triangle.push(new_point);
 
 		if (triangle.current == 1) { // first point case
-			direction = -triangle.allocated()[0];
+			direction = -triangle[0];
 		} else if (triangle.current == 2) { // first line case
-			auto [B, A] = to_tuple<2>(triangle.allocated());
+			auto [B, A] = to_tuple<2>(triangle.used());
 			auto AB = B - A;
 			auto AO = -A;// origin - A
 			auto ABperp_axis = v2f32(-AB.y, AB.x);
 			if (glm::dot(AO, ABperp_axis) == 0) {// origin is on AB
 				triangle.push(v2f32(0));
-				return { true, to_tuple<3>(triangle.allocated()) };
+				return { true, to_tuple<3>(triangle.used()) };
 			}
 			// direction should be perpendicular to AB & go towards the origin
 			direction = glm::normalize(ABperp_axis * glm::dot(AO, ABperp_axis));
 		} else { // triangle case
-			auto [C, B, A] = to_tuple<3>(triangle.allocated());
+			auto [C, B, A] = to_tuple<3>(triangle.used());
 			auto AB = B - A;
 			auto AC = C - A;
 			auto AO = -A;// origin - A
 			auto ABperp_axis = v2f32(-AB.y, AB.x);
 			auto ACperp_axis = v2f32(-AC.y, AC.x);
 			if (glm::dot(AO, ABperp_axis) == 0) // origin is on AB
-				return { true, to_tuple<3>(triangle.allocated()) };
+				return { true, to_tuple<3>(triangle.used()) };
 			if (glm::dot(AO, ACperp_axis) == 0) // origin is on AC
-				return { true, to_tuple<3>(triangle.allocated()) };
+				return { true, to_tuple<3>(triangle.used()) };
 			auto ABperp = glm::normalize(ABperp_axis * glm::dot(ABperp_axis, -AC)); // must go towards the exterior of triangle
 			auto ACperp = glm::normalize(ACperp_axis * glm::dot(ACperp_axis, -AB)); // must go towards the exterior of triangle
 			if (glm::dot(ABperp, AO) > 0) {// region AB
@@ -123,7 +123,7 @@ template<support_function F1, support_function F2> tuple<bool, tuple<v2f32, v2f3
 				triangle.remove(1);//B
 				direction = ACperp;
 			} else { // Inside triangle ABC
-				return { true, to_tuple<3>(triangle.allocated()) };
+				return { true, to_tuple<3>(triangle.used()) };
 			}
 		}
 	}
@@ -145,8 +145,8 @@ template<support_function F1, support_function F2> v2f32 EPA(const F1& f1, const
 	for (auto iteration : u64xrange{ 0, max_iteration }) {
 		for (auto i : u64xrange{ 0, points.current }) {
 			auto j = (i + 1) % points.current;
-			auto vi = points.allocated()[i];
-			auto vj = points.allocated()[j];
+			auto vi = points[i];
+			auto vj = points[j];
 			auto normal = glm::normalize(orthogonal(vj - vi));
 			auto dist = glm::dot(normal, vj);
 
@@ -228,7 +228,7 @@ Array<Contact2D> intersect_concave(List<Contact2D>& intersections, const Shape2D
 			for (auto& sub_shape2 : (s2.type == Shape2D::Concave) ? s2.composite : carray(&s2, 1))
 				intersect_concave(intersections, sub_shape1, sub_shape2, t1, t2);
 	}
-	return intersections.allocated().subspan(start);
+	return intersections.used().subspan(start);
 }
 
 tuple<bool, rtf32, v2f32> intersect(const Shape2D& s1, const Shape2D& s2, m4x4f32 t1, m4x4f32 t2) {
@@ -397,10 +397,10 @@ tuple<Transform2D, Transform2D> contact_response(
 	);
 }
 
-Array<Collision2D> simulate_collisions(Alloc allocator, Array<RigidBody> entities) {
+Array<Collision2D> simulate_collisions(Arena& arena, Array<RigidBody> entities) {
 	if (entities.size() == 0) return {};
-	auto contact_pool = List{ alloc_array<Contact2D>(allocator, entities.size() * entities.size() * MaxContactPerCollision), 0 };
-	auto collisions = List{ alloc_array<Collision2D>(allocator, entities.size() * entities.size()), 0 };
+	auto contact_pool = List{ arena.push_array<Contact2D>(entities.size() * entities.size() * MaxContactPerCollision), 0 };
+	auto collisions = List{ arena.push_array<Collision2D>(entities.size() * entities.size()), 0 };
 	for (auto i : u64xrange{ 0, entities.size() - 1 }) {
 		for (auto j : u64xrange{ i + 1, entities.size() }) {
 			RigidBody ents[] = { entities[i], entities[j] };
@@ -410,7 +410,7 @@ Array<Collision2D> simulate_collisions(Alloc allocator, Array<RigidBody> entitie
 				continue;
 
 			auto type = collision_type(ents[0].body, ents[1].body);
-			collisions.push_growing(allocator, { contacts, { ents[0].handle, ents[1].handle },  type });
+			collisions.push_growing(arena, { contacts, { ents[0].handle, ents[1].handle },  type });
 			if (!has_all(type, Collision2D::Physical))
 				continue;
 
@@ -436,26 +436,26 @@ Array<Collision2D> simulate_collisions(Alloc allocator, Array<RigidBody> entitie
 			ents[1].spacial->velocity = ents[1].spacial->velocity + d2 * (1.f / f32(contacts.size()));
 		}
 	}
-	collisions.shrink_to_content(allocator);
-	contact_pool.shrink_to_content(allocator);
-	return collisions.allocated();
+	collisions.shrink_to_content(arena);
+	contact_pool.shrink_to_content(arena);
+	return collisions.used();
 }
 
 struct Physics2D {
 
 	static constexpr u64 PhysicsMemory = (MAX_ENTITIES * MAX_ENTITIES * sizeof(Collision2D) + MAX_ENTITIES * MAX_ENTITIES * sizeof(Contact2D) * MaxContactPerCollision);
 	List<Collision2D> collisions = {};
-	Arena physics_scratch = create_virtual_arena(PhysicsMemory);
+	Arena physics_scratch = Arena::from_vmem(PhysicsMemory);
 	f32 dt = 1.f / 60.f;
 	u32 max_ticks = 5;
 	v2f32 gravity = v2f32(0);
 	f32 tpu = 0;
 	f32 time;
 
-	Alloc flush_state(u64 estimated_collisions_count = 10) {
+	Arena& flush_state(u64 estimated_collisions_count = 10) {
 		u64 heuristic_collision_count = max(estimated_collisions_count, collisions.current * 2);
-		collisions = List{ alloc_array<Collision2D>(as_v_alloc(reset_virtual_arena(physics_scratch)), heuristic_collision_count), 0 };
-		return as_v_alloc(physics_scratch);
+		collisions = List{ physics_scratch.reset().push_array<Collision2D>(heuristic_collision_count), 0 };
+		return physics_scratch;
 	}
 
 	void apply_gravity(Array<RigidBody> bodies) {
@@ -470,7 +470,7 @@ struct Physics2D {
 	}
 
 	Array<Collision2D> resolve_collisions(Array<RigidBody> rbs) {
-		return collisions.push_range_growing(as_v_alloc(physics_scratch), simulate_collisions(as_v_alloc(physics_scratch), rbs));
+		return collisions.push_growing(physics_scratch, simulate_collisions(physics_scratch, rbs));
 	}
 
 	inline u32 iteration_count(f32 real_time) { return u32(glm::clamp(i32((real_time - time) / dt), i32(0), i32(max_ticks))); }
@@ -545,7 +545,7 @@ struct Physics2D {
 			if (ImGui::TreeNode("Collisions")) {
 				defer{ ImGui::TreePop(); };
 				auto id = 0;
-				for (auto [contacts, entities, physical] : system.collisions.allocated()) {
+				for (auto [contacts, entities, physical] : system.collisions.used()) {
 					char buffer[999];
 					snprintf(buffer, sizeof(buffer), "%u:%s:%s", id, entities[0]->name.data(), entities[1]->name.data());
 					ImGui::PushID(id++);

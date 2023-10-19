@@ -31,20 +31,20 @@ template<typename Keyframe> usize write_animation_grid(FILE* file, const Animati
 	return written;
 }
 
-template<typename K> AnimationGrid<K> parse_animation_grid(FILE* file, Alloc allocator) {
+template<typename K> AnimationGrid<K> parse_animation_grid(FILE* file, Arena& arena) {
 	AnimationGridHeader header;
 	auto read = fread(&header, sizeof(header), 1, file);
 	assert(header.keyframe_size == sizeof(K));
 
-	auto dimensions = alloc_array<u32>(allocator, header.dimensions_count);
-	auto extents = alloc_array<f32>(allocator, header.dimensions_count);
-	auto config = alloc_array<AnimationWrap>(allocator, header.dimensions_count);
+	auto dimensions = arena.push_array<u32>(header.dimensions_count);
+	auto extents = arena.push_array<f32>(header.dimensions_count);
+	auto config = arena.push_array<AnimationWrap>(header.dimensions_count);
 
 	read += fread(dimensions.data(), dimensions.size_bytes(), 1, file);
 	read += fread(extents.data(), extents.size_bytes(), 1, file);
 	read += fread(config.data(), config.size_bytes(), 1, file);
 
-	auto keyframes = alloc_array<K>(allocator, fold(1, dimensions, [](u32 a, u32 b)->u32 { return b > 0 ? a * b : a; }));
+	auto keyframes = arena.push_array<K>(fold(1, dimensions, [](u32 a, u32 b)->u32 { return b > 0 ? a * b : a; }));
 	read += fread(keyframes.data(), keyframes.size_bytes(), 1, file);
 
 	AnimationGrid<K> grid;
@@ -56,19 +56,20 @@ template<typename K> AnimationGrid<K> parse_animation_grid(FILE* file, Alloc all
 	return grid;
 }
 
-template<typename K> AnimationGrid<K> load_animation_grid(const cstr path, Alloc allocator) {
+template<typename K> AnimationGrid<K> load_animation_grid(const cstr path, Arena& arena) {
 	printf("Loading animation grid %s\n", path);
 	auto file = fopen(path, "r"); defer{ fclose(file); };
 	if (!file)
 		perror("Failed to open file");
-	return parse_animation_grid<K>(file, allocator);
+	return parse_animation_grid<K>(file, arena);
 }
 
-template<typename K> void unload(AnimationGrid<K>& animation, Alloc allocator) {
-	dealloc_array(allocator, animation.keyframes);
-	dealloc_array(allocator, animation.config);
-	dealloc_array(allocator, animation.extents);
-	dealloc_array(allocator, animation.dimensions);
+//TODO maybe? remove
+template<typename K> void unload(AnimationGrid<K>& animation, Arena& arena) {
+	// dealloc_array(arena, animation.keyframes);
+	// dealloc_array(arena, animation.config);
+	// dealloc_array(arena, animation.extents);
+	// dealloc_array(arena, animation.dimensions);
 	animation.dimensions = {};
 	animation.extents = {};
 	animation.config = {};
@@ -115,15 +116,15 @@ template<i32 D> glm::vec<D, f32> wrap_one(glm::vec<D, f32> coord, glm::vec<D, An
 	return res;
 }
 
-Array<f32> wrap_one(Alloc allocator, Array<const f32> coord, AnimationConfig config) {
-	auto buffer = alloc_array<f32>(allocator, coord.size());
+Array<f32> wrap_one(Arena& arena, Array<const f32> coord, AnimationConfig config) {
+	auto buffer = arena.push_array<f32>(coord.size());
 	for (auto i : u64xrange{ 0, coord.size() })
 		buffer[i] = wrap_one(coord[i], config[i]);
 	return buffer;
 }
 
-Array<f32> scale(Alloc allocator, Array<const f32> coord, Array<const f32> extents) {
-	auto buffer = alloc_array<f32>(allocator, coord.size());
+Array<f32> scale(Arena& arena, Array<const f32> coord, Array<const f32> extents) {
+	auto buffer = arena.push_array<f32>(coord.size());
 	for (auto i : u64xrange{ 0, coord.size() })
 		buffer[i] = coord[i] / extents[i];
 	return buffer;
@@ -140,11 +141,11 @@ template<typename Keyframe, i32 D> Keyframe& get_keyframe(AnimationGrid<Keyframe
 template<typename Keyframe> const Keyframe& animate(AnimationGrid<Keyframe> anim, Array<const f32> coord) {
 	u64 size = coord.size() * sizeof(f32) + coord.size() * sizeof(u32) + coord.size() * sizeof(f32);
 	byte buffer[size];
-	auto arena = as_arena(carray(buffer, size));
-	auto scaled_coord = scale(as_stack(arena), coord, anim.extents);
-	auto wrapped_coord = wrap_one(as_stack(arena), coord, anim.config);
+	Arena arena = Arena::from_buffer(carray(buffer, size));
+	auto scaled_coord = scale(arena, coord, anim.extents);
+	auto wrapped_coord = wrap_one(arena, coord, anim.config);
 	//TODO replace with a "map" call that takes index into account for wrapped_coord[i] access
-	auto frame_coord = alloc_array<u32>(as_stack(arena), coord.size());
+	auto frame_coord = arena.push_array<u32>(coord.size());
 	for (auto i : u64xrange{ 0, min(anim.dimensions.size(), coord.size()) })
 		frame_coord[i] = wrapped_coord[i] * anim.dimensions[i];
 	return get_keyframe(anim, frame_coord);

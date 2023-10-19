@@ -68,7 +68,7 @@ struct Entity : public EntitySlot {
 	AudioSource audio_source;
 	Sprite sprite;
 	SidescrollControl ctrl;
-	Shape2D shape;
+	Shape2D shape[1];
 	Body body;
 	Animator anim;
 	Array<SpriteAnimation> animations;
@@ -78,7 +78,7 @@ template<> tuple<bool, RigidBody> use_as<RigidBody>(EntityHandle handle) {
 	if (!has_all(handle->flags, Entity::Collider)) return tuple(false, RigidBody{});
 	return tuple(true, RigidBody{
 		handle,
-		&handle->content<Entity>().shape,
+		larray(handle->content<Entity>().shape),
 		&handle->content<Entity>().space,
 		(has_all(handle->flags, Entity::Physical) ? &handle->content<Entity>().body : null),
 		(has_all(handle->flags, Entity::Controllable && handle->content<Entity>().ctrl.falling) ? handle->content<Entity>().ctrl.fall_multiplier : 1.f)
@@ -167,8 +167,9 @@ struct PlaygroundScene {
 				ent.body.inverse_mass = 1.f;
 				ent.body.restitution = .0f;
 				ent.body.friction = .3f;
+				ent.body.shape_index = 0;
 				ent.animations = animations;
-				ent.shape = make_shape_2d<Shape2D::Polygon>(larray(test_polygon));
+				ent.shape[ent.body.shape_index] = make_shape_2d<Shape2D::Polygon>(larray(test_polygon));
 				return get_entity_genhandle(ent);
 			}
 		());
@@ -190,7 +191,8 @@ struct PlaygroundScene {
 				ent.body.inverse_mass = 1.f;
 				ent.body.restitution = .3f;
 				ent.body.friction = .5f;
-				ent.shape = make_shape_2d<Shape2D::Polygon>(larray(test_polygon));
+				ent.body.shape_index = 0;
+				ent.shape[ent.body.shape_index] = make_shape_2d<Shape2D::Polygon>(larray(test_polygon));
 			}
 
 			{
@@ -200,7 +202,8 @@ struct PlaygroundScene {
 				ent.body.inverse_mass = 0;
 				ent.body.restitution = .8f;
 				ent.body.friction = .5f;
-				ent.shape = make_shape_2d<Shape2D::Polygon>(larray(floor_poly));
+				ent.body.shape_index = 0;
+				ent.shape[ent.body.shape_index] = make_shape_2d<Shape2D::Polygon>(larray(floor_poly));
 			}
 
 			// {
@@ -254,7 +257,7 @@ struct PlaygroundScene {
 
 		scratch_pop_scope(scratch, scope);
 		if (auto it_count = physics.iteration_count(clock.current); it_count > 0)
-			physics(gather<RigidBody>(scratch, entities.used()), gather<Spacial2D*>(scratch, entities.used()), it_count );
+			physics(gather<RigidBody>(scratch, entities.used()), gather<Spacial2D*>(scratch, entities.used()), it_count);
 		update_characters(gather<SidescrollCharacter>(scratch_pop_scope(scratch, scope), entities.used()), physics.collisions.used(), physics.gravity, clock);
 		audio(gather<Sound>(scratch_pop_scope(scratch, scope), entities.used()), &pov);
 		rendering(gather<SpriteInstance>(scratch_pop_scope(scratch, scope), entities.used()), pov.transform);
@@ -276,8 +279,8 @@ struct PlaygroundScene {
 		static auto debug_scratch = Arena::from_vmem(1 << 19);
 		if (ph.debug) {
 			auto vp = rendering.get_vp_matrix(pov.transform);
-			if (ph.colliders) ph.draw_shapes(gather((debug_scratch.reset()), entities.used(), Entity::Collider, [&](Entity& ent) { return tuple(&ent.shape, &ent.space); }), vp);
-			if (ph.collisions) ph.draw_collisions(physics.collisions.used(), vp, &Entity::space);
+			if (ph.colliders) ph.draw_shapes(gather((debug_scratch.reset()), entities.used(), Entity::Collider, [&](Entity& ent) { return tuple(&ent.shape[0], &ent.space); }), vp);
+			if (ph.collisions) ph.draw_collisions(physics.collisions.used(), vp);
 		}
 
 		if (rd.show_window) {

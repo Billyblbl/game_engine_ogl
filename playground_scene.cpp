@@ -154,11 +154,11 @@ struct PlaygroundScene {
 		animations = build_sidescroll_character_animations(resources_arena, layout, img.dimensions);
 
 		static v2f32 test_polygon[] = { v2f32(-1, -1) / 2.f, v2f32(+1, -1) / 2.f, v2f32(+1, +1) / 2.f, v2f32(-1, +1) / 2.f };
-		static v2f32 floor_poly[] = { v2f32(-1000, -1), v2f32(+1000, -1), v2f32(+1000, +1), v2f32(-1000, +1) };
+		static v2f32 floor_poly[] = { v2f32(-1000, -5), v2f32(+1000, -5), v2f32(+1000, +5), v2f32(-1000, +5) };
 
 		player = (
 			[&]() {
-				auto& ent = allocate_entity(entities, "player", Entity::Draw | Entity::Physical | Entity::Collider | Entity::Controllable | Entity::Animated);
+				auto& ent = allocate_entity(entities, "player", Entity::Draw /*| Entity::Physical*/ | Entity::Collider | Entity::Controllable | Entity::Animated);
 				ent.space = { identity_2d, null_transform_2d, null_transform_2d };
 				ent.sprite.cursor = spritesheet;
 				ent.sprite.dimensions = v2f32(1);
@@ -179,31 +179,53 @@ struct PlaygroundScene {
 
 		{// misc scene content
 
-			for (auto i : u64xrange{ 0, 0 }) {
-				auto& ent = allocate_entity(entities, "test_ent", Entity::Draw | Entity::Collider | Entity::Physical);
+
+			for (auto i : u64xrange{ 0, 5 }) {
+				auto& ent = allocate_entity(entities, "test_ent PRE", Entity::Draw | Entity::Collider | Entity::Physical);
 				ent.space = { identity_2d, null_transform_2d, null_transform_2d };
 				ent.space.transform.translation += v2f32(frand({ -10, 10 }), frand({ -10, 10 }));
-				ent.space.velocity.translation += v2f32(frand({ -1, 1 }), frand({ -1, 1 }));
-				ent.sprite.cursor = spritesheet;
+				// ent.space.velocity.translation += v2f32(frand({ -1, 1 }), frand({ -1, 1 }));
+				ent.sprite.cursor = rendering.white;
 				ent.sprite.dimensions = v2f32(1);
 				ent.sprite.depth = 1;
 				ent.body.inverse_inertia = 1.f;
+				ent.body.inverse_inertia = 1.f;
 				ent.body.inverse_mass = 1.f;
-				ent.body.restitution = .3f;
-				ent.body.friction = .5f;
+				ent.body.restitution = 0.f;
+				ent.body.friction = 0.f;
 				ent.body.shape_index = 0;
 				ent.shape[ent.body.shape_index] = make_shape_2d<Shape2D::Polygon>(larray(test_polygon));
 			}
 
 			{
-				auto& ent = allocate_entity(entities, "static1", Entity::Collider | Entity::Physical);
+				auto& ent = allocate_entity(entities, "static1", Entity::Draw | Entity::Collider | Entity::Physical);
 				ent.space.transform.translation = v2f32(0, -15);
+				ent.sprite.cursor = rendering.white;
+				ent.sprite.dimensions = v2f32(2000, 10);
+				ent.sprite.depth = 1;
 				ent.body.inverse_inertia = 0;
 				ent.body.inverse_mass = 0;
 				ent.body.restitution = .8f;
 				ent.body.friction = .5f;
 				ent.body.shape_index = 0;
 				ent.shape[ent.body.shape_index] = make_shape_2d<Shape2D::Polygon>(larray(floor_poly));
+			}
+
+			for (auto i : u64xrange{ 0, 5 }) {
+				auto& ent = allocate_entity(entities, "test_ent POST", Entity::Draw | Entity::Collider | Entity::Physical);
+				ent.space = { identity_2d, null_transform_2d, null_transform_2d };
+				ent.space.transform.translation += v2f32(frand({ -10, 10 }), frand({ -10, 10 }));
+				// ent.space.velocity.translation += v2f32(frand({ -1, 1 }), frand({ -1, 1 }));
+				ent.sprite.cursor = rendering.white;
+				ent.sprite.dimensions = v2f32(1);
+				ent.sprite.depth = 1;
+				ent.body.inverse_inertia = 1.f;
+				ent.body.inverse_inertia = 1.f;
+				ent.body.inverse_mass = 1.f;
+				ent.body.restitution = 0.f;
+				ent.body.friction = 0.f;
+				ent.body.shape_index = 0;
+				ent.shape[ent.body.shape_index] = make_shape_2d<Shape2D::Polygon>(larray(test_polygon));
 			}
 
 			// {
@@ -251,14 +273,40 @@ struct PlaygroundScene {
 		if (player.valid())
 			player_input(player->content<Entity>().ctrl);
 
+		if (Input::get_context().key_states[Input::KB::index_of(Input::KB::K_SPACE)] & Input::Down) {
+			if (physics.manual_update) {
+				printf("Manual stepping\n");
+				scratch_pop_scope(scratch, scope);
+				physics(gather<RigidBody>(scratch, entities.used()), gather<Spacial2D*>(scratch, entities.used()), 1);
+			}
+		}
+
+		if (Input::get_context().key_states[Input::KB::index_of(Input::KB::K_ENTER)] & Input::Down) {
+			static v2f32 test_polygon[] = { v2f32(-1, -1) / 2.f, v2f32(+1, -1) / 2.f, v2f32(+1, +1) / 2.f, v2f32(-1, +1) / 2.f };
+			auto& ent = allocate_entity(entities, "new test_ent", Entity::Draw | Entity::Collider | Entity::Physical);
+			ent.space = { identity_2d, null_transform_2d, null_transform_2d };
+			ent.sprite.cursor = rendering.white;
+			ent.sprite.dimensions = v2f32(1);
+			ent.sprite.depth = 1;
+			ent.body.inverse_inertia = 1.f;
+			ent.body.inverse_inertia = 1.f;
+			ent.body.inverse_mass = 1.f;
+			ent.body.restitution = .3f;
+			ent.body.friction = .5f;
+			ent.body.shape_index = 0;
+			ent.shape[ent.body.shape_index] = make_shape_2d<Shape2D::Polygon>(larray(test_polygon));
+		}
+
+
+		if (!physics.manual_update) {
+			scratch_pop_scope(scratch, scope);
+			if (auto it_count = physics.iteration_count(clock.current); it_count > 0)
+				physics(gather<RigidBody>(scratch, entities.used()), gather<Spacial2D*>(scratch, entities.used()), it_count);
+		}
+		update_characters(gather<SidescrollCharacter>(scratch_pop_scope(scratch, scope), entities.used()), physics.collisions.used(), physics.gravity, clock);
 		pov = (player.valid() ? player->content<Entity>().space : Spacial2D{ identity_2d, null_transform_2d, null_transform_2d });
 		pov.transform.rotation = 0;
 		pov.transform.scale.x = abs(pov.transform.scale.x);
-
-		scratch_pop_scope(scratch, scope);
-		if (auto it_count = physics.iteration_count(clock.current); it_count > 0)
-			physics(gather<RigidBody>(scratch, entities.used()), gather<Spacial2D*>(scratch, entities.used()), it_count);
-		update_characters(gather<SidescrollCharacter>(scratch_pop_scope(scratch, scope), entities.used()), physics.collisions.used(), physics.gravity, clock);
 		audio(gather<Sound>(scratch_pop_scope(scratch, scope), entities.used()), &pov);
 		rendering(gather<SpriteInstance>(scratch_pop_scope(scratch, scope), entities.used()), pov.transform);
 		return true;

@@ -199,6 +199,7 @@ struct Rendering {
 	OrthoCamera camera;
 	SpriteRenderer draw;
 	TexBuffer atlas;
+	SpriteCursor white;
 	FrameBuffer fbf;
 	v4f32 clear_color;
 
@@ -207,6 +208,8 @@ struct Rendering {
 		draw = load_sprite_renderer(pipeline.data(), max_draw_batch);
 		atlas = create_texture(TX2DARR, atlas_dimensions);
 		atlas.conf_sampling({ Nearest, Nearest });
+		auto white_pixel = v4f32(1);
+		white = load_into(make_image(carray(&white_pixel, 1), v2u32(1)), atlas, v2u32(0), 9);
 		fbf = default_framebuffer;
 		clear_color = v4f32(v3f32(0.3), 1);
 	}

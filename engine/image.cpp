@@ -3,6 +3,7 @@
 
 #include <math.cpp>
 #include <glutils.cpp>
+#include <blblstd.hpp>
 
 #define STB_IMAGE_IMPLEMENTATION
 #include <stb_image.h>
@@ -31,8 +32,16 @@ struct Image {
 	Buffer pixel(v2u64 coord) { return data.subspan(pixel_index(coord), pixel_size); }
 	Array<const byte> pixel(v2u64 coord) const { return data.subspan(pixel_index(coord), pixel_size); }
 	Buffer operator[](v2u64 coord) { return pixel(coord); };
-	Array<const byte> operator[](v2u64 coord) const {  return pixel(coord); };
+	Array<const byte> operator[](v2u64 coord) const { return pixel(coord); };
 };
+
+template<typename T> inline Image make_image(Array<T> source, v2u32 dimensions, u32 channels) {
+	return { Formats<T>[channels], dimensions, cast<byte>(source), channels * sizeof(T) };
+}
+
+template<typename T, i32 D> inline Image make_image(Array<glm::vec<D, T>> source, v2u32 dimensions) {
+	return { Formats<T>[D], dimensions, cast<byte>(source), D * sizeof(T) };
+}
 
 Image load_image(const cstr path) {
 	int width, height, channels = 0;
@@ -40,7 +49,7 @@ Image load_image(const cstr path) {
 	printf("Loading image %s:%ix%i-%i\n", path, width, height, channels);
 	if (img == null)
 		return fail_ret(stbi_failure_reason(), (Image{ SrcFormat{}, v2u32(0), Array<u8>{}, 0 }));
-	return { Formats<u8>[channels], v2u32(width, height), carray((u8*)img, width * height * channels), channels * sizeof(u8) };
+	return make_image<u8>(carray((u8*)img, width * height * channels), v2u32(width, height), channels);
 }
 
 //! should only be given an image loaded with load_image

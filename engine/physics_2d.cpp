@@ -22,7 +22,7 @@ Segment<v2f32> support_circle(v2f32 center, f32 radius, v2f32 direction) {
 	return { point, point };
 }
 
-constexpr f32 support_epsilon = 0.0001f;
+constexpr f32 support_epsilon = 0.001f;
 Segment<v2f32> support_point_cloud(Array<v2f32> vertices, v2f32 direction) {
 	using namespace glm;
 	f32 buff[vertices.size()];;
@@ -30,8 +30,18 @@ Segment<v2f32> support_point_cloud(Array<v2f32> vertices, v2f32 direction) {
 	auto dir = normalize(direction);
 	auto dots = map((arena), vertices, [=](v2f32 v) { return dot(v, dir); });
 	auto iA = best_fit_search(dots, fit_highest<f32>);
-	auto iB = linear_search_idx(dots, [&](f32 d, i32 i) { return i != iA && distance(d, dots[iA]) < support_epsilon; });
-	if (iB < 0) iB = iA;
+
+	auto iBa = best_fit_search(dots.subspan(0, iA), fit_highest<f32>);
+	auto iBboffset = best_fit_search(dots.subspan(iA + 1), fit_highest<f32>);
+	auto iBb = iA + 1 + iBboffset;
+	auto iB = -1;
+
+	if (iBa < 0 && iBboffset < 0) iB = iA;
+	else if (iBa < 0 && iBboffset >= 0) iB = iBb;
+	else if (iBboffset < 0 && iBa >= 0) iB = iBa;
+	else if (dots[iBa] > dots[iBb]) iB = iBa;
+	else iB = iBb;
+
 	return { vertices[iA], vertices[iB] };
 }
 
@@ -135,6 +145,8 @@ template<support_function F1, support_function F2> tuple<bool, tuple<v2f32, v2f3
 // Expanding Polytope algorithm
 // https://www.youtube.com/watch?v=0XQ2FSz3EK8&ab_channel=Winterdev
 template<support_function F1, support_function F2> v2f32 EPA(const F1& f1, const F2& f2, tuple<v2f32, v2f32, v2f32> triangle, u32 max_iteration = 64, f32 iteration_threshold = 0.05f) {
+	using namespace glm;
+
 	auto [A, B, C] = triangle;
 	v2f32 points_buffer[max_iteration + 3] = { A, B, C };
 	auto points = List{ carray(points_buffer, max_iteration + 3), 3 };
@@ -148,13 +160,15 @@ template<support_function F1, support_function F2> v2f32 EPA(const F1& f1, const
 			auto j = (i + 1) % points.current;
 			auto vi = points[i];
 			auto vj = points[j];
-			auto normal = glm::normalize(orthogonal(vj - vi));
-			auto dist = glm::dot(normal, vj);
+			auto normal = normalize(orthogonal(vj - vi));
+			auto dist = abs(dot(normal, vj));
 
-			if (dist < 0) {
-				dist *= -1;
-				normal *= -1;
-			}
+			//* this old version has phases through bugs, keeping the code around since i don't exactly know why but the current version functions alright
+			// auto dist = dot(normal, vj);
+			// if (dist < 0) {
+			// 	dist *= -1;
+			// normal *= -1;
+			// }
 
 			if (dist < min_dist) {
 				min_dist = dist;
@@ -164,34 +178,49 @@ template<support_function F1, support_function F2> v2f32 EPA(const F1& f1, const
 		}
 
 		auto support_point = minkowski_diff_support(f1, f2, min_normal).A;
-		auto s_distance = glm::dot(min_normal, support_point);
+		auto s_distance = dot(min_normal, support_point);
 
-		if (glm::abs(s_distance - min_dist) > iteration_threshold) {
+		if (abs(s_distance - min_dist) > iteration_threshold) {
 			min_dist = std::numeric_limits<f32>::max();
 			points.insert_ordered(min_index, std::move(support_point));
-		} else {
-			break;
-		}
+		} else break;
 
 	}
 	return min_normal * min_dist;
 }
 
-template<support_function F1, support_function F2> inline Segment<v2f32> contacts_segment(const F1& f1, const F2& f2, v2f32 normal) {
+f32 cross_2(v2f32 a, v2f32 b) {
+	return glm::cross(v3f32(a, 0), v3f32(b, 0)).z;
+}
+
+template<support_function F1, support_function F2> inline v2f32 contact_point(const F1& f1, const F2& f2, v2f32 normal) {
 	//* assumes normal is in general direction s1 -> s2, aka normal is in direction of the penetration of s1 into s2
 	using namespace glm;
 	Segment<v2f32> s[] = { f1(+normal), f2(-normal) };
-	for (auto [a, b] : s) if (a == b)
-		return { a, b };
 
-	// overlap of segments
-	//TODO verify the correctness of this
-	return Segment<v2f32>{ min(max(s[0].A, s[0].B), max(s[1].A, s[1].B)), max(min(s[0].A, s[0].B), min(s[1].A, s[1].B))};
+
+	v2f32 v[] = { direction(s[0]), direction(s[1]) };
+	auto cr = cross_2(v[0], v[1]);
+	if (cr == 0) {//* parallel -> has to overlap in our case, meaning the center of the intersection of their AABB is the middle of the intersection segments (since its one of its 2 diagonals)
+		auto b = intersect(bounds(s[0]), bounds(s[1]));
+		auto i = (b.min + b.max) / 2.f;
+		return i;
+	} else { //* https://www.youtube.com/watch?v=5FkOO1Wwb8w&ab_channel=EngineerNick
+		auto v01A = direction(Segment{ s[0].A, s[1].A });//* AC
+		auto t1 = +cross_2(v01A, v[1]) / cr;
+		auto t2 = -cross_2(v01A, v[0]) / cr;
+		auto i1 = s[0].A + v[0] * t1;
+		if (!glm::any(isnan(i1))) return i1;
+		auto i2 = s[1].A + v[1] * t2;
+		if (!glm::any(isnan(i2))) return i2;
+		assert(false);
+		return {};
+	}
 }
 
 template<support_function F1, support_function F2> tuple<bool, v2f32> intersect_convex(const F1& f1, const F2& f2) {
 	auto [collided, triangle] = GJK(f1, f2);
-	return { collided, (collided ? EPA(f1, f2, triangle) : v2f32(0)) };
+	return { collided, (collided ? EPA(f1, f2, triangle, 16, 0.001) : v2f32(0)) };
 }
 
 struct Contact2D {
@@ -219,16 +248,14 @@ Array<Contact2D> intersect_concave(List<Contact2D>& intersections, const Shape2D
 		auto [collided, pen] = intersect_convex(support_function_of(s1, t1), support_function_of(s2, t2));
 		if (collided) {
 			auto offset_t1 = translate(t1, v3f32(-pen, 0));
-			auto [ctct1, ctct2] = contacts_segment(support_function_of(s1, offset_t1), support_function_of(s2, t2), normalize(pen));
-			auto av_contact = average({ ctct1, ctct2 });
-			v2f32 world_cmass[] = { t1 * v4f32(0, 0, 0, 1), t2 * v4f32(0, 0, 0, 1) };
-			intersections.push({ pen, { av_contact - world_cmass[0], av_contact - world_cmass[1] }, length(ctct2 - ctct1) });
+			auto contact_dir = v2f32(normalize(v2f64(pen)));
+			auto contact = contact_point(support_function_of(s1, offset_t1), support_function_of(s2, t2), contact_dir);
+			v2f32 world_cmass[] = { offset_t1 * v4f32(0, 0, 0, 1), t2 * v4f32(0, 0, 0, 1) };
+			intersections.push({ pen, { contact - world_cmass[0], contact - world_cmass[1] }, 0/*length(ctct2 - ctct1)*/ });
 		}
-	} else {
-		for (auto& sub_shape1 : (s1.type == Shape2D::Concave) ? s1.composite : carray(&s1, 1))
-			for (auto& sub_shape2 : (s2.type == Shape2D::Concave) ? s2.composite : carray(&s2, 1))
-				intersect_concave(intersections, sub_shape1, sub_shape2, t1, t2);
-	}
+	} else for (auto& sub_shape1 : (s1.type == Shape2D::Concave) ? s1.composite : carray(&s1, 1))
+		for (auto& sub_shape2 : (s2.type == Shape2D::Concave) ? s2.composite : carray(&s2, 1))
+			intersect_concave(intersections, sub_shape1, sub_shape2, t1, t2);
 	return intersections.used().subspan(start);
 }
 
@@ -404,15 +431,12 @@ Array<Collision2D> detect_collisions(Arena& arena, Array<RigidBody> entities) {
 	//* Detect collisions
 	auto contact_pool = List{ arena.push_array<Contact2D>(entities.size() * entities.size() * MaxContactPerCollision), 0 };
 	auto collisions = List{ arena.push_array<Collision2D>(entities.size() * entities.size()), 0 };
-	for (auto i : u64xrange{ 0, entities.size() - 1 }) {
-		for (auto j : u64xrange{ i + 1, entities.size() }) {
-			RigidBody ents[] = { entities[i], entities[j] };
-
-			for (auto s1 : u64xrange{ 0, ents[0].shapes.size() }) for (auto s2 : u64xrange{ 0, ents[1].shapes.size() }) {
-				auto contacts = intersect_concave(contact_pool, ents[0].shapes[s1], ents[1].shapes[s2], trs_2d(ents[0].spacial->transform), trs_2d(ents[1].spacial->transform));
-				if (contacts.size() > 0)
-					collisions.push_growing(arena, Collision2D{ contacts, { ents[0], ents[1] }, collision_type(ents[0].body, ents[1].body, s1, s2) });
-			}
+	for (auto i : u64xrange{ 0, entities.size() - 1 }) for (auto j : u64xrange{ i + 1, entities.size() }) {
+		RigidBody ents[] = { entities[i], entities[j] };
+		for (auto s1 : u64xrange{ 0, ents[0].shapes.size() }) for (auto s2 : u64xrange{ 0, ents[1].shapes.size() }) {
+			auto contacts = intersect_concave(contact_pool, ents[0].shapes[s1], ents[1].shapes[s2], trs_2d(ents[0].spacial->transform), trs_2d(ents[1].spacial->transform));
+			if (contacts.size() > 0)
+				collisions.push_growing(arena, Collision2D{ contacts, { ents[0], ents[1] }, collision_type(ents[0].body, ents[1].body, s1, s2) });
 		}
 	}
 	collisions.shrink_to_content(arena);
@@ -424,8 +448,9 @@ void resolve_collisions(Array<Collision2D> collisions) {
 	for (auto& col : collisions) if (has_all(col.flags, Collision2D::Physical)) {
 		//* Correct penetration
 		auto pen = average(col.contacts, &Contact2D::penetration);
-		col.entities[0].spacial->transform.translation += pen * -inv_lerp(0.f, col.entities[0].body->inverse_mass + col.entities[1].body->inverse_mass, col.entities[0].body->inverse_mass);
-		col.entities[1].spacial->transform.translation += pen * +inv_lerp(0.f, col.entities[0].body->inverse_mass + col.entities[1].body->inverse_mass, col.entities[1].body->inverse_mass);
+		auto total_inv_mass = col.entities[0].body->inverse_mass + col.entities[1].body->inverse_mass;
+		col.entities[0].spacial->transform.translation += pen * -inv_lerp(0.f, total_inv_mass, col.entities[0].body->inverse_mass);
+		col.entities[1].spacial->transform.translation += pen * +inv_lerp(0.f, total_inv_mass, col.entities[1].body->inverse_mass);
 		if (!has_one(col.flags, Collision2D::Linear | Collision2D::Angular))
 			continue;
 
@@ -451,10 +476,13 @@ struct Physics2D {
 	List<Collision2D> collisions = {};
 	Arena physics_scratch = Arena::from_vmem(PhysicsMemory);
 	f32 dt = 1.f / 60.f;
+	u32 intersection_iterations = 2;
 	u32 max_ticks = 5;
 	v2f32 gravity = v2f32(0);
 	f32 tpu = 0;
-	f32 time;
+	f32 time = 0;
+
+	bool manual_update = false;
 
 	Arena& flush_state(u64 estimated_collisions_count = 10) {
 		u64 heuristic_collision_count = max(estimated_collisions_count, collisions.current * 2);
@@ -473,31 +501,24 @@ struct Physics2D {
 			euler_integrate(*s, dt);
 	}
 
-	// Array<Collision2D> resolve_collisions(Array<RigidBody> rbs) {
-	// 	return collisions.push_growing(physics_scratch, simulate_collisions(physics_scratch, rbs));
-	// }
-
 	inline u32 iteration_count(f32 real_time) { return u32(glm::clamp(i32((real_time - time) / dt), i32(0), i32(max_ticks))); }
 
-	void operator()(Array<RigidBody> bodies, Array<Spacial2D*> entities, u32 iterations) {
-		flush_state();
-		for (auto i : u64xrange{ 0, iterations }) {
-			apply_gravity(bodies);
-			step_sim(entities);
-			auto col = collisions.push_growing(physics_scratch, detect_collisions(physics_scratch, bodies));
-			resolve_collisions(col);
-		}
-	}
-
 	void operator()(Array<RigidBody> bodies, Array<Spacial2D*> entities, u32 iterations, auto fixed_update) {
-		flush_state();
+		flush_state(bodies.size() * bodies.size() * iterations * intersection_iterations / 2);
+		tpu = (tpu + iterations) / 2;
 		for (auto i : u64xrange{ 0, iterations }) {
 			fixed_update(i);
 			apply_gravity(bodies);
 			step_sim(entities);
-			auto col = collisions.push_growing(physics_scratch, detect_collisions(physics_scratch, bodies));
-			resolve_collisions(col);
+			for (auto r : u64xrange{ 0, intersection_iterations }) {
+				auto col = collisions.push_growing(physics_scratch, detect_collisions(physics_scratch, bodies));
+				resolve_collisions(col);
+			}
 		}
+	}
+
+	inline void operator()(Array<RigidBody> bodies, Array<Spacial2D*> entities, u32 iterations) {
+		(*this)(bodies, entities, iterations, [](u64) {});
 	}
 
 	struct Editor : public SystemEditor {
@@ -545,8 +566,11 @@ struct Physics2D {
 				EditorWidget("Collisions marks", collisions);
 			}
 			EditorWidget("Gravity", system.gravity);
+			EditorWidget("Manual update", system.manual_update);
 			EditorWidget("Delta Time", system.dt);
+			EditorWidget("Intersection iterations", system.intersection_iterations);
 			EditorWidget("Max ticks per update", system.max_ticks);
+			EditorWidget("Physics time", system.time);
 			EditorWidget("Average ticks per update", system.tpu);
 			if (ImGui::TreeNode("Collisions")) {
 				defer{ ImGui::TreePop(); };

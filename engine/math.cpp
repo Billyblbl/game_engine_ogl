@@ -78,13 +78,19 @@ template<typename P> struct Segment {
 	P B;
 };
 
+template<typename P> P direction(Segment<P> s) { return s.B - s.A; }
+
 template<typename P> struct reg_polytope {
 	P min;
 	P max;
 	template<typename OP> operator reg_polytope<OP>() { return { OP(min), OP(max) }; }
-	Segment<P> diagonal() { return { min, max }; }
-	bool contain(P p) { return glm::all(glm::lessThan(p, max)) && glm::all(glm::lessThan(min, p)); }
+	inline Segment<P> diagonal() { return { min, max }; }
+	bool contain(P p) { return glm::all(glm::lessThanEqual(p, max)) && glm::all(glm::lessThanEqual(min, p)); }
 };
+
+template<typename P> reg_polytope<P> bounds(Segment<P> s) {
+	return { glm::min(s.A, s.B), glm::max(s.A, s.B) };
+}
 
 template<typename P> auto width(reg_polytope<P> p) { return p.max.x - p.min.x; }
 template<typename P> auto height(reg_polytope<P> p) { return p.max.y - p.min.y; }
@@ -110,21 +116,21 @@ template<typename T> T average(Array<T> elements) {
 	return sum / f32(elements.size());
 }
 
-template<typename T, typename U> U average(Array<T*> elements, U T::* member) {
+template<typename T, typename U> inline U average(Array<T*> elements, U T::* member) {
 	auto sum = U(0);
 	for (T* e : elements)
 		sum += e->*member;
 	return sum / f32(elements.size());
 }
 
-template<typename T, typename U> U average(Array<T> elements, U T::* member) {
+template<typename T, typename U> inline U average(Array<T> elements, U T::* member) {
 	auto sum = U(0);
 	for (auto&& e : elements)
 		sum += e.*member;
 	return sum / f32(elements.size());
 }
 
-template<typename T> T average(LiteralArray<T> elements) { return average(larray(elements)); }
+template<typename T> inline T average(LiteralArray<T> elements) { return average(larray(elements)); }
 
 inline v2f32 orthogonal_axis(v2f32 v) { return v2f32(-v.y, v.x); }
 inline v2f32 orthogonal(v2f32 v, f32 direction = 1) { return glm::rotate(v, direction * glm::radians(90.f)); }

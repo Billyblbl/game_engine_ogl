@@ -8,7 +8,7 @@
 #include <high_order.cpp>
 #include <utils.cpp>
 
-#define MAX_ENTITIES 100
+#define MAX_ENTITIES 1000
 #define MAX_DRAW_BATCH MAX_ENTITIES
 
 constexpr auto flag_index_count = 32;

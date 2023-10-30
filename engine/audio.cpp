@@ -165,6 +165,8 @@ namespace ALListener {
 #include <inputs.cpp>
 #include <system_editor.cpp>
 
+#include <spall/profiling.cpp>
+
 struct Sound {
 	AudioSource* source;
 	Spacial2D* space;
@@ -187,6 +189,7 @@ struct Audio {
 	}
 
 	void operator()(Array<Sound> entities, Spacial2D* poh = nullptr) {
+		PROFILE_SCOPE("Audio");
 		if (changed_audio(data))
 			migrate_audio(entities);
 		for (auto& [source, spacial] : entities) {

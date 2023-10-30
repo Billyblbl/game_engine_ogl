@@ -426,12 +426,14 @@ tuple<Transform2D, Transform2D> contact_response(
 }
 
 Array<Collision2D> detect_collisions(Arena& arena, Array<RigidBody> entities) {
+	PROFILE_SCOPE(__FUNCTION__);
 	if (entities.size() == 0) return {};
 
 	//* Detect collisions
 	auto contact_pool = List{ arena.push_array<Contact2D>(entities.size() * entities.size() * MaxContactPerCollision), 0 };
 	auto collisions = List{ arena.push_array<Collision2D>(entities.size() * entities.size()), 0 };
 	for (auto i : u64xrange{ 0, entities.size() - 1 }) for (auto j : u64xrange{ i + 1, entities.size() }) {
+		PROFILE_SCOPE("Bodies Intersection Check");
 		RigidBody ents[] = { entities[i], entities[j] };
 		for (auto s1 : u64xrange{ 0, ents[0].shapes.size() }) for (auto s2 : u64xrange{ 0, ents[1].shapes.size() }) {
 			auto contacts = intersect_concave(contact_pool, ents[0].shapes[s1], ents[1].shapes[s2], trs_2d(ents[0].spacial->transform), trs_2d(ents[1].spacial->transform));
@@ -445,15 +447,19 @@ Array<Collision2D> detect_collisions(Arena& arena, Array<RigidBody> entities) {
 }
 
 void resolve_collisions(Array<Collision2D> collisions) {
+	PROFILE_SCOPE(__FUNCTION__);
 	for (auto& col : collisions) if (has_all(col.flags, Collision2D::Physical)) {
+		profile_scope_begin("Correction");
 		//* Correct penetration
 		auto pen = average(col.contacts, &Contact2D::penetration);
 		auto total_inv_mass = col.entities[0].body->inverse_mass + col.entities[1].body->inverse_mass;
 		col.entities[0].spacial->transform.translation += pen * -inv_lerp(0.f, total_inv_mass, col.entities[0].body->inverse_mass);
 		col.entities[1].spacial->transform.translation += pen * +inv_lerp(0.f, total_inv_mass, col.entities[1].body->inverse_mass);
+		profile_scope_end();
 		if (!has_one(col.flags, Collision2D::Linear | Collision2D::Angular))
 			continue;
 
+		PROFILE_SCOPE("Collision impulse");
 		//* Velocity Impulse
 		f32 elasticity = min(col.entities[0].body->restitution, col.entities[1].body->restitution);
 		f32 kinetic_friction = average({ col.entities[0].body->friction, col.entities[1].body->friction });
@@ -504,13 +510,16 @@ struct Physics2D {
 	inline u32 iteration_count(f32 real_time) { return u32(glm::clamp(i32((real_time - time) / dt), i32(0), i32(max_ticks))); }
 
 	void operator()(Array<RigidBody> bodies, Array<Spacial2D*> entities, u32 iterations, auto fixed_update) {
+		PROFILE_SCOPE("Physics");
 		flush_state(bodies.size() * bodies.size() * iterations * intersection_iterations / 2);
 		tpu = (tpu + iterations) / 2;
 		for (auto i : u64xrange{ 0, iterations }) {
+			PROFILE_SCOPE("Tick");
 			fixed_update(i);
 			apply_gravity(bodies);
 			step_sim(entities);
 			for (auto r : u64xrange{ 0, intersection_iterations }) {
+				PROFILE_SCOPE("Intersection iteration");
 				auto col = collisions.push_growing(physics_scratch, detect_collisions(physics_scratch, bodies));
 				resolve_collisions(col);
 			}

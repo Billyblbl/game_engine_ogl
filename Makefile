@@ -13,6 +13,7 @@ CXX=$(GXX_PATH)
 CFLAGS += -g3
 CFLAGS += -std=c++20
 CFLAGS += -fno-exceptions
+# CFLAGS += -finstrument-functions
 
 INC = $(PWD)
 LIB = $(PWD)
@@ -30,6 +31,7 @@ include imgui.mk
 include engine.mk
 include editor.mk
 include vorbis.mk
+include profiling.mk
 include app.mk
 
 $(BUILD_DIR):

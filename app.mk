@@ -29,6 +29,6 @@ $(APP_MODULE): $(BUILD_DIR) $(APP_SRC)
 	@echo -e "Building $(COLOR)app module$(NOCOLOR)"
 	@$(CXX) $(CFLAGS) -c $(APP_ROOT) $(INC:%=-I%) -o $@
 
-$(APP): $(APP_MODULE) $(VORBIS_MODULE) $(IMGUI_MODULE) $(BLBLSTD_MODULE)
+$(APP): $(APP_MODULE) $(VORBIS_MODULE) $(IMGUI_MODULE) $(BLBLSTD_MODULE) $(PROFILING_MODULE)
 	@echo -e "Linking $(COLOR)app executable$(NOCOLOR)"
 	@$(CXX) $(CFLAGS) $^ $(LIB:%=-L%) $(LDFLAGS) -o $@

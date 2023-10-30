@@ -12,6 +12,8 @@
 #include <transform.cpp>
 #include <entity.cpp>
 
+#include <spall/profiling.cpp>
+
 //TODO remove fstream dependency
 
 GLuint create_shader(string source, GLenum type) {
@@ -222,6 +224,7 @@ struct Rendering {
 	auto get_vp_matrix(const Transform2D& pov) { return view_project(project(camera), trs_2d(pov)); }
 
 	void operator()(Array<SpriteInstance> sprites, const Transform2D& pov) {
+		PROFILE_SCOPE("Rendering");
 		begin_render(fbf);
 		clear(fbf, clear_color);
 		draw(sprites, get_vp_matrix(pov), atlas);

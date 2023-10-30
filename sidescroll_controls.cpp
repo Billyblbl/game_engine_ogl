@@ -7,6 +7,8 @@
 #include <physics_2d.cpp>
 #include <imgui_extension.cpp>
 #include <spritesheet.cpp>
+#include <time.cpp>
+#include <spall/profiling.cpp>
 
 struct SidescrollControl {
 	f32 speed = 10;
@@ -193,6 +195,7 @@ void ground_characters(Array<SidescrollCharacter> characters, Array<Collision2D>
 }
 
 void update_characters(Array<SidescrollCharacter> characters, Array<Collision2D> collisions, v2f32 gravity, const Time::Clock& clock) {
+	PROFILE_SCOPE("Characters updates");
 	ground_characters(characters, collisions, normalize(gravity));
 	for (auto& ch : characters) {
 		ch.space->velocity.translation = control(*ch.ctrl, ch.space->velocity.translation, ch.space->transform.scale, gravity, clock.dt);

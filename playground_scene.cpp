@@ -20,6 +20,7 @@
 #include <high_order.cpp>
 
 #include <texture_shape_generation.cpp>
+#include <spall/profiling.cpp>
 
 /*
 SceneNode {
@@ -144,6 +145,7 @@ struct PlaygroundScene {
 	Arena resources_arena = Arena::from_vmem(1 << 23);
 
 	PlaygroundScene() {
+		PROFILE_SCOPE(__FUNCTION__);
 		rendering.camera = { v3f32(16.f, 9.f, 1000.f) * 4.f, v3f32(0) };
 		entities = List{ resources_arena.push_array<Entity>(MAX_ENTITIES), 0 };
 
@@ -265,6 +267,7 @@ struct PlaygroundScene {
 	u64 update_count = 0;
 	Spacial2D pov;
 	bool operator()() {
+		PROFILE_SCOPE("Scene update");
 		defer{ update_count++; };
 		update(clock);
 		constexpr u64 SCRATCH_SIZE = (1ull << 21);
@@ -367,6 +370,7 @@ struct PlaygroundScene {
 };
 
 bool editor_test(App& app) {
+	profile_scope_begin("Initialisation");
 	ImGui::init_ogl_glfw(app.window); defer{ ImGui::shutdown_ogl_glfw(); };
 	auto editor = create_editor("Editor", "Alt+X", { Input::KB::K_LEFT_ALT, Input::KB::K_X });
 	editor.show_window = true;
@@ -383,9 +387,12 @@ bool editor_test(App& app) {
 	misc.show_window = true;
 
 	add_editors(sub_editors, pg_ed);
+	profile_scope_end();
 
 	while (update(app, editor_test)) {
+		PROFILE_SCOPE("Frame");
 		scene();
+		PROFILE_SCOPE("Editor");
 		shortcut_sub_editors(sub_editors.used());
 		if (editor.show_window) {
 			ImGui::NewFrame_OGL_GLFW(); defer{

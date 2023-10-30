@@ -9,6 +9,7 @@
 #include <blblstd.hpp>
 #include <math.cpp>
 #include <framebuffer.cpp>
+#include <spall/profiling.cpp>
 
 const static GLenum OGLLogSeverity[] = {
 	GL_DEBUG_SEVERITY_HIGH,
@@ -97,6 +98,7 @@ bool init_ogl(App& app, bool debug = true) {
 }
 
 bool update(App& app, Scene target_scene) {
+	PROFILE_SCOPE("Window update");
 	defer{ glfwSwapBuffers(app.window); };
 	int display_w, display_h;
 	glfwGetFramebufferSize(app.window, &display_w, &display_h);
@@ -107,6 +109,7 @@ bool update(App& app, Scene target_scene) {
 		app.scene = null;
 		return false;
 	}
+	PROFILE_SCOPE("Inputs");
 	Input::poll(app.inputs);
 	return app.scene == target_scene;
 }

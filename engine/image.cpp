@@ -39,7 +39,7 @@ template<typename T> inline Image make_image(Array<T> source, v2u32 dimensions, 
 	return { Formats<T>[channels], dimensions, cast<byte>(source), channels * sizeof(T) };
 }
 
-template<typename T, i32 D> inline Image make_image(Array<glm::vec<D, T>> source, v2u32 dimensions) {
+template<typename T, i32 D> inline Image make_image(Array<const glm::vec<D, T>> source, v2u32 dimensions) {
 	return { Formats<T>[D], dimensions, cast<byte>(source), D * sizeof(T) };
 }
 
@@ -49,7 +49,7 @@ Image load_image(const cstr path) {
 	printf("Loading image %s:%ix%i-%i\n", path, width, height, channels);
 	if (img == null)
 		return fail_ret(stbi_failure_reason(), (Image{ SrcFormat{}, v2u32(0), Array<u8>{}, 0 }));
-	return make_image<u8>(carray((u8*)img, width * height * channels), v2u32(width, height), channels);
+	return make_image<u8>(carray((byte*)img, width * height * channels), v2u32(width, height), channels);
 }
 
 //! should only be given an image loaded with load_image

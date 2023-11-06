@@ -42,10 +42,10 @@ namespace controls {
 		);
 	}
 
-	void animate_character(TopDownControl& ctrl, SpriteCursor* sprite, Shape2D* shape, SpriteCursor spritesheet, AnimationGrid<rtu32>* animation, AnimationGrid<Shape2D>* shape_animation, f32 time) {
+	void animate_character(TopDownControl& ctrl, rtu32* sprite, Shape2D* shape, rtu32 spritesheet, AnimationGrid<rtu32>* animation, AnimationGrid<Shape2D>* shape_animation, f32 time) {
 		auto coord = locomotion(ctrl, time);
 		LAnimationConfig config = { AnimRepeat, AnimRepeat, AnimClamp };
-		if (sprite) *sprite = sub_sprite(spritesheet, animate(*animation, coord));
+		if (sprite) *sprite = sub_rect(spritesheet, animate(*animation, coord));
 		if (shape) *shape = animate(*shape_animation, coord);
 	}
 
@@ -59,7 +59,7 @@ namespace controls {
 	struct CharacterLocomotionAnimationData {
 		AnimationGrid<rtu32>* frames;
 		AnimationGrid<Shape2D>* shapes;
-		SpriteCursor* spritesheet;
+		rtu32* spritesheet;
 	};
 
 }

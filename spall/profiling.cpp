@@ -58,8 +58,11 @@ void profile_scope_end() { spall_buffer_end(&spall_ctx, &spall_buffer, get_time_
 
 #endif
 
-#define PROFILE_PROCESS(n) profile_process_begin(n); defer { profile_process_end(); };
-#define PROFILE_THREAD(s) profile_thread_begin(s); defer { profile_thread_end(); };
-#define PROFILE_SCOPE(n) profile_scope_begin(n); defer { profile_scope_end(); };
+#define PROFILE_PROCESS(n) profile_process_begin(n);\
+defer { profile_process_end(); };
+#define PROFILE_THREAD(s) profile_thread_begin(s);\
+defer { profile_thread_end(); };
+#define PROFILE_SCOPE(n) profile_scope_begin(n); \
+defer { profile_scope_end(); };
 
 #endif

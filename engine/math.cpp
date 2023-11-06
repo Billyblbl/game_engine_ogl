@@ -106,6 +106,11 @@ template<typename P> inline reg_polytope<P> intersect(const reg_polytope<P> a, c
 	return { glm::max(a.min, b.min), glm::min(a.max, b.max) };
 }
 
+template<typename P> inline bool contains(const reg_polytope<P> a, const reg_polytope<P> b) {
+	auto inter = intersect(a, b);
+	return (b.min == inter.min && b.max == inter.max);
+}
+
 template<typename T> T lerp(T a, T b, f32 t) { return a + t * (b - a); }
 template<typename T> f32 inv_lerp(T a, T b, T v) { return (b == a) ? 0 : (v - a) / (b - a); }
 

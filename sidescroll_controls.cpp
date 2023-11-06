@@ -199,7 +199,7 @@ void update_characters(Array<SidescrollCharacter> characters, Array<Collision2D>
 	ground_characters(characters, collisions, normalize(gravity));
 	for (auto& ch : characters) {
 		ch.space->velocity.translation = control(*ch.ctrl, ch.space->velocity.translation, ch.space->transform.scale, gravity, clock.dt);
-		ch.sprite->cursor.view = animate_sidescroll_character(*ch.anim, ch.animations, *ch.ctrl, clock.current);
+		ch.sprite->view = animate_sidescroll_character(*ch.anim, ch.animations, *ch.ctrl, clock.current);
 	}
 }
 

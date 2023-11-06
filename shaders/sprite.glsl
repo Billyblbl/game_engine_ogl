@@ -1,39 +1,23 @@
 
-struct rtu32 {
-	uvec2 min_corner;
-	uvec2 max_corner;
-};
-
 struct InstanceData {
 	mat4 matrix;
-	rtu32 rect;
-	vec4 dimensions; //x,y -> rect dimensions, z -> sprite depth, w -> atlas page
+	uvec4 rect;
+	vec4 dimensions; //x,y -> rect dimensions, z -> sprite depth
 };
 
-vec2 rect_to_world(rtu32 rect, vec2 v) {
-	return v * (rect.max_corner - rect.min_corner) + rect.min_corner;
+vec2 rect_to_world(uvec4 rect, vec2 v) {
+	return v * (rect.zw - rect.xy) + rect.xy;
 }
-
-#ifdef VERTEX_SHADER
-#define pass out
-#endif
-
-#ifdef FRAGMENT_SHADER
-#define pass in
-#endif
 
 layout(location = 0) smooth pass vec2 texture_uv;
 layout(location = 1) flat pass uint instance;
 
-layout(binding = 0) uniform sampler2DArray atlas;
+layout(binding = 0) uniform sampler2D atlas;
 layout(std430, binding = 0) buffer Entities { InstanceData instances[]; };
 layout(std140, binding = 0) uniform Scene {
 	mat4 view_matrix;
 	uvec4 atlas_dimensions;
-	struct {
-		uint start;
-		uint end;
-	} instances_range;
+	float alpha_discard;
 };
 
 #ifdef VERTEX_SHADER
@@ -53,10 +37,8 @@ void main() {
 
 layout(location = 0) out vec4 pixel_color;
 
-const float alpha_discard = 0.01;
-
 void main() {
-	pixel_color = texture(atlas, vec3(texture_uv, instances[instance].dimensions.w));
+	pixel_color = texture(atlas, texture_uv);
 	if (pixel_color.a < alpha_discard)
 		discard;
 }

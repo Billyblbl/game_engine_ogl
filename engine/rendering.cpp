@@ -22,6 +22,12 @@ GLuint create_shader(string source, GLenum type) {
 	const cstrp content[] = {
 		"#version 450 core\n"
 		"#define ", GLtoString(type).substr(3).data(),"\n\n", // shader type macro
+		"#ifdef VERTEX_SHADER\n"
+		"#define pass out\n"
+		"#endif\n"
+		"#ifdef FRAGMENT_SHADER\n"
+		"#define pass in\n"
+		"#endif\n",
 		source.data()
 	};
 	const auto size = array_size(content);
@@ -196,50 +202,35 @@ void wait_gpu() {
 
 #include <sprite.cpp>
 #include <system_editor.cpp>
+#include <atlas.cpp>
 
-struct Rendering {
+struct Render {
 	OrthoCamera camera;
-	SpriteRenderer draw;
-	TexBuffer atlas;
-	SpriteCursor white;
 	FrameBuffer fbf;
 	v4f32 clear_color;
 
-	Rendering(string pipeline = "./shaders/sprite.glsl", u32 max_draw_batch = 256, v4u32 atlas_dimensions = v4u32(1920, 1080, 10, 1)) {
-		camera = { v3f32(16.f, 9.f, 1000.f) / 2.f, v3f32(0) };
-		draw = load_sprite_renderer(pipeline.data(), max_draw_batch);
-		atlas = create_texture(TX2DARR, atlas_dimensions);
-		atlas.conf_sampling({ Nearest, Nearest });
-		auto white_pixel = v4f32(1);
-		white = load_into(make_image(carray(&white_pixel, 1), v2u32(1)), atlas, v2u32(0), 9);
+	Render() {
+		camera = { v3f32(16.f, 9.f, 1000.f), v3f32(0) };
 		fbf = default_framebuffer;
 		clear_color = v4f32(v3f32(0.3), 1);
 	}
 
-	~Rendering() {
-		unload(atlas);
-		unload(draw);
-	}
-
-	auto get_vp_matrix(const Transform2D& pov) { return view_project(project(camera), trs_2d(pov)); }
-
-	void operator()(Array<SpriteInstance> sprites, const Transform2D& pov) {
+	inline void operator()(const Transform2D& pov, auto commands) {
 		PROFILE_SCOPE("Rendering");
 		begin_render(fbf);
 		clear(fbf, clear_color);
-		draw(sprites, get_vp_matrix(pov), atlas);
+		commands(view_project(project(camera), trs_2d(pov)));
 	}
 
 	static auto default_editor() {
-		return SystemEditor("Rendering", "Alt+R", { Input::KB::K_LEFT_ALT, Input::KB::K_R });
+		return SystemEditor("Render", "Alt+R", { Input::KB::K_LEFT_ALT, Input::KB::K_R });
 	}
 
 	void editor_window() {
 		EditorWidget("Camera", camera);
 		if (ImGui::Button("Reset Camera"))
-			camera = { v3f32(16.f, 9.f, 1000.f) / 2.f, v3f32(0) };
+			camera = { v3f32(16.f, 9.f, 1000.f), v3f32(0) };
 		ImGui::ColorPicker4("Clear Color", glm::value_ptr(clear_color));
-		EditorWidget("Atlas", atlas);
 	}
 
 };

@@ -497,6 +497,9 @@ namespace Input {
 	}
 
 	namespace KB {
+
+		ButtonState get(Key key) { return get_context().key_states[KB::index_of(key)]; }
+
 		bool shortcut(Array<const Key> keys, bool* selected = null) {
 			auto downed = false;
 			for (auto key : keys) {

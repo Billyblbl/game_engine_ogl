@@ -22,16 +22,6 @@
 #include <texture_shape_generation.cpp>
 #include <spall/profiling.cpp>
 
-/*
-SceneNode {
-	Create(...)
-	Destroy()
-	Update(...)
-	MakeEditor()? -> ed
-	EditorUpdate(ed?)
-}
-*/
-
 #define MAX_SPRITES MAX_ENTITIES
 
 const struct {
@@ -51,6 +41,7 @@ struct Entity : public EntitySlot {
 		Physical = UserFlag << 3,
 		Controllable = UserFlag << 4,
 		Animated = UserFlag << 5,
+		Tilemap = UserFlag << 6,
 	};
 
 	static constexpr string Flags[] = {
@@ -62,7 +53,8 @@ struct Entity : public EntitySlot {
 		"Collider",
 		"Physical",
 		"Controllable",
-		"Animated"
+		"Animated",
+		"Tilemap"
 	};
 
 	Spacial2D space;
@@ -99,9 +91,9 @@ template<> tuple<bool, SidescrollCharacter> use_as<SidescrollCharacter>(EntityHa
 	);
 }
 
-template<> tuple<bool, SpriteInstance> use_as<SpriteInstance>(EntityHandle handle) {
-	if (!has_all(handle->flags, Entity::Draw)) return tuple(false, SpriteInstance{});
-	return tuple(true, instance_of(handle->content<Entity>().sprite, trs_2d(handle->content<Entity>().space.transform)));
+template<> tuple<bool, SpriteRenderer::Instance> use_as<SpriteRenderer::Instance>(EntityHandle handle) {
+	if (!has_all(handle->flags, Entity::Draw)) return tuple(false, SpriteRenderer::Instance{});
+	return tuple(true, SpriteRenderer::make_instance(handle->content<Entity>().sprite, trs_2d(handle->content<Entity>().space.transform)));
 }
 
 template<> tuple<bool, Sound> use_as<Sound>(EntityHandle handle) {
@@ -129,7 +121,14 @@ bool EditorWidget(const cstr label, Entity& ent) {
 }
 
 struct PlaygroundScene {
-	Rendering rendering;
+
+	struct {
+		Render render;
+		SpriteRenderer draw_sprites;
+		Atlas2D sprite_atlas;
+		rtu32 white;
+	} gfx;
+
 	Physics2D physics;
 	Audio audio;
 	Time::Clock clock;
@@ -137,72 +136,81 @@ struct PlaygroundScene {
 	List<Entity> entities;
 
 	AudioClip clip;
-	SpriteCursor spritesheet;
 	Array<SpriteAnimation> animations;
-
+	rtu32 spritesheet;
 	EntityHandle player;
+	EntityHandle cam;
 
 	Arena resources_arena = Arena::from_vmem(1 << 23);
 
+
+	Entity& create_test_body(string name, v2f32 position) {
+		auto& ent = allocate_entity(entities, name, Entity::Draw | Entity::Collider | Entity::Physical);
+		ent.space = { identity_2d, null_transform_2d, null_transform_2d };
+		ent.space.transform.translation = position;
+		ent.sprite.view = gfx.white;
+		ent.sprite.dimensions = v2f32(1);
+		ent.sprite.depth = 1;
+		ent.body.inverse_inertia = 1.f;
+		ent.body.inverse_inertia = 1.f;
+		ent.body.inverse_mass = 1.f;
+		ent.body.restitution = 0.1f;
+		ent.body.friction = 0.1f;
+		ent.body.shape_index = 0;
+		static v2f32 test_polygon[] = { v2f32(-1, -1) / 2.f, v2f32(+1, -1) / 2.f, v2f32(+1, +1) / 2.f, v2f32(-1, +1) / 2.f };
+		ent.shape[ent.body.shape_index] = make_shape_2d<Shape2D::Polygon>(larray(test_polygon));
+		return ent;
+	}
+
+	static constexpr v4f32 white_pixel[] = { v4f32(1) };
 	PlaygroundScene() {
 		PROFILE_SCOPE(__FUNCTION__);
-		rendering.camera = { v3f32(16.f, 9.f, 1000.f) * 4.f, v3f32(0) };
-		entities = List{ resources_arena.push_array<Entity>(MAX_ENTITIES), 0 };
+		auto [arena, scope] = scratch_push_scope(1ull << 21); defer{ scratch_pop_scope(arena, scope); };
+		resources_arena = Arena::from_vmem(1ull << 23);
 
-		auto img = load_image(assets.test_sidescroll_path); defer{ unload(img); };
-		spritesheet = load_into(img, rendering.atlas);
+		{
+			PROFILE_SCOPE("Rendering init");
+			defer{ scratch_pop_scope(arena, scope); };
+			gfx.draw_sprites = SpriteRenderer::create(assets.draw_pipeline);
+			gfx.sprite_atlas = Atlas2D::create(v2u32(1920, 1080));
+			gfx.white = gfx.sprite_atlas.push(make_image(larray(white_pixel), v2u32(1)));
 
-		auto layout = build_layout(resources_arena, assets.sidescroll_character_animation_recipe_path);
-		animations = build_sidescroll_character_animations(resources_arena, layout, img.dimensions);
+			auto img = load_image(assets.test_sidescroll_path); defer{ unload(img); };
+			spritesheet = gfx.sprite_atlas.push(img);
 
-		static v2f32 test_polygon[] = { v2f32(-1, -1) / 2.f, v2f32(+1, -1) / 2.f, v2f32(+1, +1) / 2.f, v2f32(-1, +1) / 2.f };
-		static v2f32 floor_poly[] = { v2f32(-1000, -5), v2f32(+1000, -5), v2f32(+1000, +5), v2f32(-1000, +5) };
+			auto layout = build_layout(arena, assets.sidescroll_character_animation_recipe_path);
+			animations = build_sidescroll_character_animations(resources_arena, layout, img.dimensions);
+		}
 
-		player = (
-			[&]() {
-				auto& ent = allocate_entity(entities, "player", Entity::Draw /*| Entity::Physical*/ | Entity::Collider | Entity::Controllable | Entity::Animated);
-				ent.space = { identity_2d, null_transform_2d, null_transform_2d };
-				ent.sprite.cursor = spritesheet;
-				ent.sprite.dimensions = v2f32(1);
-				ent.sprite.depth = 1;
-				ent.body.inverse_inertia = 0.f;
-				ent.body.inverse_mass = 1.f;
-				ent.body.restitution = .0f;
-				ent.body.friction = .3f;
-				ent.body.shape_index = 0;
-				ent.animations = animations;
-				ent.shape[ent.body.shape_index] = make_shape_2d<Shape2D::Polygon>(larray(test_polygon));
-				return get_entity_genhandle(ent);
-			}
-		());
+		{
+			PROFILE_SCOPE("Scene content init");
+			srand(time(0));
+			auto frand = [](f32range range) -> f32 { return range.min + fmodf(f32(rand()) / f32(rand() % 0xFFFFFF + 1), 1.f) * (range.max - range.min); };
 
-		srand(time(0));
-		auto frand = [](f32range range) -> f32 { return range.min + fmodf(f32(rand()) / f32(rand() % 0xFFFFFF + 1), 1.f) * (range.max - range.min); };
+			entities = List{ resources_arena.push_array<Entity>(MAX_ENTITIES), 0 };
 
-		{// misc scene content
+			player = (
+				[&]() {
+					auto& ent = create_test_body("player", v2f32(0));
+					ent.flags |= (Entity::Controllable | Entity::Animated);
+					ent.sprite.view = spritesheet;
+					ent.body.inverse_inertia = 0.f;
+					ent.body.inverse_mass = 1.f;
+					ent.body.restitution = .0f;
+					ent.animations = animations;
+					return get_entity_genhandle(ent);
+				}
+			());
 
+			cam = get_entity_genhandle(allocate_entity(entities, "Camera", 0));
 
-			for (auto i : u64xrange{ 0, 5 }) {
-				auto& ent = allocate_entity(entities, "test_ent PRE", Entity::Draw | Entity::Collider | Entity::Physical);
-				ent.space = { identity_2d, null_transform_2d, null_transform_2d };
-				ent.space.transform.translation += v2f32(frand({ -10, 10 }), frand({ -10, 10 }));
-				// ent.space.velocity.translation += v2f32(frand({ -1, 1 }), frand({ -1, 1 }));
-				ent.sprite.cursor = rendering.white;
-				ent.sprite.dimensions = v2f32(1);
-				ent.sprite.depth = 1;
-				ent.body.inverse_inertia = 1.f;
-				ent.body.inverse_inertia = 1.f;
-				ent.body.inverse_mass = 1.f;
-				ent.body.restitution = 0.f;
-				ent.body.friction = 0.f;
-				ent.body.shape_index = 0;
-				ent.shape[ent.body.shape_index] = make_shape_2d<Shape2D::Polygon>(larray(test_polygon));
-			}
+			for (auto i : u64xrange{ 0, 5 })
+				create_test_body("test_ent PRE", v2f32(frand({ -10, 10 }), frand({ -10, 10 })));
 
 			{
-				auto& ent = allocate_entity(entities, "static1", Entity::Draw | Entity::Collider | Entity::Physical);
+				auto& ent = allocate_entity(entities, "floor", Entity::Draw | Entity::Collider | Entity::Physical);
 				ent.space.transform.translation = v2f32(0, -15);
-				ent.sprite.cursor = rendering.white;
+				ent.sprite.view = gfx.white;
 				ent.sprite.dimensions = v2f32(2000, 10);
 				ent.sprite.depth = 1;
 				ent.body.inverse_inertia = 0;
@@ -210,114 +218,67 @@ struct PlaygroundScene {
 				ent.body.restitution = .8f;
 				ent.body.friction = .5f;
 				ent.body.shape_index = 0;
+				static v2f32 floor_poly[] = { v2f32(-1000, -5), v2f32(+1000, -5), v2f32(+1000, +5), v2f32(-1000, +5) };
 				ent.shape[ent.body.shape_index] = make_shape_2d<Shape2D::Polygon>(larray(floor_poly));
 			}
 
-			for (auto i : u64xrange{ 0, 5 }) {
-				auto& ent = allocate_entity(entities, "test_ent POST", Entity::Draw | Entity::Collider | Entity::Physical);
-				ent.space = { identity_2d, null_transform_2d, null_transform_2d };
-				ent.space.transform.translation += v2f32(frand({ -10, 10 }), frand({ -10, 10 }));
-				// ent.space.velocity.translation += v2f32(frand({ -1, 1 }), frand({ -1, 1 }));
-				ent.sprite.cursor = rendering.white;
-				ent.sprite.dimensions = v2f32(1);
-				ent.sprite.depth = 1;
-				ent.body.inverse_inertia = 1.f;
-				ent.body.inverse_inertia = 1.f;
-				ent.body.inverse_mass = 1.f;
-				ent.body.restitution = 0.f;
-				ent.body.friction = 0.f;
-				ent.body.shape_index = 0;
-				ent.shape[ent.body.shape_index] = make_shape_2d<Shape2D::Polygon>(larray(test_polygon));
-			}
+			for (auto i : u64xrange{ 0, 5 })
+				create_test_body("test_ent POST", v2f32(frand({ -10, 10 }), frand({ -10, 10 })));
 
-			// {
-			// 	auto& ent = allocate_entity(entities, "ramp1", Entity::Rigidbody);
-			// 	Transform2D transform;
-			// 	transform.translation = v2f32(+7, -10);
-			// 	transform.rotation = 0;
-			// 	transform.scale = v2f32(3);
-			// 	ent.space.transform = transform;
-			// 	ent.body.inverse_inertia = 0;
-			// 	ent.body.inverse_mass = 0;
-			// 	ent.body.restitution = .5f;
-			// 	ent.body.friction = .5f;
-			// 	ent.shape = make_shape_2d<Shape2D::Line>(Segment<v2f32> { v2f32(-1), v2f32(1) });
-			// }
-
-			// {
-			// 	auto& ent = allocate_entity(entities, "ramp2", Entity::Rigidbody);
-			// 	Transform2D transform;
-			// 	transform.translation = v2f32(-7, -10);
-			// 	transform.rotation = -90;
-			// 	transform.scale = v2f32(3);
-			// 	ent.space.transform = transform;
-			// 	ent.body.inverse_inertia = 0;
-			// 	ent.body.inverse_mass = 0;
-			// 	ent.body.restitution = .5f;
-			// 	ent.body.friction = .5f;
-			// 	ent.shape = make_shape_2d<Shape2D::Line>(Segment<v2f32> { v2f32(-1), v2f32(1) });
-			// }
 		}
 
-		fflush(stdout);
-		wait_gpu();
+		{
+			PROFILE_SCOPE("Flushing log buffers");
+			fflush(stdout);
+		}
+
+		{
+			PROFILE_SCOPE("Waiting for GPU init work");
+			wait_gpu();
+		}
 		clock = Time::start();
 	}
 
 	u64 update_count = 0;
-	Spacial2D pov;
 	bool operator()() {
 		PROFILE_SCOPE("Scene update");
 		defer{ update_count++; };
 		update(clock);
-		constexpr u64 SCRATCH_SIZE = (1ull << 21);
-		auto [scratch, scope] = scratch_push_scope(SCRATCH_SIZE); defer{ scratch_pop_scope(scratch, scope); };
+		auto [scratch, scope] = scratch_push_scope(1ull << 21); defer{ scratch_pop_scope(scratch, scope); };
 
 		if (player.valid())
 			player_input(player->content<Entity>().ctrl);
 
-		if (Input::get_context().key_states[Input::KB::index_of(Input::KB::K_SPACE)] & Input::Down) {
-			if (physics.manual_update) {
-				printf("Manual stepping\n");
-				scratch_pop_scope(scratch, scope);
-				physics(gather<RigidBody>(scratch, entities.used()), gather<Spacial2D*>(scratch, entities.used()), 1);
-			}
-		}
-
-		if (Input::get_context().key_states[Input::KB::index_of(Input::KB::K_ENTER)] & Input::Down) {
-			static v2f32 test_polygon[] = { v2f32(-1, -1) / 2.f, v2f32(+1, -1) / 2.f, v2f32(+1, +1) / 2.f, v2f32(-1, +1) / 2.f };
-			auto& ent = allocate_entity(entities, "new test_ent", Entity::Draw | Entity::Collider | Entity::Physical);
-			ent.space = { identity_2d, null_transform_2d, null_transform_2d };
-			ent.sprite.cursor = rendering.white;
-			ent.sprite.dimensions = v2f32(1);
-			ent.sprite.depth = 1;
-			ent.body.inverse_inertia = 1.f;
-			ent.body.inverse_inertia = 1.f;
-			ent.body.inverse_mass = 1.f;
-			ent.body.restitution = .3f;
-			ent.body.friction = .5f;
-			ent.body.shape_index = 0;
-			ent.shape[ent.body.shape_index] = make_shape_2d<Shape2D::Polygon>(larray(test_polygon));
-		}
-
-
-		if (!physics.manual_update) {
+		if (physics.manual_update && (Input::KB::get(Input::KB::K_SPACE) & Input::Down)) {
+			printf("Manual stepping\n");
 			scratch_pop_scope(scratch, scope);
-			if (auto it_count = physics.iteration_count(clock.current); it_count > 0)
-				physics(gather<RigidBody>(scratch, entities.used()), gather<Spacial2D*>(scratch, entities.used()), it_count);
+			physics(gather<RigidBody>(scratch, entities.used()), gather<Spacial2D*>(scratch, entities.used()), 1);
 		}
+
+		if (Input::KB::get(Input::KB::K_ENTER) & Input::Down)
+			create_test_body("new test body", v2f32(0));
+
 		update_characters(gather<SidescrollCharacter>(scratch_pop_scope(scratch, scope), entities.used()), physics.collisions.used(), physics.gravity, clock);
-		pov = (player.valid() ? player->content<Entity>().space : Spacial2D{ identity_2d, null_transform_2d, null_transform_2d });
-		pov.transform.rotation = 0;
-		pov.transform.scale.x = abs(pov.transform.scale.x);
+		if (auto it_count = physics.iteration_count(clock.current); !physics.manual_update && it_count > 0) {
+			scratch_pop_scope(scratch, scope);
+			physics(gather<RigidBody>(scratch, entities.used()), gather<Spacial2D*>(scratch, entities.used()), it_count);
+		}
+
+		if (cam.valid()) {
+			cam->content<Entity>().space.transform.translation = (player.valid() ? player->content<Entity>().space.transform.translation : v2f32(0));
+			cam->content<Entity>().space.velocity.translation = (player.valid() ? player->content<Entity>().space.velocity.translation : v2f32(0));
+		}
+
+		auto pov = (cam.valid() ? cam->content<Entity>().space : Spacial2D{});
 		audio(gather<Sound>(scratch_pop_scope(scratch, scope), entities.used()), &pov);
-		rendering(gather<SpriteInstance>(scratch_pop_scope(scratch, scope), entities.used()), pov.transform);
+		auto sprites = gather<SpriteRenderer::Instance>(scratch_pop_scope(scratch, scope), entities.used());
+		gfx.render(pov.transform, [&](m4x4f32 mat) { gfx.draw_sprites(sprites, mat, gfx.sprite_atlas.texture); });
 		return true;
 	}
 
 	static auto default_editor() {
 		return tuple(
-			Rendering::default_editor(),
+			Render::default_editor(),
 			Audio::default_editor(),
 			Physics2D::default_editor(),
 			SystemEditor("Entities", "Alt+E", { Input::KB::K_LEFT_ALT, Input::KB::K_E }),
@@ -329,14 +290,14 @@ struct PlaygroundScene {
 		auto& [rd, au, ph, ent, misc] = ed;
 		static auto debug_scratch = Arena::from_vmem(1 << 19);
 		if (ph.debug) {
-			auto vp = rendering.get_vp_matrix(pov.transform);
+			auto vp = view_project(project(gfx.render.camera), trs_2d(cam->content<Entity>().space.transform));
 			if (ph.colliders) ph.draw_shapes(gather((debug_scratch.reset()), entities.used(), Entity::Collider, [&](Entity& ent) { return tuple(&ent.shape[0], &ent.space); }), vp);
 			if (ph.collisions) ph.draw_collisions(physics.collisions.used(), vp);
 		}
 
 		if (rd.show_window) {
 			if (begin_editor(rd)) {
-				rendering.editor_window();
+				gfx.render.editor_window();
 			} end_editor();
 		}
 

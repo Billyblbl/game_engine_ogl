@@ -7,11 +7,14 @@
 ## STB
 ## BUILD_DIR
 ## GXX_PATH
+## GCC_PATH
 ##
 
 CXX=$(GXX_PATH)
+CC=$(GCC_PATH)
+
 CFLAGS += -g3
-CFLAGS += -std=c++20
+CFLAGS += -std=c++23
 CFLAGS += -fno-exceptions
 # CFLAGS += -finstrument-functions
 
@@ -20,24 +23,19 @@ LIB = $(PWD)
 
 BLBLSTD_MODULE = $(BUILD_DIR)/blblstd.o
 
-INC = .
-
 COLOR=\033[0;34m
 NOCOLOR=\033[0m
 
 default: app
 
-include imgui.mk
-include engine.mk
-include editor.mk
-include vorbis.mk
-include profiling.mk
+# include editor.mk
 include app.mk
 
 $(BUILD_DIR):
-	mkdir -p $@
+	@echo -e "Init $(COLOR)build directory$(NOCOLOR)"
+	@mkdir -p $@
 
-$(BLBLSTD_MODULE):
+$(BLBLSTD_MODULE): $(BUILD_DIR)
 	@cd blblstd && $(MAKE)
 
 clean:

@@ -223,6 +223,76 @@ const string GLtoString(GLenum value) {
 	case GL_FRAMEBUFFER_INCOMPLETE_LAYER_TARGETS: return serialise_macro(GL_FRAMEBUFFER_INCOMPLETE_LAYER_TARGETS);
 	case GL_FRAMEBUFFER_COMPLETE: return serialise_macro(GL_FRAMEBUFFER_COMPLETE);
 
+	case GL_DEPTH_COMPONENT16: return serialise_macro(GL_DEPTH_COMPONENT16);
+	case GL_DEPTH_COMPONENT24: return serialise_macro(GL_DEPTH_COMPONENT24);
+	case GL_DEPTH_COMPONENT32: return serialise_macro(GL_DEPTH_COMPONENT32);
+	case GL_R8: return serialise_macro(GL_R8);
+	case GL_R8_SNORM: return serialise_macro(GL_R8_SNORM);
+	case GL_R16: return serialise_macro(GL_R16);
+	case GL_R16_SNORM: return serialise_macro(GL_R16_SNORM);
+	case GL_RG8: return serialise_macro(GL_RG8);
+	case GL_RG8_SNORM: return serialise_macro(GL_RG8_SNORM);
+	case GL_RG16: return serialise_macro(GL_RG16);
+	case GL_RG16_SNORM: return serialise_macro(GL_RG16_SNORM);
+	case GL_R3_G3_B2: return serialise_macro(GL_R3_G3_B2);
+	case GL_RGB4: return serialise_macro(GL_RGB4);
+	case GL_RGB5: return serialise_macro(GL_RGB5);
+	case GL_RGB8: return serialise_macro(GL_RGB8);
+	case GL_RGB8_SNORM: return serialise_macro(GL_RGB8_SNORM);
+	case GL_RGB10: return serialise_macro(GL_RGB10);
+	case GL_RGB12: return serialise_macro(GL_RGB12);
+	case GL_RGB16_SNORM: return serialise_macro(GL_RGB16_SNORM);
+	case GL_RGBA2: return serialise_macro(GL_RGBA2);
+	case GL_RGBA4: return serialise_macro(GL_RGBA4);
+	case GL_RGB5_A1: return serialise_macro(GL_RGB5_A1);
+	case GL_RGBA8: return serialise_macro(GL_RGBA8);
+	case GL_RGBA8_SNORM: return serialise_macro(GL_RGBA8_SNORM);
+	case GL_RGB10_A2: return serialise_macro(GL_RGB10_A2);
+	case GL_RGB10_A2UI: return serialise_macro(GL_RGB10_A2UI);
+	case GL_RGBA12: return serialise_macro(GL_RGBA12);
+	case GL_RGBA16: return serialise_macro(GL_RGBA16);
+	case GL_SRGB8: return serialise_macro(GL_SRGB8);
+	case GL_SRGB8_ALPHA8: return serialise_macro(GL_SRGB8_ALPHA8);
+	case GL_R16F: return serialise_macro(GL_R16F);
+	case GL_RG16F: return serialise_macro(GL_RG16F);
+	case GL_RGB16F: return serialise_macro(GL_RGB16F);
+	case GL_RGBA16F: return serialise_macro(GL_RGBA16F);
+	case GL_R32F: return serialise_macro(GL_R32F);
+	case GL_RG32F: return serialise_macro(GL_RG32F);
+	case GL_RGB32F: return serialise_macro(GL_RGB32F);
+	case GL_RGBA32F: return serialise_macro(GL_RGBA32F);
+	case GL_R11F_G11F_B10F: return serialise_macro(GL_R11F_G11F_B10F);
+	case GL_RGB9_E5: return serialise_macro(GL_RGB9_E5);
+	case GL_R8I: return serialise_macro(GL_R8I);
+	case GL_R8UI: return serialise_macro(GL_R8UI);
+	case GL_R16I: return serialise_macro(GL_R16I);
+	case GL_R16UI: return serialise_macro(GL_R16UI);
+	case GL_R32I: return serialise_macro(GL_R32I);
+	case GL_R32UI: return serialise_macro(GL_R32UI);
+	case GL_RG8I: return serialise_macro(GL_RG8I);
+	case GL_RG8UI: return serialise_macro(GL_RG8UI);
+	case GL_RG16I: return serialise_macro(GL_RG16I);
+	case GL_RG16UI: return serialise_macro(GL_RG16UI);
+	case GL_RG32I: return serialise_macro(GL_RG32I);
+	case GL_RG32UI: return serialise_macro(GL_RG32UI);
+	case GL_RGB8I: return serialise_macro(GL_RGB8I);
+	case GL_RGB8UI: return serialise_macro(GL_RGB8UI);
+	case GL_RGB16I: return serialise_macro(GL_RGB16I);
+	case GL_RGB16UI: return serialise_macro(GL_RGB16UI);
+	case GL_RGB32I: return serialise_macro(GL_RGB32I);
+	case GL_RGB32UI: return serialise_macro(GL_RGB32UI);
+	case GL_RGBA8I: return serialise_macro(GL_RGBA8I);
+	case GL_RGBA8UI: return serialise_macro(GL_RGBA8UI);
+	case GL_RGBA16I: return serialise_macro(GL_RGBA16I);
+	case GL_RGBA16UI: return serialise_macro(GL_RGBA16UI);
+	case GL_RGBA32I: return serialise_macro(GL_RGBA32I);
+	case GL_RGBA32UI: return serialise_macro(GL_RGBA32UI);
+
+	case GL_RED_INTEGER: return serialise_macro(GL_RED_INTEGER);
+	case GL_RG_INTEGER: return serialise_macro(GL_RG_INTEGER);
+	case GL_RGB_INTEGER: return serialise_macro(GL_RGB_INTEGER);
+	case GL_RGBA_INTEGER: return serialise_macro(GL_RGBA_INTEGER);
+
 	default: return lstr("Unknown OpenGL enum");
 	}
 }
@@ -286,7 +356,7 @@ void delete_buffer(GLuint buffer) {
 }
 
 
-enum GPUFormat: GLenum {
+enum GPUFormat : GLenum {
 	NONE = 0,
 	DEPTH_COMPONENT = GL_DEPTH_COMPONENT,
 	DEPTH_STENCIL = GL_DEPTH_STENCIL,
@@ -391,9 +461,10 @@ template<> constexpr GLTypeTable gl_type_table<f32> = { GL_FLOAT,						{ NONE, R
 template<> constexpr GLTypeTable gl_type_table<i32> = { GL_INT,							{ NONE, R32I	, RG32I	, RGB32I	, RGBA32I	}, { 0, GL_RED, GL_RG, GL_RGB, GL_RGBA } };
 template<> constexpr GLTypeTable gl_type_table<i16> = { GL_SHORT,						{ NONE, R16I	, RG16I	, RGB16I	, RGBA16I	}, { 0, GL_RED, GL_RG, GL_RGB, GL_RGBA } };
 template<> constexpr GLTypeTable gl_type_table<i8 > = { GL_BYTE,						{ NONE, R8I		, RG8I	, RGB8I		, RGBA8I	}, { 0, GL_RED, GL_RG, GL_RGB, GL_RGBA } };
-template<> constexpr GLTypeTable gl_type_table<u32> = { GL_UNSIGNED_INT,		{ NONE, R32UI	, RG32UI, RGB32UI	, RGBA32UI}, { 0, GL_RED, GL_RG, GL_RGB, GL_RGBA } };
-template<> constexpr GLTypeTable gl_type_table<u16> = { GL_UNSIGNED_SHORT,	{ NONE, R16UI	, RG16UI, RGB16UI	, RGBA16UI}, { 0, GL_RED, GL_RG, GL_RGB, GL_RGBA } };
-template<> constexpr GLTypeTable gl_type_table<u8 > = { GL_UNSIGNED_BYTE,		{ NONE, R8UI	, RG8UI	, RGB8UI	, RGBA8UI	}, { 0, GL_RED, GL_RG, GL_RGB, GL_RGBA } };
+//* wtf https://community.khronos.org/t/invalid-operation-when-i-try-to-load-a-gl-r8ui-texture/75321
+template<> constexpr GLTypeTable gl_type_table<u32> = { GL_UNSIGNED_INT,		{ NONE, R32UI	, RG32UI, RGB32UI	, RGBA32UI}, { 0, GL_RED_INTEGER, GL_RG, GL_RGB, GL_RGBA } };
+template<> constexpr GLTypeTable gl_type_table<u16> = { GL_UNSIGNED_SHORT,	{ NONE, R16UI	, RG16UI, RGB16UI	, RGBA16UI}, { 0, GL_RED_INTEGER, GL_RG, GL_RGB, GL_RGBA } };
+template<> constexpr GLTypeTable gl_type_table<u8 > = { GL_UNSIGNED_BYTE,		{ NONE, R8UI	, RG8UI	, RGB8UI	, RGBA8UI	}, { 0, GL_RED_INTEGER, GL_RG, GL_RGB, GL_RGBA } };
 
 struct SrcFormat {
 	GLenum type;

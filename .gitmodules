@@ -11,3 +11,6 @@
 [submodule "blblstd"]
 	path = blblstd
 	url = https://github.com/Billyblbl/blblstd.git
+[submodule "tmx"]
+	path = tmx
+	url = https://github.com/baylej/tmx.git

@@ -33,6 +33,8 @@ BLBLGAME_SRC += engine/audio_buffer.cpp
 BLBLGAME_SRC += engine/entity.cpp
 BLBLGAME_SRC += engine/system_editor.cpp
 BLBLGAME_SRC += engine/polygon.cpp
+BLBLGAME_SRC += engine/tilemap.cpp
+BLBLGAME_SRC += engine/atlas.cpp
 
 INC += $(PWD)/engine
 INC += $(IMGUI)

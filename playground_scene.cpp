@@ -22,6 +22,8 @@
 #include <texture_shape_generation.cpp>
 #include <spall/profiling.cpp>
 
+#include <tilemap.cpp>
+
 #define MAX_SPRITES MAX_ENTITIES
 
 const struct {
@@ -31,6 +33,8 @@ const struct {
 	cstrp test_sound = "./audio/file_example_OOG_1MG.ogg";
 	cstrp test_sidescroll_path = "12_Animated_Character_Template.png";
 	cstrp sidescroll_character_animation_recipe_path = "test_sidescroll_character.xml";
+	cstrp tilemap_pipeline = "./shaders/tilemap.glsl";
+	cstrp level = "./test.tmx";
 } assets;
 
 struct Entity : public EntitySlot {
@@ -41,7 +45,7 @@ struct Entity : public EntitySlot {
 		Physical = UserFlag << 3,
 		Controllable = UserFlag << 4,
 		Animated = UserFlag << 5,
-		Tilemap = UserFlag << 6,
+		// Tilemap = UserFlag << 6,
 	};
 
 	static constexpr string Flags[] = {
@@ -54,7 +58,7 @@ struct Entity : public EntitySlot {
 		"Physical",
 		"Controllable",
 		"Animated",
-		"Tilemap"
+		// "Tilemap"
 	};
 
 	Spacial2D space;
@@ -125,6 +129,7 @@ struct PlaygroundScene {
 	struct {
 		Render render;
 		SpriteRenderer draw_sprites;
+		TilemapRenderer draw_tilemap;
 		Atlas2D sprite_atlas;
 		rtu32 white;
 	} gfx;
@@ -137,12 +142,13 @@ struct PlaygroundScene {
 
 	AudioClip clip;
 	Array<SpriteAnimation> animations;
+	Tilemap level;
+	Transform2D tilemap_transform = identity_2d;
 	rtu32 spritesheet;
 	EntityHandle player;
 	EntityHandle cam;
 
 	Arena resources_arena = Arena::from_vmem(1 << 23);
-
 
 	Entity& create_test_body(string name, v2f32 position) {
 		auto& ent = allocate_entity(entities, name, Entity::Draw | Entity::Collider | Entity::Physical);
@@ -172,6 +178,7 @@ struct PlaygroundScene {
 			PROFILE_SCOPE("Rendering init");
 			defer{ scratch_pop_scope(arena, scope); };
 			gfx.draw_sprites = SpriteRenderer::create(assets.draw_pipeline);
+			gfx.draw_tilemap = TilemapRenderer::load(assets.tilemap_pipeline);
 			gfx.sprite_atlas = Atlas2D::create(v2u32(1920, 1080));
 			gfx.white = gfx.sprite_atlas.push(make_image(larray(white_pixel), v2u32(1)));
 
@@ -180,6 +187,8 @@ struct PlaygroundScene {
 
 			auto layout = build_layout(arena, assets.sidescroll_character_animation_recipe_path);
 			animations = build_sidescroll_character_animations(resources_arena, layout, img.dimensions);
+
+			level = Tilemap::load(resources_arena, gfx.sprite_atlas, assets.level);
 		}
 
 		{
@@ -272,7 +281,12 @@ struct PlaygroundScene {
 		auto pov = (cam.valid() ? cam->content<Entity>().space : Spacial2D{});
 		audio(gather<Sound>(scratch_pop_scope(scratch, scope), entities.used()), &pov);
 		auto sprites = gather<SpriteRenderer::Instance>(scratch_pop_scope(scratch, scope), entities.used());
-		gfx.render(pov.transform, [&](m4x4f32 mat) { gfx.draw_sprites(sprites, mat, gfx.sprite_atlas.texture); });
+		gfx.render(pov.transform,
+			[&](m4x4f32 mat) {
+				gfx.draw_tilemap(level, trs_2d(tilemap_transform), mat, gfx.sprite_atlas.texture);
+				// gfx.draw_sprites(sprites, mat, gfx.sprite_atlas.texture);
+			}
+		);
 		return true;
 	}
 
@@ -324,6 +338,8 @@ struct PlaygroundScene {
 				ImGui::Text("Update index : %llu", update_count);
 				EditorWidget("Clock", clock);
 				EditorWidget("Animations", animations);
+				EditorWidget("tilemap_transform", tilemap_transform);
+				// EditorWidget("tilemap", tilemap);
 			} end_editor();
 		}
 	}

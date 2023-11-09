@@ -4,6 +4,8 @@
 *.so
 *.dll
 *.log
+*.tiled-project
+*.tiled-session
 
 .vscode
 build

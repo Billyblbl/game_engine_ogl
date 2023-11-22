@@ -18,6 +18,7 @@ BLBLGAME_SRC += engine/inputs.cpp
 BLBLGAME_SRC += engine/math.cpp
 BLBLGAME_SRC += engine/model.cpp
 BLBLGAME_SRC += engine/physics_2d.cpp
+BLBLGAME_SRC += engine/shape_2d.cpp
 BLBLGAME_SRC += engine/physics_2d_debug.cpp
 BLBLGAME_SRC += engine/rendering.cpp
 BLBLGAME_SRC += engine/textures.cpp

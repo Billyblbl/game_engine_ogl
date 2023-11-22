@@ -3,10 +3,14 @@
 
 #include <math.cpp>
 #include <imgui_extension.cpp>
+#include <spall/profiling.cpp>
+
 
 m4x4f32 trs_2d(v2f32 translation, f32 rotation, v2f32 scales) {
+	PROFILE_SCOPE(__FUNCTION__);
 	using namespace glm;
-	return translate(m4x4f32(1), v3f32(translation, 0)) *
+	return
+		translate(m4x4f32(1), v3f32(translation, 0)) *
 		rotate(m4x4f32(1), radians(rotation), v3f32(0, 0, 1)) *
 		scale(m4x4f32(1), v3f32(scales, 1));
 }
@@ -24,10 +28,21 @@ m4x4f32 ortho_project(v3f32	dimensions, v3f32 center) {
 struct Transform2D {
 	v2f32 translation = v2f32(0);
 	v2f32 scale = v2f32(0);
-	f32 rotation = .0f;
+	f32 rotation = .0f;//* degrees
+
+	operator m3x3f32() const {
+		using namespace glm;
+		PROFILE_SCOPE(__FUNCTION__);
+		return
+			translate(m3x3f32(1), translation) *
+			rotate(m3x3f32(1), radians(rotation)) *
+			glm::scale(m3x3f32(1), scale);
+	}
 };
-constexpr Transform2D identity_2d = {v2f32(0), v2f32(1), 0};
-constexpr Transform2D null_transform_2d = {v2f32(0), v2f32(0), 0};
+
+
+constexpr Transform2D identity_2d = { v2f32(0), v2f32(1), 0 };
+constexpr Transform2D null_transform_2d = { v2f32(0), v2f32(0), 0 };
 
 inline Transform2D operator+(const Transform2D& lhs, const Transform2D& rhs) {
 	return {
@@ -69,6 +84,7 @@ inline Spacial2D& euler_integrate(Spacial2D& spacial, f32 dt) {
 struct OrthoCamera {
 	v3f32	dimensions = v3f32(16, 9, 1);
 	v3f32 center = v3f32(0);
+	operator m4x4f32() { return ortho_project(dimensions, center); }
 };
 
 m4x4f32 trs_2d(const Transform2D& transform) {

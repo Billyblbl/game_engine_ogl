@@ -101,14 +101,24 @@ template<typename P> P dims_p1(reg_polytope<P> p) { return P(width(p)); }
 template<typename P> P dims_p2(reg_polytope<P> p) { return P(width(p), height(p)); }
 template<typename P> P dims_p3(reg_polytope<P> p) { return P(width(p), height(p), depth(p)); }
 template<typename P> P dims_p4(reg_polytope<P> p) { return P(width(p), height(p), depth(p), dim_4(p)); }
+template<typename P> auto dim_vec(reg_polytope<P> p) { return p.max - p.min; }
 
 template<typename P> inline reg_polytope<P> intersect(const reg_polytope<P> a, const reg_polytope<P> b) {
 	return { glm::max(a.min, b.min), glm::min(a.max, b.max) };
 }
 
+template<typename P> inline reg_polytope<P> combined_aabb(const reg_polytope<P> a, const reg_polytope<P> b) {
+	return { glm::min(a.min, b.min), glm::max(a.max, b.max) };
+}
+
 template<typename P> inline bool contains(const reg_polytope<P> a, const reg_polytope<P> b) {
 	auto inter = intersect(a, b);
 	return (b.min == inter.min && b.max == inter.max);
+}
+
+template<typename P> inline bool collide(const reg_polytope<P> a, const reg_polytope<P> b) {
+	using namespace glm;
+	return (all(greaterThan(dim_vec(intersect(a, b)), P(0))));
 }
 
 template<typename T> T lerp(T a, T b, f32 t) { return a + t * (b - a); }

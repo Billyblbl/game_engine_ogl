@@ -219,7 +219,7 @@ struct Render {
 		PROFILE_SCOPE("Rendering");
 		begin_render(fbf);
 		clear(fbf, clear_color);
-		commands(view_project(project(camera), trs_2d(pov)));
+		commands(project(camera) * glm::inverse(trs_2d(pov)));
 	}
 
 	static auto default_editor() {

@@ -164,7 +164,7 @@ struct PlaygroundScene {
 		ent.body.friction = 0.1f;
 		ent.body.shape_index = 0;
 		static v2f32 test_polygon[] = { v2f32(-1, -1) / 2.f, v2f32(+1, -1) / 2.f, v2f32(+1, +1) / 2.f, v2f32(-1, +1) / 2.f };
-		ent.shape[ent.body.shape_index] = make_shape_2d<Shape2D::Polygon>(larray(test_polygon));
+		ent.shape[ent.body.shape_index] = make_shape_2d(identity_2d, 0, larray(test_polygon));
 		return ent;
 	}
 
@@ -228,7 +228,7 @@ struct PlaygroundScene {
 				ent.body.friction = .5f;
 				ent.body.shape_index = 0;
 				static v2f32 floor_poly[] = { v2f32(-1000, -5), v2f32(+1000, -5), v2f32(+1000, +5), v2f32(-1000, +5) };
-				ent.shape[ent.body.shape_index] = make_shape_2d<Shape2D::Polygon>(larray(floor_poly));
+				ent.shape[ent.body.shape_index] = make_shape_2d(identity_2d, 0, larray(floor_poly));
 			}
 
 			for (auto i : u64xrange{ 0, 5 })
@@ -284,7 +284,7 @@ struct PlaygroundScene {
 		gfx.render(pov.transform,
 			[&](m4x4f32 mat) {
 				gfx.draw_tilemap(level, trs_2d(tilemap_transform), mat, gfx.sprite_atlas.texture);
-				// gfx.draw_sprites(sprites, mat, gfx.sprite_atlas.texture);
+				gfx.draw_sprites(sprites, mat, gfx.sprite_atlas.texture);
 			}
 		);
 		return true;
@@ -304,8 +304,9 @@ struct PlaygroundScene {
 		auto& [rd, au, ph, ent, misc] = ed;
 		static auto debug_scratch = Arena::from_vmem(1 << 19);
 		if (ph.debug) {
-			auto vp = view_project(project(gfx.render.camera), trs_2d(cam->content<Entity>().space.transform));
-			if (ph.colliders) ph.draw_shapes(gather((debug_scratch.reset()), entities.used(), Entity::Collider, [&](Entity& ent) { return tuple(&ent.shape[0], &ent.space); }), vp);
+			PROFILE_SCOPE("Physics Debug");
+			auto vp = project(gfx.render.camera) * glm::inverse(trs_2d(cam->content<Entity>().space.transform));
+			if (ph.colliders) ph.draw_shapes(gather<RigidBody>(debug_scratch.reset(), entities.used()), vp);
 			if (ph.collisions) ph.draw_collisions(physics.collisions.used(), vp);
 		}
 

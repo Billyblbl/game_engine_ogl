@@ -24,7 +24,7 @@ v2f32 support_circle(v2f32 center, f32 radius, const m3x3f32& matrix, v2f32 dire
 
 Segment<v2f32> support_point_cloud(Array<v2f32> vertices, const m3x3f32& matrix, v2f32 direction) {
 	using namespace glm;
-	auto [scratch, scope] = scratch_push_scope(sizeof(f32) * vertices.size() * 3); defer { scratch_pop_scope(scratch, scope); };
+	auto [scratch, scope] = scratch_push_scope(sizeof(f32) * vertices.size() * 3); defer{ scratch_pop_scope(scratch, scope); };
 	auto world_verts = map(scratch, vertices, [&](v2f32 v) -> v2f32 { return matrix * v3f32(v, 1); });
 	auto dir = normalize(direction);
 	auto dots = map(scratch, world_verts, [=](v2f32 v) { return dot(v, dir); });
@@ -233,18 +233,6 @@ Contact2D make_contact(
 	return { pen, { contact - v2f32(offset_t1 * v3f32(0, 0, 1)), contact - v2f32(transform2 * v3f32(0, 0, 1)) }, 0 };
 }
 
-bool collide_aabb(
-	const Shape2D& shape1, const Shape2D& shape2,
-	const m3x3f32& transform1, const m3x3f32& transform2
-) {
-	PROFILE_SCOPE(__FUNCTION__);
-	auto aabb_intersection = intersect(
-		aabb_shape(shape1, transform1),
-		aabb_shape(shape2, transform2)
-	);
-	return (width(aabb_intersection) > 0 && height(aabb_intersection) > 0);
-}
-
 tuple<bool, Contact2D> intersect_convex(
 	const Shape2D& shape1, const Shape2D& shape2,
 	const m3x3f32& transform1, const m3x3f32& transform2,
@@ -373,7 +361,7 @@ tuple<Transform2D, Transform2D> contact_response(
 	auto tangent = orthogonal_axis(normal) * sign(dot(orthogonal_axis(normal), contact_relative_vel));
 
 	auto cancel = [](v2f32 v, v2f32 d)->f32 { return length(d) > 0 && length(v) > 0 ? -dot(v, d) : 0; };
-	f32 normal_impulse = cancel(contact_relative_vel, normal);
+	f32 normal_impulse = max(0.f, cancel(contact_relative_vel, normal));
 	f32 friction_impulse = cancel(contact_relative_vel, tangent);
 
 	auto overcome_static = abs(friction_impulse) > abs(normal_impulse * static_friction);
@@ -477,31 +465,36 @@ Array<Collision2D> detect_collisions(Arena& arena, Array<RigidBody> entities, f3
 
 void resolve_collisions(Array<Collision2D> collisions) {
 	PROFILE_SCOPE(__FUNCTION__);
-	for (auto& col : collisions) if (has_all(col.flags, Collision2D::Physical)) {
-		profile_scope_begin("Correction");
-		//* Correct penetration
-		auto pen = average(col.contacts, &Contact2D::penetration);
-		auto total_inv_mass = col.entities[0].body->inverse_mass + col.entities[1].body->inverse_mass;
-		col.entities[0].spacial->transform.translation += pen * -inv_lerp(0.f, total_inv_mass, col.entities[0].body->inverse_mass);
-		col.entities[1].spacial->transform.translation += pen * +inv_lerp(0.f, total_inv_mass, col.entities[1].body->inverse_mass);
-		profile_scope_end();
-		if (!has_one(col.flags, Collision2D::Linear | Collision2D::Angular))
-			continue;
+	for (auto& col : collisions) if (has_all(col.flags, Collision2D::Physical) && col.contacts.size() > 0) {
 
-		PROFILE_SCOPE("Collision impulse");
-		//* Velocity Impulse
-		f32 elasticity = min(col.entities[0].body->restitution, col.entities[1].body->restitution);
-		f32 kinetic_friction = average({ col.entities[0].body->friction, col.entities[1].body->friction });
-		f32 static_friction = col.entities[0].body->friction * col.entities[1].body->friction;
-		auto [d1, d2] = fold(tuple<Transform2D, Transform2D>{}, col.contacts,
-			[&](const tuple<Transform2D, Transform2D>& acc, const Contact2D& contact) -> tuple<Transform2D, Transform2D> {
-				auto [acc1, acc2] = acc;
-				auto [r1, r2] = contact_response(col.entities, contact, elasticity, kinetic_friction, static_friction);
-				return { acc1 + r1, acc2 + r2 };
-			}
-		);
-		col.entities[0].spacial->velocity = col.entities[0].spacial->velocity + d1 * (1.f / f32(col.contacts.size()));
-		col.entities[1].spacial->velocity = col.entities[1].spacial->velocity + d2 * (1.f / f32(col.contacts.size()));
+		{
+			PROFILE_SCOPE("Correct penetration");
+			auto pen = average(col.contacts, &Contact2D::penetration);
+			auto total_inv_mass = col.entities[0].body->inverse_mass + col.entities[1].body->inverse_mass;
+			col.entities[0].spacial->transform.translation += pen * -inv_lerp(0.f, total_inv_mass, col.entities[0].body->inverse_mass);
+			col.entities[1].spacial->transform.translation += pen * +inv_lerp(0.f, total_inv_mass, col.entities[1].body->inverse_mass);
+		}
+
+		if (!has_one(col.flags, Collision2D::Linear | Collision2D::Angular)) {
+			assert(false);
+			continue;
+		}
+
+		{
+			PROFILE_SCOPE("Velocity Impulse");
+			f32 elasticity = min(col.entities[0].body->restitution, col.entities[1].body->restitution);
+			f32 kinetic_friction = average({ col.entities[0].body->friction, col.entities[1].body->friction });
+			f32 static_friction = col.entities[0].body->friction * col.entities[1].body->friction;
+			auto [d1, d2] = fold(tuple<Transform2D, Transform2D>{}, col.contacts,
+				[&](const tuple<Transform2D, Transform2D>& acc, const Contact2D& contact) -> tuple<Transform2D, Transform2D> {
+					auto [acc1, acc2] = acc;
+					auto [r1, r2] = contact_response(col.entities, contact, elasticity, kinetic_friction, static_friction);
+					return { acc1 + r1, acc2 + r2 };
+				}
+			);
+			col.entities[0].spacial->velocity = col.entities[0].spacial->velocity + d1 * (1.f / f32(col.contacts.size()));
+			col.entities[1].spacial->velocity = col.entities[1].spacial->velocity + d2 * (1.f / f32(col.contacts.size()));
+		}
 	}
 }
 

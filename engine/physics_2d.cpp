@@ -71,53 +71,53 @@ template<support_function F1, support_function F2> inline Segment<v2f32> minkows
 // TODO continuous collision -> support function only selects point, should sample from the convex hull of the shapes at time t & t+dt
 template<support_function F1, support_function F2> inline tuple<bool, tuple<v2f32, v2f32, v2f32>> GJK(const F1& f1, const F2& f2, v2f32 start_direction = glm::normalize(v2f32(1))) {
 	using namespace glm;
+	constexpr tuple<bool, tuple<v2f32, v2f32, v2f32>> no_collision = { false, {{}, {}, {}} };
 	PROFILE_SCOPE(__FUNCTION__);
 
-	constexpr tuple<bool, tuple<v2f32, v2f32, v2f32>> no_collision = { false, {{}, {}, {}} };
 
 	v2f32 triangle_vertices[3];
 	auto triangle = List{ larray(triangle_vertices), 0 };
 	auto direction = start_direction;
 
-	for (auto i = 0; i < 999;i++) {// inf loop safeguard
+	for (auto i = 0; i < 999;i++) {//* inf loop safeguard TODO replace with configurable iteration limit
 		auto new_point = minkowski_diff_support(f1, f2, direction).A;
-		if (dot(new_point, direction) <= 0) // Did we pass the origin to find A, return early otherwise
+		if (dot(new_point, direction) <= 0) //* Did we pass the origin to find A, return early otherwise
 			return no_collision;
 		triangle.push(new_point);
 
-		if (triangle.current == 1) { // first point case
+		if (triangle.current == 1) { //* first point case
 			direction = -triangle[0];
-		} else if (triangle.current == 2) { // first line case
+		} else if (triangle.current == 2) { //* first line case
 			auto [B, A] = to_tuple<2>(triangle.used());
 			auto AB = B - A;
-			auto AO = -A;// origin - A
+			auto AO = -A;//* origin - A
 			auto ABperp_axis = v2f32(-AB.y, AB.x);
-			if (dot(AO, ABperp_axis) == 0) {// origin is on AB
+			if (dot(AO, ABperp_axis) == 0) {//* origin is on AB
 				triangle.push(v2f32(0));
 				return { true, to_tuple<3>(triangle.used()) };
 			}
-			// direction should be perpendicular to AB & go towards the origin
+			//* direction should be perpendicular to AB & go towards the origin
 			direction = normalize(ABperp_axis * dot(AO, ABperp_axis));
-		} else { // triangle case
+		} else { //* triangle case
 			auto [C, B, A] = to_tuple<3>(triangle.used());
 			auto AB = B - A;
 			auto AC = C - A;
-			auto AO = -A;// origin - A
+			auto AO = -A;//* origin - A
 			auto ABperp_axis = v2f32(-AB.y, AB.x);
 			auto ACperp_axis = v2f32(-AC.y, AC.x);
-			if (dot(AO, ABperp_axis) == 0) // origin is on AB
+			if (dot(AO, ABperp_axis) == 0) //* origin is on AB
 				return { true, to_tuple<3>(triangle.used()) };
-			if (dot(AO, ACperp_axis) == 0) // origin is on AC
+			if (dot(AO, ACperp_axis) == 0) //* origin is on AC
 				return { true, to_tuple<3>(triangle.used()) };
-			auto ABperp = normalize(ABperp_axis * dot(ABperp_axis, -AC)); // must go towards the exterior of triangle
-			auto ACperp = normalize(ACperp_axis * dot(ACperp_axis, -AB)); // must go towards the exterior of triangle
-			if (dot(ABperp, AO) > 0) {// region AB
-				triangle.remove(0);//C
+			auto ABperp = normalize(ABperp_axis * dot(ABperp_axis, -AC)); //* must go towards the exterior of triangle
+			auto ACperp = normalize(ACperp_axis * dot(ACperp_axis, -AB)); //* must go towards the exterior of triangle
+			if (dot(ABperp, AO) > 0) {//* region AB
+				triangle.remove(0);//*C
 				direction = ABperp;
-			} else if (dot(ACperp, AO) > 0) { // region AC
-				triangle.remove(1);//B
+			} else if (dot(ACperp, AO) > 0) { //* region AC
+				triangle.remove(1);//*B
 				direction = ACperp;
-			} else { // Inside triangle ABC
+			} else { //* Inside triangle ABC
 				return { true, to_tuple<3>(triangle.used()) };
 			}
 		}
@@ -128,7 +128,7 @@ template<support_function F1, support_function F2> inline tuple<bool, tuple<v2f3
 
 //* Expanding Polytope algorithm
 //* https://www.youtube.com/watch?v=0XQ2FSz3EK8&ab_channel=Winterdev
-template<support_function F1, support_function F2> v2f32 EPA(const F1& f1, const F2& f2, tuple<v2f32, v2f32, v2f32> triangle, u32 max_iteration = 64, f32 iteration_threshold = 0.05f) {
+template<support_function F1, support_function F2> v2f32 EPA(const F1& f1, const F2& f2, tuple<v2f32, v2f32, v2f32> triangle, u32 max_iteration = 64, f32 precision_threshold = 0.05f) {
 	using namespace glm;
 	PROFILE_SCOPE(__FUNCTION__);
 
@@ -136,42 +136,32 @@ template<support_function F1, support_function F2> v2f32 EPA(const F1& f1, const
 	v2f32 points_buffer[max_iteration + 3] = { A, B, C };
 	auto points = List{ carray(points_buffer, max_iteration + 3), 3 };
 
-	auto min_index = 0;
-	auto min_dist = std::numeric_limits<f32>::max();
-	auto min_normal = v2f32(0);
-
+	auto best_point_index = 0;
 	for (auto iteration : u64xrange{ 0, max_iteration }) {
-		for (auto i : u64xrange{ 0, points.current }) {
+		struct {
+			f32 distance_to_origin = std::numeric_limits<f32>::max();
+			v2f32 normal = v2f32(0);
+			u64 index = 0;
+		} closest_seg;
+
+		for (auto i : u64xrange{ 0, points.current }) {//* find edge closest to origin
 			auto j = (i + 1) % points.current;
-			auto vi = points[i];
-			auto vj = points[j];
-			auto normal = normalize(orthogonal(vj - vi));
-			auto dist = abs(dot(normal, vj));
-
-			//* this old version has phases through bugs, keeping the code around since i don't exactly know why but the current version functions alright
-			// auto dist = dot(normal, vj);
-			// if (dist < 0) {
-			// 	dist *= -1;
-			// normal *= -1;
-			// }
-
-			if (dist < min_dist) {
-				min_dist = dist;
-				min_normal = normal;
-				min_index = j;
-			}
+			auto seg = Segment{ points[i], points[j] };
+			auto normal = normalize(orthogonal_axis(direction(seg)));//* can be wrong way, using abs(ori_to_seg) & *sign(ori_to_seg) avoids problems from this
+			auto ori_to_seg = dot(normal, seg.B);
+			if (abs(ori_to_seg) < closest_seg.distance_to_origin)
+				closest_seg = { abs(ori_to_seg), normal * sign(ori_to_seg), j };
 		}
 
-		auto support_point = minkowski_diff_support(f1, f2, min_normal).A;
-		auto s_distance = dot(min_normal, support_point);
+		auto support_point = minkowski_diff_support(f1, f2, closest_seg.normal).A;
+		auto error = dot(closest_seg.normal, support_point) - closest_seg.distance_to_origin;
 
-		if (abs(s_distance - min_dist) > iteration_threshold) {
-			min_dist = std::numeric_limits<f32>::max();
-			points.insert_ordered(min_index, std::move(support_point));
-		} else break;
-
+		if (error <= precision_threshold) //* new point is close enough
+			return closest_seg.normal * closest_seg.distance_to_origin;
+		else
+			points.insert_ordered(best_point_index = closest_seg.index, support_point);
 	}
-	return min_normal * min_dist;
+	return points[best_point_index];
 }
 
 f32 cross_2(v2f32 a, v2f32 b) {

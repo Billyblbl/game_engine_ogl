@@ -158,10 +158,9 @@ struct PlaygroundScene {
 		ent.sprite.dimensions = v2f32(1);
 		ent.sprite.depth = 1;
 		ent.body.inverse_inertia = 1.f;
-		ent.body.inverse_inertia = 1.f;
 		ent.body.inverse_mass = 1.f;
-		ent.body.restitution = 0.1f;
-		ent.body.friction = 0.1f;
+		ent.body.restitution = 1.f;
+		ent.body.friction = .1f;
 		ent.body.shape_index = 0;
 		static v2f32 test_polygon[] = { v2f32(-1, -1) / 2.f, v2f32(+1, -1) / 2.f, v2f32(+1, +1) / 2.f, v2f32(-1, +1) / 2.f };
 		ent.shape[ent.body.shape_index] = make_shape_2d(identity_2d, 0, larray(test_polygon));
@@ -205,7 +204,7 @@ struct PlaygroundScene {
 					ent.sprite.view = spritesheet;
 					ent.body.inverse_inertia = 0.f;
 					ent.body.inverse_mass = 1.f;
-					ent.body.restitution = .0f;
+					ent.body.restitution = 0.f;
 					ent.animations = animations;
 					return get_entity_genhandle(ent);
 				}
@@ -213,8 +212,8 @@ struct PlaygroundScene {
 
 			cam = get_entity_genhandle(allocate_entity(entities, "Camera", 0));
 
-			for (auto i : u64xrange{ 0, 5 })
-				create_test_body("test_ent PRE", v2f32(frand({ -10, 10 }), frand({ -10, 10 })));
+			// for (auto i : u64xrange{ 0, 5 })
+			// 	create_test_body("test_ent PRE", v2f32(frand({ -10, 10 }), frand({ -10, 10 })));
 
 			{
 				auto& ent = allocate_entity(entities, "floor", Entity::Draw | Entity::Collider | Entity::Physical);
@@ -224,15 +223,15 @@ struct PlaygroundScene {
 				ent.sprite.depth = 1;
 				ent.body.inverse_inertia = 0;
 				ent.body.inverse_mass = 0;
-				ent.body.restitution = .8f;
-				ent.body.friction = .5f;
+				ent.body.restitution = .1f;
+				ent.body.friction = .1f;
 				ent.body.shape_index = 0;
 				static v2f32 floor_poly[] = { v2f32(-1000, -5), v2f32(+1000, -5), v2f32(+1000, +5), v2f32(-1000, +5) };
 				ent.shape[ent.body.shape_index] = make_shape_2d(identity_2d, 0, larray(floor_poly));
 			}
 
-			for (auto i : u64xrange{ 0, 5 })
-				create_test_body("test_ent POST", v2f32(frand({ -10, 10 }), frand({ -10, 10 })));
+			// for (auto i : u64xrange{ 0, 5 })
+			// 	create_test_body("test_ent POST", v2f32(frand({ -10, 10 }), frand({ -10, 10 })));
 
 		}
 

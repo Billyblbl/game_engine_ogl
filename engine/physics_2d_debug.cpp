@@ -20,6 +20,7 @@ struct ShapeRenderer {
 	}
 
 	void draw_polygon(Array<v2f32> polygon, bool wireframe = true) const {
+		if (polygon.size() == 0) return;
 		u32 indices[polygon.size()];
 		for (auto i : u32xrange{ 0, polygon.size() })
 			indices[i] = i;

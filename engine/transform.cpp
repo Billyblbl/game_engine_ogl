@@ -40,6 +40,14 @@ struct Transform2D {
 	}
 };
 
+Transform2D make_transform(v2f32 translate = v2f32(0), f32 rotate = 0, v2f32 scale = v2f32(1)) {
+	Transform2D t;
+	t.translation = translate;
+	t.rotation = rotate;
+	t.scale = scale;
+	return t;
+}
+
 
 constexpr Transform2D identity_2d = { v2f32(0), v2f32(1), 0 };
 constexpr Transform2D null_transform_2d = { v2f32(0), v2f32(0), 0 };

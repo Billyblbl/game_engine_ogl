@@ -5,19 +5,77 @@
 #include <polygon.cpp>
 #include <transform.cpp>
 
+template<typename T, i32 Row, i32 Col, glm::qualifier Q> bool EditorWidget(const cstr label, glm::mat<Row, Col, T, Q>& m) {
+	bool changed = false;
+	if (ImGui::TreeNode(label)) {
+		defer{ ImGui::TreePop(); };
+		for (auto c : u64xrange{ 0, Col }) {
+			char buff[10] = "";
+			snprintf(buff, sizeof(buff), "%u", c);
+			changed |= EditorWidget(buff, m[c]);
+		}
+	}
+	return changed;
+}
+
+inline rtf32 aabb_point_cloud(Array<v2f32> vertices, const m3x3f32& transform = m3x3f32(1)) {
+	PROFILE_SCOPE(__FUNCTION__);
+	auto mx = v2f32(std::numeric_limits<f32>::lowest());
+	auto mn = v2f32(std::numeric_limits<f32>::max());
+
+	for (auto&& v : vertices) {
+		auto tfmd = v2f32(transform * v3f32(v, 1));
+		mx = glm::max(mx, tfmd);
+		mn = glm::min(mn, tfmd);
+	}
+	return { mn, mx };
+}
+
+inline rtf32 aabb_transformed_aabb(rtf32 aabb, const m3x3f32& transform = m3x3f32(1)) {
+	PROFILE_SCOPE(__FUNCTION__);
+	v2f32 corners[] = { aabb.min, v2f32(aabb.min.x, aabb.max.y), aabb.max, v2f32(aabb.max.x, aabb.min.y) };
+	return aabb_point_cloud(larray(corners), transform);
+}
+
+//* approximative aabb, taking the aabb of the transformed aabb of the circle in its own space, simpler that way
+inline rtf32 aabb_circle(v2f32 center, f32 radius, const m3x3f32& transform = m3x3f32(1)) {
+	PROFILE_SCOPE(__FUNCTION__);
+	return aabb_transformed_aabb({ center - v2f32(radius), center + v2f32(radius) }, transform);
+}
+
+struct Shape2D;
+rtf32 aabb_shape_group(Array<const Shape2D> shapes, const m3x3f32& parent = m3x3f32(1));
+using xf32 = std::numeric_limits<f32>;
+
 struct Shape2D {
+	m3x3f32 transform;
 	Array<v2f32> points;
 	Array<Shape2D> children;
+	rtf32 aabb;
 	f32 radius;
-	m3x3f32 transform;
+	inline rtf32 compute_aabb() {
+		PROFILE_SCOPE(__FUNCTION__);
+		auto points_aabb = aabb_point_cloud(points, transform);
+		auto children_aabb = aabb_shape_group(children, transform);
+		auto radius_aabb = fold(rtf32{ v2f32(xf32::max()), v2f32(xf32::lowest()) }, points, [&](rtf32 acc, v2f32 point) { return combined_aabb(acc, aabb_circle(point, radius, transform)); });
+		return combined_aabb(points_aabb, combined_aabb(children_aabb, radius_aabb));
+	}
 };
 
-Shape2D make_shape_2d(const Transform2D& transform = identity_2d, f32 radius = 0, Array<v2f32> points = {}, Array<Shape2D> children = {}) {
+rtf32 aabb_shape_group(Array<const Shape2D> shapes, const m3x3f32& parent) {
+	PROFILE_SCOPE(__FUNCTION__);
+	auto box = rtf32{ v2f32(xf32::max()), v2f32(xf32::lowest()) };
+	return fold(box, shapes, [](rtf32 a, const Shape2D& b) { return combined_aabb(a, b.aabb); });
+}
+
+Shape2D make_shape_2d(const m3x3f32& transform = identity_2d, f32 radius = 0, Array<v2f32> points = {}, Array<Shape2D> children = {}) {
+	PROFILE_SCOPE(__FUNCTION__);
 	Shape2D shape = {};
 	shape.transform = transform;
 	shape.points = points;
 	shape.children = children;
 	shape.radius = radius;
+	shape.aabb = shape.compute_aabb();
 	return shape;
 }
 
@@ -46,59 +104,17 @@ Shape2D make_circle_shape(f32 radius, const Transform2D& transform = identity_2d
 	return make_shape_2d(transform, radius, larray(orig));
 }
 
-inline rtf32 aabb_point_cloud(Array<v2f32> vertices, const m3x3f32& transform) {
-	auto mx = v2f32(std::numeric_limits<f32>::lowest());
-	auto mn = v2f32(std::numeric_limits<f32>::max());
-
-	for (auto&& v : vertices) {
-		auto tfmd = v2f32(transform * v3f32(v, 1));
-		mx = glm::max(mx, tfmd);
-		mn = glm::min(mn, tfmd);
-	}
-	return { mn, mx };
-}
-
-inline rtf32 aabb_circle(v2f32 center, f32 radius) {
-	return {
-		center - v2f32(radius),
-		center + v2f32(radius)
-	};
-}
-
-rtf32 aabb_shape_group(Array<const Shape2D> shapes, const m3x3f32& parent);
-
-inline rtf32 aabb_shape(const Shape2D& shape, const m3x3f32& parent) {
-	PROFILE_SCOPE(__FUNCTION__);
-	auto world = parent * shape.transform;
-	auto box = aabb_point_cloud(shape.points, world);
-	box = combined_aabb(box, aabb_shape_group(shape.children, world));
-	for (auto& point : shape.points) { //* radius applied approximatively, taking the aabb of the transformed aabb of the circle in its own space, simpler that way
-		auto aabb = aabb_circle(point, shape.radius);
-		auto approx = aabb_point_cloud(cast<v2f32>(carray(&aabb, 1)), world);
-		box = combined_aabb(box, approx);
-	}
-	return box;
-}
-
-rtf32 aabb_shape_group(Array<const Shape2D> shapes, const m3x3f32& parent) {
-	PROFILE_SCOPE(__FUNCTION__);
-	rtf32 box = { v2f32(std::numeric_limits<f32>::max()), v2f32(std::numeric_limits<f32>::lowest()) };
-	for (auto& sub : shapes) box = combined_aabb(box, aabb_shape(sub, parent));
-	return box;
-}
-
 Array<Shape2D> flatten(Arena& arena, const Shape2D& root) {
 	PROFILE_SCOPE(__FUNCTION__);
 	auto flattened = List{ arena.push_array<Shape2D>(root.children.size()), 0 };
-
 	auto traverse = (
 		[&](auto& recurse, const Shape2D& shape, const m3x3f32& parent) -> void {
-			PROFILE_SCOPE("traverse");
 			auto world = parent * shape.transform;
 			if (shape.points.size() > 0) {
 				Shape2D flattened_shape = shape;
 				flattened_shape.transform = world;
 				flattened_shape.children = {};
+				flattened_shape.aabb = flattened_shape.compute_aabb();
 				flattened.push_growing(arena, flattened_shape);
 			}
 			for (auto& child_shape : shape.children) recurse(recurse, child_shape, world);

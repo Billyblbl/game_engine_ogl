@@ -69,6 +69,7 @@ struct Entity : public EntitySlot {
 	Body body;
 	Animator anim;
 	Array<SpriteAnimation> animations;
+	rtu32 spritesheet = { v2u32(0), v2u32(0) };
 };
 
 template<> tuple<bool, RigidBody> use_as<RigidBody>(EntityHandle handle) {
@@ -78,7 +79,7 @@ template<> tuple<bool, RigidBody> use_as<RigidBody>(EntityHandle handle) {
 		larray(handle->content<Entity>().shape),
 		&handle->content<Entity>().space,
 		(has_all(handle->flags, Entity::Physical) ? &handle->content<Entity>().body : null),
-		(has_all(handle->flags, Entity::Controllable && handle->content<Entity>().ctrl.falling) ? handle->content<Entity>().ctrl.fall_multiplier : 1.f)
+		((has_all(handle->flags, Entity::Controllable) && handle->content<Entity>().ctrl.falling) ? handle->content<Entity>().ctrl.fall_multiplier : 1.f)
 		}
 	);
 }
@@ -91,6 +92,7 @@ template<> tuple<bool, SidescrollCharacter> use_as<SidescrollCharacter>(EntityHa
 			&handle->content<Entity>().sprite,
 			&handle->content<Entity>().space,
 			handle->content<Entity>().animations,
+			handle->content<Entity>().spritesheet
 		}
 	);
 }
@@ -181,6 +183,7 @@ struct PlaygroundScene {
 			gfx.draw_tilemap = TilemapRenderer::load(assets.tilemap_pipeline);
 			gfx.sprite_atlas = Atlas2D::create(v2u32(1920, 1080));
 			gfx.white = gfx.sprite_atlas.push(make_image(larray(white_pixel), v2u32(1)));
+			// gfx.sprite_atlas.current.x += 2;
 
 			auto img = load_image(assets.test_sidescroll_path); defer{ unload(img); };
 			spritesheet = gfx.sprite_atlas.push(img);
@@ -202,11 +205,12 @@ struct PlaygroundScene {
 				[&]() {
 					auto& ent = create_test_body("player", v2f32(0));
 					ent.flags |= (Entity::Controllable | Entity::Animated);
-					ent.sprite.view = spritesheet;
+					ent.spritesheet = spritesheet;
+					ent.sprite.view = { v2u32(0), dim_vec(spritesheet) };
+					ent.animations = animations;
 					ent.body.inverse_inertia = 0.f;
 					ent.body.inverse_mass = 1.f;
 					ent.body.restitution = 0.f;
-					ent.animations = animations;
 					return get_entity_genhandle(ent);
 				}
 			());
@@ -296,7 +300,7 @@ struct PlaygroundScene {
 		audio(gather<Sound>(scratch_pop_scope(scratch, scope), entities.used()), &pov);
 		auto sprites = gather<SpriteRenderer::Instance>(scratch_pop_scope(scratch, scope), entities.used());
 		gfx.render(pov.transform,
-		// gfx.render(identity_2d,
+			// gfx.render(identity_2d,
 			[&](m4x4f32 mat) {
 				gfx.draw_tilemap(level, level_entity->content<Entity>().space.transform, mat, gfx.sprite_atlas.texture);
 				gfx.draw_sprites(sprites, mat, gfx.sprite_atlas.texture);

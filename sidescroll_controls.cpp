@@ -115,15 +115,13 @@ v2f32 control(SidescrollControl& ctrl, v2f32& velocity, v2f32& scale, v2f32 grav
 	f32 target_vel = ctrl.movement.x * ctrl.speed;
 	f32 target_accel = target_vel - velocity.x;
 	velocity.x += clamp(target_accel, -ctrl.accel * dt, ctrl.accel * dt);
-	if (ctrl.grounded && (ctrl.actions.jump & Input::ButtonState::Down))
+	if (ctrl.grounded && (ctrl.actions.jump & ButtonState::Down))
 		velocity.y = ctrl.jump_force;
-	else if (!ctrl.grounded && (!(ctrl.actions.jump & ButtonState::Pressed) || velocity.y < 0)) //* assumes gravity down
+	else if (!ctrl.grounded && (!(ctrl.actions.jump & ButtonState::Pressed) || velocity.y < 0))
 		ctrl.falling = true;
-	if (ctrl.movement.x > +0.1 && ctrl.look_left) {
-		ctrl.look_left = false;
-		scale.x *= -1;
-	} else if (ctrl.movement.x < -0.1 && !ctrl.look_left) {
-		ctrl.look_left = true;
+	constexpr f32 anim_deadzone = 0.001;
+	if ((ctrl.movement.x > +anim_deadzone && ctrl.look_left) || (ctrl.movement.x < -anim_deadzone && !ctrl.look_left)) {
+		ctrl.look_left = !ctrl.look_left;
 		scale.x *= -1;
 	}
 	return velocity;
@@ -151,14 +149,15 @@ rtu32 animate_sidescroll_character(Animator& animator, Array<SpriteAnimation> an
 	};
 	assert(animations.size() >= STATE_COUNT);
 
-	u32 state = animator.select_state(
+	auto selector = (
 		[&]()->u32 {
 			if (ctrl.falling) return FALL;
 			else if (ctrl.actions.jump & Input::Pressed) return JUMP;
 			else if (abs(ctrl.movement.x) > 0.0001) return LOCOMOTION;
 			else return IDLE;
 		}
-	(), time);
+	);
+	u32 state = animator.select_state(selector(), time);
 	//? should the coordinates be stored in the animator and the actual rect animation dealt with by a specific anime_sprite functions ?
 	switch (state) {
 	case LOCOMOTION: return animate(animations[state], v2f32(animator.state_time(time), abs(ctrl.movement.x)));
@@ -175,6 +174,7 @@ struct SidescrollCharacter {
 	Sprite* sprite;
 	Spacial2D* space;
 	Array<SpriteAnimation> animations;
+	rtu32 spritesheet;
 };
 
 template<> tuple<bool, SidescrollCharacter> use_as<SidescrollCharacter>(EntityHandle handle);
@@ -199,7 +199,11 @@ void update_characters(Array<SidescrollCharacter> characters, Array<Collision2D>
 	ground_characters(characters, collisions, normalize(gravity));
 	for (auto& ch : characters) {
 		ch.space->velocity.translation = control(*ch.ctrl, ch.space->velocity.translation, ch.space->transform.scale, gravity, clock.dt);
-		ch.sprite->view = animate_sidescroll_character(*ch.anim, ch.animations, *ch.ctrl, clock.current);
+		auto frame = animate_sidescroll_character(*ch.anim, ch.animations, *ch.ctrl, clock.current);
+		ch.sprite->view = {
+			ch.spritesheet.min + frame.min,
+			ch.spritesheet.min + frame.max,
+		};
 	}
 }
 

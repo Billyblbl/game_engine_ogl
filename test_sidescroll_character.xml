@@ -1,6 +1,6 @@
 <spritesheet name="test_sidescroll_character" x="7" y="12">
 
-	<sequence name="idle">
+	<sequence name="idle" wrap="repeat">
 		<cell x="0" y="0" />
 		<cell x="0" y="0" />
 		<cell x="1" y="0" />

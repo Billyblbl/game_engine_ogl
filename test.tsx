@@ -4,8 +4,9 @@
  <image source="test_character.png" width="128" height="128"/>
  <tile id="0">
   <objectgroup draworder="index" id="4">
-   <object id="4" x="6" y="5.09091" width="19.2727" height="24.3636">
-    <ellipse/>
+   <object id="28" name="AABB" x="7" y="6" width="17" height="24"/>
+   <object id="29" x="2.54545" y="6.18182">
+    <polygon points="0,0 26.3636,-4 14.9091,24.7273"/>
    </object>
   </objectgroup>
  </tile>
@@ -61,7 +62,7 @@
  </tile>
  <tile id="10">
   <objectgroup draworder="index" id="2">
-   <object id="1" x="8" y="7" width="16" height="23"/>
+   <object id="1" x="0" y="0" width="32" height="32"/>
   </objectgroup>
  </tile>
  <tile id="11">
@@ -71,7 +72,7 @@
  </tile>
  <tile id="12">
   <objectgroup draworder="index" id="2">
-   <object id="1" x="7" y="7" width="17" height="23"/>
+   <object id="1" x="7" y="7" width="17" height="23" rotation="45"/>
   </objectgroup>
  </tile>
  <tile id="13">
@@ -89,4 +90,22 @@
    <object id="1" x="7" y="6" width="17" height="25"/>
   </objectgroup>
  </tile>
+ <wangsets>
+  <wangset name="test set" type="mixed" tile="-1">
+   <wangcolor name="" color="#20ff54" tile="-1" probability="1"/>
+   <wangcolor name="" color="#00ff00" tile="-1" probability="1"/>
+   <wangcolor name="" color="#0000ff" tile="-1" probability="1"/>
+   <wangcolor name="" color="#ff7700" tile="-1" probability="1"/>
+   <wangcolor name="" color="#00e9ff" tile="-1" probability="1"/>
+   <wangcolor name="what the heck is this" color="#ff00d8" tile="-1" probability="1"/>
+  </wangset>
+  <wangset name="Copy of test set" type="mixed" tile="-1">
+   <wangcolor name="" color="#20ff54" tile="-1" probability="1"/>
+   <wangcolor name="" color="#00ff00" tile="-1" probability="1"/>
+   <wangcolor name="" color="#0000ff" tile="-1" probability="1"/>
+   <wangcolor name="" color="#ff7700" tile="-1" probability="1"/>
+   <wangcolor name="" color="#00e9ff" tile="-1" probability="1"/>
+   <wangcolor name="what the heck is this" color="#ff00d8" tile="-1" probability="1"/>
+  </wangset>
+ </wangsets>
 </tileset>

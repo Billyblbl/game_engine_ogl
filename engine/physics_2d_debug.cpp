@@ -6,12 +6,9 @@
 
 
 struct ShapeRenderer {
-	struct ShapeRenderInfo {
-		m4x4f32 matrix;
-		v4f32 color;
-	};
+	struct ShapeRenderInfo { v4f32 color; };
 	Pipeline pipeline;
-	MappedObject<ShapeRenderInfo> render_info;
+	MappedObject<ShapeRenderInfo> instance;
 	MappedObject<m4x4f32> vp_matrix;
 
 	static Array<const VertexAttributeSpecs> get_v2f32_attributes() {
@@ -27,7 +24,7 @@ struct ShapeRenderer {
 		auto mesh = upload_mesh(get_v2f32_attributes(), polygon, carray(indices, polygon.size()), GL_TRIANGLE_FAN); defer{ delete_mesh(mesh); };
 		if (wireframe)
 			GL_GUARD(glPolygonMode(GL_FRONT_AND_BACK, GL_LINE));
-		pipeline(mesh, 1, { bind_to(vp_matrix, 0), bind_to(render_info, 1) });
+		pipeline(mesh, 1, { bind_to(vp_matrix, 0), bind_to(instance, 1) });
 		if (wireframe)
 			GL_GUARD(glPolygonMode(GL_FRONT_AND_BACK, GL_FILL));
 		wait_gpu();
@@ -46,7 +43,7 @@ struct ShapeRenderer {
 		auto mesh = upload_mesh(get_v2f32_attributes(), larray(vertices), larray(indices), GL_TRIANGLE_FAN); defer{ delete_mesh(mesh); };
 		if (wireframe)
 			GL_GUARD(glPolygonMode(GL_FRONT_AND_BACK, GL_LINE));
-		pipeline(mesh, 1, { bind_to(vp_matrix, 0), bind_to(render_info, 1) });
+		pipeline(mesh, 1, { bind_to(vp_matrix, 0), bind_to(instance, 1) });
 		if (wireframe)
 			GL_GUARD(glPolygonMode(GL_FRONT_AND_BACK, GL_FILL));
 		wait_gpu();
@@ -56,31 +53,60 @@ struct ShapeRenderer {
 		u32 indices[2] = { 0, 1 };
 		v2f32 vertices[2] = { line.A, line.B };
 		auto mesh = upload_mesh(get_v2f32_attributes(), larray(vertices), larray(indices), GL_LINE_STRIP); defer{ delete_mesh(mesh); };
-		pipeline(mesh, 1, { bind_to(vp_matrix, 0), bind_to(render_info, 1) });
+		pipeline(mesh, 1, { bind_to(vp_matrix, 0), bind_to(instance, 1) });
 		wait_gpu();
 	}
 
 	void draw_point(v2f32 point) const {
 		u32 idx = 0;
 		auto mesh = upload_mesh(get_v2f32_attributes(), carray(&point, 1), carray(&idx, 1), GL_POINTS); defer{ delete_mesh(mesh); };
-		pipeline(mesh, 1, { bind_to(vp_matrix, 0), bind_to(render_info, 1) });
+		pipeline(mesh, 1, { bind_to(vp_matrix, 0), bind_to(instance, 1) });
 		wait_gpu();
 	}
 
 	void operator()(
 		const Shape2D& shape,
-		const m4x4f32& model_matrix,
+		const m3x3f32& model_matrix,
 		const m4x4f32& vp,
 		v4f32 color,
-		bool wireframe = true
+		bool wireframe = true,
+		bool local_aabbs = true,
+		bool world_aabbs = true,
+		bool radius = true//TODO
 		) const {
 		sync(vp_matrix, vp);
 
+		auto [scratch, scope] = scratch_push_scope(1 << 16); defer{ scratch_pop_scope(scratch, scope); };
+
 		auto traverse = (
-			[&](auto& recurse, const Shape2D& s, m4x4f32 mat) -> void {
-				auto local = mat * m4x4f32(s.transform);
-				sync(render_info, { local, color });
-				draw_polygon(s.points, wireframe);
+			[&](auto& recurse, const Shape2D& s, m3x3f32 mat) -> void {
+				auto local = mat * s.transform;
+				{
+					sync(instance, { color });
+					auto local_scope = scratch.current; defer{ scratch_pop_scope(scratch, local_scope); };
+					auto points = map(scratch, s.points, [&](v2f32 p) { return v2f32(local * v3f32(p, 1)); });
+					draw_polygon(points, wireframe);
+
+					if (world_aabbs) {
+						auto aabb = aabb_transformed_aabb(s.aabb, mat);
+						v2f32 aabb_corners[] = { aabb.min, v2f32(aabb.min.x, aabb.max.y), aabb.max, v2f32(aabb.max.x, aabb.min.y), };
+						sync(instance, { v4f32(1, 0, 1, 1) });
+						draw_polygon(larray(aabb_corners), true);
+					}
+				}
+
+				if (local_aabbs) {
+					v2f32 aabb_corners[] = {
+						v2f32(mat * v3f32(s.aabb.min, 1)),
+						v2f32(mat * v3f32(v2f32(s.aabb.min.x, s.aabb.max.y), 1)),
+						v2f32(mat * v3f32(s.aabb.max, 1)),
+						v2f32(mat * v3f32(v2f32(s.aabb.max.x, s.aabb.min.y), 1)),
+					};
+					sync(instance, { v4f32(0, 1, 1, 1) });
+					draw_polygon(larray(aabb_corners), true);
+				}
+				sync(instance, { color });
+
 				for (auto child : s.children)
 					recurse(recurse, child, local);
 			}
@@ -100,7 +126,7 @@ ShapeRenderer load_shape_renderer(const cstr path = "./shaders/physics_debug.gls
 
 void unload(ShapeRenderer& rd) {
 	destroy_pipeline(rd.pipeline);
-	unmap(rd.render_info);
+	unmap(rd.instance);
 }
 
 #endif

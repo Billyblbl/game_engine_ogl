@@ -111,6 +111,10 @@ template<typename P> inline reg_polytope<P> combined_aabb(const reg_polytope<P> 
 	return { glm::min(a.min, b.min), glm::max(a.max, b.max) };
 }
 
+template<typename P> inline auto negative(const reg_polytope<P> p) {
+	return glm::lessThan(p.max, p.min);
+}
+
 template<typename P> inline bool contains(const reg_polytope<P> a, const reg_polytope<P> b) {
 	auto inter = intersect(a, b);
 	return (b.min == inter.min && b.max == inter.max);

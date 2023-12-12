@@ -18,34 +18,39 @@ template<typename T, i32 Row, i32 Col, glm::qualifier Q> bool EditorWidget(const
 	return changed;
 }
 
+using xf32 = std::numeric_limits<f32>;
+
 inline rtf32 aabb_point_cloud(Array<v2f32> vertices, const m3x3f32& transform = m3x3f32(1)) {
 	PROFILE_SCOPE(__FUNCTION__);
-	auto mx = v2f32(std::numeric_limits<f32>::lowest());
-	auto mn = v2f32(std::numeric_limits<f32>::max());
-
-	for (auto&& v : vertices) {
-		auto tfmd = v2f32(transform * v3f32(v, 1));
-		mx = glm::max(mx, tfmd);
-		mn = glm::min(mn, tfmd);
-	}
-	return { mn, mx };
+	return fold(rtf32{ v2f32(xf32::max()), v2f32(xf32::lowest()) }, vertices,
+		[&](rtf32 a, v2f32 v) {
+			auto world = v2f32(transform * v3f32(v, 1));
+			return combined_aabb(a, rtf32{ world, world });
+		}
+	);
 }
 
-inline rtf32 aabb_transformed_aabb(rtf32 aabb, const m3x3f32& transform = m3x3f32(1)) {
+//* approximative aabb, taking the aabb of the transformed aabb of the circle in its own space, simpler that way
+inline rtf32 aabb_circle(v2f32 center, f32 radius) {
 	PROFILE_SCOPE(__FUNCTION__);
+	return { center - v2f32(radius), center + v2f32(radius) };
+}
+
+inline rtf32 aabb_transformed_aabb(rtf32 aabb, const m3x3f32& transform) {
+	PROFILE_SCOPE(__FUNCTION__);
+	if (glm::any(negative(aabb)))
+		return { v2f32(xf32::max()), v2f32(xf32::lowest()) };
 	v2f32 corners[] = { aabb.min, v2f32(aabb.min.x, aabb.max.y), aabb.max, v2f32(aabb.max.x, aabb.min.y) };
 	return aabb_point_cloud(larray(corners), transform);
 }
 
-//* approximative aabb, taking the aabb of the transformed aabb of the circle in its own space, simpler that way
-inline rtf32 aabb_circle(v2f32 center, f32 radius, const m3x3f32& transform = m3x3f32(1)) {
+inline rtf32 aabb_fat_point_cloud(Array<v2f32> vertices, f32 radius, const m3x3f32& transform = m3x3f32(1)) {
 	PROFILE_SCOPE(__FUNCTION__);
-	return aabb_transformed_aabb({ center - v2f32(radius), center + v2f32(radius) }, transform);
+	return fold(rtf32{ v2f32(xf32::max()), v2f32(xf32::lowest()) }, vertices, [&](rtf32 a, v2f32 v) { return combined_aabb(a, aabb_transformed_aabb(aabb_circle(v, radius), transform)); });
 }
 
 struct Shape2D;
 rtf32 aabb_shape_group(Array<const Shape2D> shapes, const m3x3f32& parent = m3x3f32(1));
-using xf32 = std::numeric_limits<f32>;
 
 struct Shape2D {
 	m3x3f32 transform;
@@ -53,19 +58,23 @@ struct Shape2D {
 	Array<Shape2D> children;
 	rtf32 aabb;
 	f32 radius;
+	u32 size;
 	inline rtf32 compute_aabb() {
 		PROFILE_SCOPE(__FUNCTION__);
-		auto points_aabb = aabb_point_cloud(points, transform);
+		auto local_aabb = aabb_fat_point_cloud(points, radius, transform);
 		auto children_aabb = aabb_shape_group(children, transform);
-		auto radius_aabb = fold(rtf32{ v2f32(xf32::max()), v2f32(xf32::lowest()) }, points, [&](rtf32 acc, v2f32 point) { return combined_aabb(acc, aabb_circle(point, radius, transform)); });
-		return combined_aabb(points_aabb, combined_aabb(children_aabb, radius_aabb));
+		return combined_aabb(local_aabb, children_aabb);
+	}
+
+	inline u32 count_nodes() {
+		return fold(1, children, [](u32 count, const Shape2D& sub_shape) { return count + sub_shape.size; });
 	}
 };
 
 rtf32 aabb_shape_group(Array<const Shape2D> shapes, const m3x3f32& parent) {
 	PROFILE_SCOPE(__FUNCTION__);
 	auto box = rtf32{ v2f32(xf32::max()), v2f32(xf32::lowest()) };
-	return fold(box, shapes, [](rtf32 a, const Shape2D& b) { return combined_aabb(a, b.aabb); });
+	return fold(box, shapes, [&](rtf32 a, const Shape2D& b) { return combined_aabb(a, aabb_transformed_aabb(b.aabb, parent)); });
 }
 
 Shape2D make_shape_2d(const m3x3f32& transform = identity_2d, f32 radius = 0, Array<v2f32> points = {}, Array<Shape2D> children = {}) {
@@ -76,6 +85,7 @@ Shape2D make_shape_2d(const m3x3f32& transform = identity_2d, f32 radius = 0, Ar
 	shape.children = children;
 	shape.radius = radius;
 	shape.aabb = shape.compute_aabb();
+	shape.size = shape.count_nodes();
 	return shape;
 }
 
@@ -104,20 +114,26 @@ Shape2D make_circle_shape(f32 radius, const Transform2D& transform = identity_2d
 	return make_shape_2d(transform, radius, larray(orig));
 }
 
-Array<Shape2D> flatten(Arena& arena, const Shape2D& root) {
+Shape2D transform_shape(const Shape2D& shape, const m3x3f32& transform) {
+	Shape2D transformed = shape;
+	transformed.transform = transform * shape.transform;
+	transformed.aabb = transformed.compute_aabb();
+	return transformed;
+}
+
+Array<Shape2D> flatten(Arena& arena, const Shape2D& root, bool ignore_empty = true, bool break_hierarchy = true) {
 	PROFILE_SCOPE(__FUNCTION__);
-	auto flattened = List{ arena.push_array<Shape2D>(root.children.size()), 0 };
+	auto flattened = List{ arena.push_array<Shape2D>(root.size), 0 };
 	auto traverse = (
 		[&](auto& recurse, const Shape2D& shape, const m3x3f32& parent) -> void {
-			auto world = parent * shape.transform;
-			if (shape.points.size() > 0) {
+			if (!ignore_empty || shape.points.size() > 0) {
 				Shape2D flattened_shape = shape;
-				flattened_shape.transform = world;
-				flattened_shape.children = {};
-				flattened_shape.aabb = flattened_shape.compute_aabb();
-				flattened.push_growing(arena, flattened_shape);
+				if (break_hierarchy)
+					flattened_shape.children = {};
+				flattened.push_growing(arena, transform_shape(flattened_shape, parent));
 			}
-			for (auto& child_shape : shape.children) recurse(recurse, child_shape, world);
+			for (auto& child_shape : shape.children)
+				recurse(recurse, child_shape, parent * shape.transform);
 		}
 	);
 	traverse(traverse, root, m3x3f32(1));
@@ -147,7 +163,9 @@ bool EditorWidget(const cstr label, Shape2D& shape) {
 		changed |= EditorWidget("Points", shape.points);
 		changed |= EditorWidget("Children", shape.children);
 		changed |= EditorWidget("Radius", shape.radius);
+		changed |= EditorWidget("AABB", shape.aabb);
 		changed |= EditorWidget("Transform", shape.transform);
+		changed |= EditorWidget("Size", shape.size);
 	}
 	return changed;
 }

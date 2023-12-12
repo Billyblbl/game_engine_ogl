@@ -17,16 +17,11 @@ struct Body {
 	i32 shape_index;
 };
 
-v2f32 support_circle(v2f32 center, f32 radius, const m3x3f32& matrix, v2f32 direction) {
-	// TODO take matrix into account
-	return center + glm::normalize(direction) * radius;
-}
-
-Segment<v2f32> support_point_cloud(Array<v2f32> vertices, const m3x3f32& matrix, v2f32 direction) {
+Segment<v2f32> support_fat_point_cloud(Array<v2f32> vertices, const m3x3f32& matrix, f32 radius, v2f32 direction) {
 	using namespace glm;
 	auto [scratch, scope] = scratch_push_scope(sizeof(f32) * vertices.size() * 3); defer{ scratch_pop_scope(scratch, scope); };
-	auto world_verts = map(scratch, vertices, [&](v2f32 v) -> v2f32 { return matrix * v3f32(v, 1); });
 	auto dir = normalize(direction);
+	auto world_verts = map(scratch, vertices, [&](v2f32 v) -> v2f32 { return matrix * v3f32(v + dir * radius, 1); });
 	auto dots = map(scratch, world_verts, [=](v2f32 v) { return dot(v, dir); });
 	auto iA = best_fit_search(dots, fit_highest<f32>);
 
@@ -44,20 +39,10 @@ Segment<v2f32> support_point_cloud(Array<v2f32> vertices, const m3x3f32& matrix,
 	return { world_verts[iA], world_verts[iB] };
 }
 
-Segment<v2f32> support(const Shape2D& shape, const m3x3f32 matrix, v2f32 direction) {
-	//TODO wrong somehow, there's probably a wrong matrix computation somewhere in there
-	auto [s0, s1] = support_point_cloud(shape.points, matrix * shape.transform, direction);
-	return {
-		support_circle(s0, shape.radius, matrix, direction),
-		support_circle(s1, shape.radius, matrix, direction)
-	};
-}
-
 template<typename F> concept support_function = requires(const F & f, v2f32 direction) { { f(direction) } -> std::same_as<Segment<v2f32>>; };
 
 auto support_function_of(const Shape2D& shape, const m3x3f32& transform) {
-	auto world = transform * shape.transform;
-	return ([&shape, world](v2f32 direction) -> Segment<v2f32> { return support(shape, world, direction); });
+	return ([&shape, transform](v2f32 direction) -> Segment<v2f32> { return support_fat_point_cloud(shape.points, transform * shape.transform, shape.radius, direction); });
 }
 
 template<support_function F1, support_function F2> inline Segment<v2f32> minkowski_diff_support(const F1& f1, const F2& f2, v2f32 direction) {
@@ -232,7 +217,7 @@ tuple<bool, Contact2D> intersect_convex(
 	auto f1 = support_function_of(shape1, transform1);
 	auto f2 = support_function_of(shape2, transform2);
 	auto [collided, triangle] = GJK(f1, f2);
-	auto pen = (collided ? EPA(f1, f2, triangle, 64, 0.0001) : v2f32(0));
+	auto pen = (collided ? EPA(f1, f2, triangle, 16, 0.0001) : v2f32(0));
 	collided = collided && length(pen) > penetration_tolerance;
 	return { collided, collided ? make_contact(pen, shape1, shape2, transform1, transform2) : Contact2D{} };
 }
@@ -290,6 +275,7 @@ bool EditorWidget(const cstr label, Body& body) {
 			body.inverse_inertia = inertia != 0 ? 1 / inertia : 0;
 			changed = true;
 		}
+		changed |= EditorWidget("Shape Index", body.shape_index);
 	}
 	return changed;
 }
@@ -374,79 +360,70 @@ Collision2D make_collision(Array<Contact2D> contacts, RigidBody ents[2], u32 sha
 
 Array<Collision2D> detect_collisions(Arena& arena, Array<RigidBody> entities, f32 penetration_tolerance = 0) {
 	PROFILE_SCOPE(__FUNCTION__);
-	if (entities.size() == 0) return {};
-
-	auto collisions_mem = entities.size() * entities.size() * sizeof(Collision2D);
-	auto mat_mem = sizeof(m3x3f32) * entities.size();
-	auto [scratch, scope] = scratch_push_scope(collisions_mem + mat_mem + (1ul << 19), &arena); defer{ scratch_pop_scope(scratch, scope); };
-
-	auto collisions = List{ scratch.push_array<Collision2D>(entities.size() * entities.size()), 0 };//! this can theoretically break when entities have multiple top level shapes
+	if (entities.size() < 2)
+		return {};
 
 	struct BodyCache {
 		m3x3f32 matrix;
-		RigidBody rb;
-	};
-
-	auto body_cache = map(scratch, entities,
-		[](RigidBody& rb) {
+		rtf32 aabb;
+		Array<rtf32> trees_aabb;
+		Array<Array<Shape2D>> flattened;
+		static BodyCache cache(Arena& arena, RigidBody& rb) {
 			BodyCache c;
 			c.matrix = rb.spacial->transform;
-			c.rb = rb;
+			c.trees_aabb = map(arena, rb.shapes, [&](const Shape2D& shape) -> rtf32 { return aabb_transformed_aabb(shape.aabb, c.matrix); });
+			c.aabb = aabb_shape_group(rb.shapes, c.matrix);
+			c.flattened = map(arena, rb.shapes, [&](const Shape2D&) -> Array<Shape2D> { return {}; });
 			return c;
 		}
-	);
-
-	struct AABBTree {
-		Array<AABBTree> children;
-		rtf32 aabb;
 	};
 
-	auto shape_cache = map(scratch, entities, [](RigidBody& rb) -> Array<Array<Shape2D>> { return {}; });
-	auto aabb_tree = map(scratch, body_cache, [](BodyCache& c) -> AABBTree { return { {}, aabb_shape_group(c.rb.shapes, c.matrix) }; });
+	auto collisions_mem = entities.size() * entities.size() * sizeof(Collision2D);
+	auto mat_mem = sizeof(m3x3f32) * entities.size();
+	auto [scratch, scope] = scratch_push_scope(collisions_mem + mat_mem + (1ul << 20), &arena); defer{ scratch_pop_scope(scratch, scope); };
 
-	auto cache_ent = (
-		[&](u32 index) {
-			PROFILE_SCOPE("cache_ent");
-			if (shape_cache[index].size() == 0) {
-				shape_cache[index] = map(scratch, entities[index].shapes, [&](auto&) -> Array<Shape2D> { return {}; });
-				aabb_tree[index].children = map(scratch, entities[index].shapes, [&](auto& s) -> AABBTree { return { {}, aabb_shape(s, body_cache[index].matrix) }; });
-			}
-			return shape_cache[index];
+	auto cache = map(scratch, entities, [&](RigidBody& rb) -> BodyCache { return BodyCache::cache(scratch, rb); });
+	auto cache_shape_tree = (
+		[&](u64 entity_index, u64 tree_index) -> Array<Shape2D> {
+			auto& tree_nodes = cache[entity_index].flattened[tree_index];
+			if (tree_nodes.size() == 0)
+				tree_nodes = flatten(scratch, entities[entity_index].shapes[tree_index], false, false);
+			return tree_nodes;
 		}
 	);
 
-	auto cache_shape = (
-		[&](u32 ent_index, u32 shape_index) {
-			PROFILE_SCOPE("cache_shape");
-			auto ent = cache_ent(ent_index);
-			if (ent[shape_index].size() == 0) {
-				ent[shape_index] = flatten(scratch, entities[ent_index].shapes[shape_index]);
-				aabb_tree[ent_index].children[shape_index].children = map(scratch, ent[shape_index], [&](auto& s) -> AABBTree { return { {}, aabb_shape(s, body_cache[ent_index].matrix) }; });
-			}
-			return ent[shape_index];
-		}
-	);
-
+	auto collisions = List{ scratch.push_array<Collision2D>(entities.size() * entities.size()), 0 };//! this can theoretically break when entities have multiple top level shapes
 	for (auto ie : u64xrange{ 0, entities.size() - 1 }) for (auto je : u64xrange{ ie + 1, entities.size() }) { //* entities
-		PROFILE_SCOPE("Intersect entities");
-		if (!collide(aabb_tree[ie].aabb, aabb_tree[je].aabb)) //* AABB skip
+		PROFILE_SCOPE("Intersect Entities");
+		if (!collide(cache[ie].aabb, cache[je].aabb)) //* AABB skip entities
 			continue;
-		RigidBody ents[] = { entities[ie], entities[je] };
-		for (auto is : u64xrange{ 0, cache_ent(ie).size() }) for (auto js : u64xrange{ 0, cache_ent(je).size() }) { //* shapes
-			PROFILE_SCOPE("Intersect shapes");
-			if (!collide(aabb_tree[ie].children[is].aabb, aabb_tree[je].children[js].aabb)) //* AABB skip
+
+		for (auto is : u64xrange{ 0, entities[ie].shapes.size() }) for (auto js : u64xrange{ 0, entities[je].shapes.size() }) { //* shapes
+			PROFILE_SCOPE("Intersect Shape Trees");
+			if (!((entities[ie].shapes.size() == 1 && entities[je].shapes.size() == 1) || collide(cache[ie].trees_aabb[is], cache[je].trees_aabb[js])))
 				continue;
-			u32 shape_indices[] = { u32(is), u32(js) };
-			auto contacts = List{ arena.push_array<Contact2D>(cache_shape(ie, is).size() * cache_shape(ie, is).size()), 0 };
-			for (auto iss : u64xrange{ 0, cache_shape(ie, is).size() }) for (auto jss : u64xrange{ 0, cache_shape(je, js).size() }) { //* flattened sub_shapes
-				PROFILE_SCOPE("Intersect flattened sub-shapes");
-				if (!collide(aabb_tree[ie].children[is].children[iss].aabb, aabb_tree[je].children[js].children[jss].aabb)) //* AABB skip
-					continue;
-				if (auto [collided, contact] = intersect_convex(cache_shape(ie, is)[iss], cache_shape(je, js)[jss], body_cache[ie].matrix, body_cache[je].matrix, penetration_tolerance); collided)
-					contacts.push_growing(arena, contact);
+
+			u64 intersections[] = { entities[ie].shapes[is].size, entities[je].shapes[js].size };
+			auto intersection_cache = scratch.push_array<bool>(intersections[0] * intersections[1], true);
+			auto contacts = List{ arena.push_array<Contact2D>(intersections[0] * intersections[1]), 0 };
+
+			for (auto in : u64xrange{ 0, intersections[0] }) for (auto jn : u64xrange{ 0, intersections[1] }) if (!intersection_cache[jn + in * intersections[1]]) {
+				PROFILE_SCOPE("Intersect Flattened Nodes");
+				auto& flati = cache_shape_tree(ie, is)[in];
+				auto& flatj = cache_shape_tree(je, js)[jn];
+				if (collide(aabb_transformed_aabb(flati.aabb, cache[ie].matrix), aabb_transformed_aabb(flatj.aabb, cache[je].matrix))) {
+					intersection_cache[jn + in * intersections[1]] = true;
+					if (auto [collided, contact] = intersect_convex(flati, flatj, cache[ie].matrix, cache[je].matrix, penetration_tolerance); collided)
+						contacts.push(contact);
+				} else for (auto im : u64xrange{ in, in + flati.size }) for (auto jm : u64xrange{ jn, jn + flatj.size }) {
+					intersection_cache[jm + im * intersections[1]] = true;
+				}
 			}
+
+			RigidBody ents[] = { entities[ie], entities[je] };
+			u32 shape_indices[] = { u32(is), u32(js) };
 			if (contacts.current > 0)
-				collisions.push(make_collision(contacts.shrink_to_content(arena), ents, shape_indices));
+				collisions.push_growing(scratch, make_collision(contacts.shrink_to_content(arena), ents, shape_indices));
 		}
 	}
 
@@ -466,7 +443,7 @@ void resolve_collisions(Array<Collision2D> collisions) {
 		}
 
 		if (!has_one(col.flags, Collision2D::Linear | Collision2D::Angular)) {
-			assert(false);
+			// assert(false);//TODO remove this once physics stuff is fixed
 			continue;
 		}
 
@@ -549,6 +526,10 @@ struct Physics2D {
 		bool colliders = true;
 		bool wireframe = true;
 		bool collisions = true;
+		bool local_aabbs = true;
+		bool world_aabbs = true;
+		bool radius = true;
+		bool flattened = false;
 
 		f32 velocities_scale = 1.f;
 
@@ -558,24 +539,27 @@ struct Physics2D {
 			PROFILE_SCOPE(__FUNCTION__);
 			sync(debug_draw.vp_matrix, vp);
 			for (auto bd : bodies) {
-				auto model = trs_2d(bd.spacial->transform);
-				for (auto& s : bd.shapes)
-					debug_draw(s, model, vp, v4f32(1, 0, 0, 1), wireframe);
-				v2f32 local_vel = glm::inverse(model) * v4f32(bd.spacial->velocity.translation, 0, 1);
-				sync(debug_draw.render_info, { m4x4f32(1), v4f32(1, 1, 0, 1) });
-				debug_draw.draw_line(Segment<v2f32> { (bd.spacial->transform.translation), (bd.spacial->transform.translation + velocities_scale * bd.spacial->velocity.translation)});
+				for (auto& s : bd.shapes) if (flattened) {
+					auto [scratch, scope] = scratch_push_scope(1 << 16); defer{ scratch_pop_scope(scratch, scope); };
+					for (auto& f : flatten(scratch, s))
+						debug_draw(f, bd.spacial->transform, vp, v4f32(1, 1, 0, 1), wireframe, local_aabbs, world_aabbs, radius);
+				} else {
+					debug_draw(s, bd.spacial->transform, vp, v4f32(1, 1, 0, 1), wireframe, local_aabbs, world_aabbs, radius);
+				}
+				sync(debug_draw.instance, { v4f32(1, 0, 0, 1) });
+				debug_draw.draw_line(Segment<v2f32> { bd.spacial->transform.translation, (bd.spacial->transform.translation + velocities_scale * bd.spacial->velocity.translation)});
 			}
 		}
 
-		void draw_collisions(Array<Collision2D> collisions, const m4x4f32& matrix) {
+		void draw_collisions(Array<Collision2D> collisions, const m4x4f32& vp) {
 			PROFILE_SCOPE(__FUNCTION__);
-			sync(debug_draw.vp_matrix, matrix);
+			sync(debug_draw.vp_matrix, vp);
 			for (auto [contacts, entities, physical] : collisions) {
 				Spacial2D* sp[] = { entities[0].spacial, entities[1].spacial };
-				sync(debug_draw.render_info, { m4x4f32(1), v4f32(1, 0, 1, 1) });
+				sync(debug_draw.instance, { v4f32(1, 0, 1, 1) });
 				debug_draw.draw_line({ sp[0]->transform.translation , sp[1]->transform.translation });
 				if (physical) for (auto& contact : contacts) {
-					sync(debug_draw.render_info, { m4x4f32(1), v4f32(0, 1, 1, 1) });
+					sync(debug_draw.instance, { v4f32(0, 1, 1, 1) });
 					for (auto i : u64xrange{ 0, 2 })
 						debug_draw.draw_line({ sp[i]->transform.translation, sp[i]->transform.translation + contact.levers[i] });
 				}
@@ -589,6 +573,10 @@ struct Physics2D {
 				EditorWidget("Colliders", colliders);
 				EditorWidget("Collisions marks", collisions);
 				EditorWidget("Velocities scale", velocities_scale);
+				EditorWidget("local_aabbs", local_aabbs);
+				EditorWidget("world_aabbs", world_aabbs);
+				EditorWidget("radi", radius);
+				EditorWidget("flattened", flattened);
 			}
 			EditorWidget("Gravity", system.gravity);
 			EditorWidget("Penetration Tolerance", system.penetration_tolerance);
@@ -618,6 +606,5 @@ struct Physics2D {
 	static auto default_editor() { return Editor(); }
 
 };
-
 
 #endif

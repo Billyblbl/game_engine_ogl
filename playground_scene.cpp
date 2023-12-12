@@ -97,7 +97,7 @@ template<> tuple<bool, SidescrollCharacter> use_as<SidescrollCharacter>(EntityHa
 
 template<> tuple<bool, SpriteRenderer::Instance> use_as<SpriteRenderer::Instance>(EntityHandle handle) {
 	if (!has_all(handle->flags, Entity::Draw)) return tuple(false, SpriteRenderer::Instance{});
-	return tuple(true, SpriteRenderer::make_instance(handle->content<Entity>().sprite, trs_2d(handle->content<Entity>().space.transform)));
+	return tuple(true, SpriteRenderer::make_instance(handle->content<Entity>().sprite, handle->content<Entity>().space.transform));
 }
 
 template<> tuple<bool, Sound> use_as<Sound>(EntityHandle handle) {
@@ -143,10 +143,11 @@ struct PlaygroundScene {
 	AudioClip clip;
 	Array<SpriteAnimation> animations;
 	Tilemap level;
-	Transform2D tilemap_transform = identity_2d;
+	// Transform2D tilemap_transform = identity_2d;
 	rtu32 spritesheet;
 	EntityHandle player;
 	EntityHandle cam;
+	EntityHandle level_entity;
 
 	Arena resources_arena = Arena::from_vmem(1 << 23);
 
@@ -206,6 +207,20 @@ struct PlaygroundScene {
 					ent.body.inverse_mass = 1.f;
 					ent.body.restitution = 0.f;
 					ent.animations = animations;
+					return get_entity_genhandle(ent);
+				}
+			());
+
+			level_entity = (
+				[&]() {
+					auto& ent = allocate_entity(entities, "Level", Entity::Collider | Entity::Physical);
+					ent.body.inverse_inertia = 0;
+					ent.body.inverse_mass = 0;
+					ent.body.restitution = .1f;
+					ent.body.friction = .1f;
+					ent.body.shape_index = 0;
+					auto shapes = tilemap_shapes(resources_arena, *level.tree, tile_shapeset(resources_arena, carray(level.tree->tiles, level.tree->tilecount)));
+					ent.shape[0] = shapes[0];
 					return get_entity_genhandle(ent);
 				}
 			());
@@ -281,8 +296,9 @@ struct PlaygroundScene {
 		audio(gather<Sound>(scratch_pop_scope(scratch, scope), entities.used()), &pov);
 		auto sprites = gather<SpriteRenderer::Instance>(scratch_pop_scope(scratch, scope), entities.used());
 		gfx.render(pov.transform,
+		// gfx.render(identity_2d,
 			[&](m4x4f32 mat) {
-				gfx.draw_tilemap(level, trs_2d(tilemap_transform), mat, gfx.sprite_atlas.texture);
+				gfx.draw_tilemap(level, level_entity->content<Entity>().space.transform, mat, gfx.sprite_atlas.texture);
 				gfx.draw_sprites(sprites, mat, gfx.sprite_atlas.texture);
 			}
 		);
@@ -304,7 +320,7 @@ struct PlaygroundScene {
 		static auto debug_scratch = Arena::from_vmem(1 << 19);
 		if (ph.debug) {
 			PROFILE_SCOPE("Physics Debug");
-			auto vp = project(gfx.render.camera) * glm::inverse(trs_2d(cam->content<Entity>().space.transform));
+			auto vp = project(gfx.render.camera) * glm::inverse(m4x4f32(cam->content<Entity>().space.transform));
 			if (ph.colliders) ph.draw_shapes(gather<RigidBody>(debug_scratch.reset(), entities.used()), vp);
 			if (ph.collisions) ph.draw_collisions(physics.collisions.used(), vp);
 		}
@@ -338,8 +354,6 @@ struct PlaygroundScene {
 				ImGui::Text("Update index : %llu", update_count);
 				EditorWidget("Clock", clock);
 				EditorWidget("Animations", animations);
-				EditorWidget("tilemap_transform", tilemap_transform);
-				// EditorWidget("tilemap", tilemap);
 			} end_editor();
 		}
 	}

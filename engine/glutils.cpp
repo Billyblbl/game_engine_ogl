@@ -323,7 +323,7 @@ static GLuint create_buffer(GLsizeiptr size, Array<byte>* mapping = null, std::o
 	GLuint id;
 	GL_GUARD(glCreateBuffers(1, &id));
 	auto initial_ptr = initial_values ? initial_values.value().data() : null;
-	GL_GUARD(glNamedBufferStorage(id, size, initial_ptr, (mapping == null) ? 0 : CGL_BUFFER_MAPPED));
+	GL_GUARD(glNamedBufferStorage(id, size, initial_ptr, (mapping == null) ? 0 : CGL_BUFFER_MAPPED | GL_DYNAMIC_STORAGE_BIT));
 	if (mapping != null) {
 		auto ptr = GL_GUARD(glMapNamedBufferRange(id, 0, size, CGL_BUFFER_MAPPED | GL_MAP_FLUSH_EXPLICIT_BIT));
 		*mapping = Buffer((byte*)ptr, size);

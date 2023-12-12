@@ -193,7 +193,7 @@ void destroy_pipeline(Pipeline& pipeline) {
 }
 
 inline GPUBinding bind_to(const TexBuffer& mapping, GLuint target) { return GPUBinding{ GPUBinding::Texture, mapping.id, target, mapping.dimensions.x * mapping.dimensions.y * mapping.dimensions.z * mapping.dimensions.w }; }
-template<typename T> inline GPUBinding bind_to(const MappedObject<T>& mapping, GLuint target) { return GPUBinding{ GPUBinding::UBO, mapping.id, target, sizeof(mapping.obj) }; }
+template<typename T> inline GPUBinding bind_to(const MappedObject<T>& mapping, GLuint target) { return GPUBinding{ GPUBinding::UBO, mapping.id, target, sizeof(T) }; }
 template<typename T> inline GPUBinding bind_to(const MappedBuffer<T>& mapping, GLuint target) { return GPUBinding{ GPUBinding::SSBO, mapping.id, target, (GLsizeiptr)mapping.content.size_bytes() }; }
 
 void wait_gpu() {
@@ -215,11 +215,11 @@ struct Render {
 		clear_color = v4f32(v3f32(0.3), 1);
 	}
 
-	inline void operator()(const Transform2D& pov, auto commands) {
+	inline void operator()(const m4x4f32& pov, auto commands) {
 		PROFILE_SCOPE("Rendering");
 		begin_render(fbf);
 		clear(fbf, clear_color);
-		commands(project(camera) * glm::inverse(trs_2d(pov)));
+		commands(project(camera) * glm::inverse(pov));
 	}
 
 	static auto default_editor() {

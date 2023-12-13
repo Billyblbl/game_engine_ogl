@@ -142,16 +142,14 @@ struct PlaygroundScene {
 
 	List<Entity> entities;
 
-	AudioClip clip;
 	Array<SpriteAnimation> animations;
 	Tilemap level;
-	// Transform2D tilemap_transform = identity_2d;
 	rtu32 spritesheet;
 	EntityHandle player;
 	EntityHandle cam;
 	EntityHandle level_entity;
 
-	Arena resources_arena = Arena::from_vmem(1 << 23);
+	Arena resources_arena;
 
 	Entity& create_test_body(string name, v2f32 position) {
 		auto& ent = allocate_entity(entities, name, Entity::Draw | Entity::Collider | Entity::Physical);
@@ -170,25 +168,33 @@ struct PlaygroundScene {
 		return ent;
 	}
 
+	void release() {
+		PROFILE_SCOPE(__PRETTY_FUNCTION__);
+		level.release();
+		gfx.sprite_atlas.release();
+		gfx.draw_sprites.release();
+		gfx.draw_tilemap.release();
+		resources_arena.vmem_release();
+	}
+
 	static constexpr v4f32 white_pixel[] = { v4f32(1) };
-	PlaygroundScene() {
-		PROFILE_SCOPE(__FUNCTION__);
-		auto [arena, scope] = scratch_push_scope(1ull << 21); defer{ scratch_pop_scope(arena, scope); };
-		resources_arena = Arena::from_vmem(1ull << 23);
+	PlaygroundScene(u64 resource_capacity = 1ull << 23) {
+		PROFILE_SCOPE(__PRETTY_FUNCTION__);
+		resources_arena = Arena::from_vmem(resource_capacity);
 
 		{
+			auto [scratch, scope] = scratch_push_scope(1ull << 21); defer{ scratch_pop_scope(scratch, scope); };
 			PROFILE_SCOPE("Rendering init");
-			defer{ scratch_pop_scope(arena, scope); };
+			defer{ scratch_pop_scope(scratch, scope); };
 			gfx.draw_sprites = SpriteRenderer::create(assets.draw_pipeline);
 			gfx.draw_tilemap = TilemapRenderer::load(assets.tilemap_pipeline);
 			gfx.sprite_atlas = Atlas2D::create(v2u32(1920, 1080));
 			gfx.white = gfx.sprite_atlas.push(make_image(larray(white_pixel), v2u32(1)));
-			// gfx.sprite_atlas.current.x += 2;
 
 			auto img = load_image(assets.test_sidescroll_path); defer{ unload(img); };
 			spritesheet = gfx.sprite_atlas.push(img);
 
-			auto layout = build_layout(arena, assets.sidescroll_character_animation_recipe_path);
+			auto layout = build_layout(scratch, assets.sidescroll_character_animation_recipe_path);
 			animations = build_sidescroll_character_animations(resources_arena, layout, img.dimensions);
 
 			level = Tilemap::load(resources_arena, gfx.sprite_atlas, assets.level);
@@ -196,9 +202,6 @@ struct PlaygroundScene {
 
 		{
 			PROFILE_SCOPE("Scene content init");
-			srand(time(0));
-			auto frand = [](f32range range) -> f32 { return range.min + fmodf(f32(rand()) / f32(rand() % 0xFFFFFF + 1), 1.f) * (range.max - range.min); };
-
 			entities = List{ resources_arena.push_array<Entity>(MAX_ENTITIES), 0 };
 
 			player = (
@@ -230,28 +233,6 @@ struct PlaygroundScene {
 			());
 
 			cam = get_entity_genhandle(allocate_entity(entities, "Camera", 0));
-
-			// for (auto i : u64xrange{ 0, 5 })
-			// 	create_test_body("test_ent PRE", v2f32(frand({ -10, 10 }), frand({ -10, 10 })));
-
-			{
-				auto& ent = allocate_entity(entities, "floor", Entity::Draw | Entity::Collider | Entity::Physical);
-				ent.space.transform.translation = v2f32(0, -15);
-				ent.sprite.view = gfx.white;
-				ent.sprite.dimensions = v2f32(2000, 10);
-				ent.sprite.depth = 1;
-				ent.body.inverse_inertia = 0;
-				ent.body.inverse_mass = 0;
-				ent.body.restitution = .1f;
-				ent.body.friction = .1f;
-				ent.body.shape_index = 0;
-				static v2f32 floor_poly[] = { v2f32(-1000, -5), v2f32(+1000, -5), v2f32(+1000, +5), v2f32(-1000, +5) };
-				ent.shape[ent.body.shape_index] = make_shape_2d(identity_2d, 0, larray(floor_poly));
-			}
-
-			// for (auto i : u64xrange{ 0, 5 })
-			// 	create_test_body("test_ent POST", v2f32(frand({ -10, 10 }), frand({ -10, 10 })));
-
 		}
 
 		{
@@ -291,16 +272,16 @@ struct PlaygroundScene {
 			physics(gather<RigidBody>(scratch, entities.used()), gather<Spacial2D*>(scratch, entities.used()), it_count);
 		}
 
+		auto pov = Spacial2D{};
 		if (cam.valid()) {
 			cam->content<Entity>().space.transform.translation = (player.valid() ? player->content<Entity>().space.transform.translation : v2f32(0));
 			cam->content<Entity>().space.velocity.translation = (player.valid() ? player->content<Entity>().space.velocity.translation : v2f32(0));
+			pov = cam->content<Entity>().space;
 		}
 
-		auto pov = (cam.valid() ? cam->content<Entity>().space : Spacial2D{});
 		audio(gather<Sound>(scratch_pop_scope(scratch, scope), entities.used()), &pov);
 		auto sprites = gather<SpriteRenderer::Instance>(scratch_pop_scope(scratch, scope), entities.used());
 		gfx.render(pov.transform,
-			// gfx.render(identity_2d,
 			[&](m4x4f32 mat) {
 				gfx.draw_tilemap(level, level_entity->content<Entity>().space.transform, mat, gfx.sprite_atlas.texture);
 				gfx.draw_sprites(sprites, mat, gfx.sprite_atlas.texture);
@@ -309,18 +290,7 @@ struct PlaygroundScene {
 		return true;
 	}
 
-	static auto default_editor() {
-		return tuple(
-			Render::default_editor(),
-			Audio::default_editor(),
-			Physics2D::default_editor(),
-			SystemEditor("Entities", "Alt+E", { Input::KB::K_LEFT_ALT, Input::KB::K_E }),
-			SystemEditor("Misc", "Alt+M", { Input::KB::K_LEFT_ALT, Input::KB::K_M })
-		);
-	}
-
-	void editor(tuple<SystemEditor, SystemEditor, Physics2D::Editor, SystemEditor, SystemEditor>& ed) {
-		auto& [rd, au, ph, ent, misc] = ed;
+	void editor(SystemEditor& rd, SystemEditor& au, Physics2D::Editor& ph, SystemEditor& ent, SystemEditor& misc) {
 		static auto debug_scratch = Arena::from_vmem(1 << 19);
 		if (ph.debug) {
 			PROFILE_SCOPE("Physics Debug");
@@ -363,53 +333,5 @@ struct PlaygroundScene {
 	}
 
 };
-
-bool editor_test(App& app) {
-	profile_scope_begin("Initialisation");
-	ImGui::init_ogl_glfw(app.window); defer{ ImGui::shutdown_ogl_glfw(); };
-	auto editor = create_editor("Editor", "Alt+X", { Input::KB::K_LEFT_ALT, Input::KB::K_X });
-	editor.show_window = true;
-	auto sub_editors = List{ cast<SystemEditor*>(virtual_reserve(10 * sizeof(SystemEditor*), true)), 0 };
-	sub_editors.push(&editor);
-
-	PlaygroundScene scene;
-	auto pg_ed = scene.default_editor();
-	auto& [rd, au, ph, ent, misc] = pg_ed;
-	rd.show_window = true;
-	au.show_window = true;
-	ph.show_window = true;
-	ent.show_window = true;
-	misc.show_window = true;
-
-	add_editors(sub_editors, pg_ed);
-	profile_scope_end();
-
-	while (update(app, editor_test)) {
-		PROFILE_SCOPE("Frame");
-		scene();
-		PROFILE_SCOPE("Editor");
-		shortcut_sub_editors(sub_editors.used());
-		if (editor.show_window) {
-			ImGui::NewFrame_OGL_GLFW(); defer{
-				ImGui::Render();
-				ImGui::Draw();
-			};
-			if (ImGui::BeginMainMenuBar()) {
-				defer{ ImGui::EndMainMenuBar(); };
-				sub_editor_menu("Windows", sub_editors.used());
-				if (ImGui::BeginMenu("Actions")) {
-					defer{ ImGui::EndMenu(); };
-					if (ImGui::MenuItem("Break"))
-						fprintf(stderr, "breaking!\n");
-					if (ImGui::MenuItem("Restart"))
-						return true;
-				}
-			}
-			ImGui::DockSpaceOverViewport(ImGui::GetWindowViewport(), ImGuiDockNodeFlags_PassthruCentralNode);
-			scene.editor(pg_ed);
-		}
-	}
-	return true;
-}
 
 #endif

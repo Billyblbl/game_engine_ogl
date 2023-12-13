@@ -57,7 +57,7 @@ template<support_function F1, support_function F2> inline Segment<v2f32> minkows
 template<support_function F1, support_function F2> inline tuple<bool, tuple<v2f32, v2f32, v2f32>> GJK(const F1& f1, const F2& f2, v2f32 start_direction = glm::normalize(v2f32(1))) {
 	using namespace glm;
 	constexpr tuple<bool, tuple<v2f32, v2f32, v2f32>> no_collision = { false, {{}, {}, {}} };
-	PROFILE_SCOPE(__FUNCTION__);
+	PROFILE_SCOPE(__PRETTY_FUNCTION__);
 
 
 	v2f32 triangle_vertices[3];
@@ -115,7 +115,7 @@ template<support_function F1, support_function F2> inline tuple<bool, tuple<v2f3
 //* https://www.youtube.com/watch?v=0XQ2FSz3EK8&ab_channel=Winterdev
 template<support_function F1, support_function F2> v2f32 EPA(const F1& f1, const F2& f2, tuple<v2f32, v2f32, v2f32> triangle, u32 max_iteration = 64, f32 precision_threshold = 0.05f) {
 	using namespace glm;
-	PROFILE_SCOPE(__FUNCTION__);
+	PROFILE_SCOPE(__PRETTY_FUNCTION__);
 
 	auto [A, B, C] = triangle;
 	v2f32 points_buffer[max_iteration + 3] = { A, B, C };
@@ -200,7 +200,7 @@ Contact2D make_contact(
 	const Shape2D& shape1, const Shape2D& shape2,
 	const m3x3f32& transform1, const m3x3f32& transform2
 ) {
-	PROFILE_SCOPE(__FUNCTION__);
+	PROFILE_SCOPE(__PRETTY_FUNCTION__);
 	assert(length(pen) > 0);
 	auto offset_t1 = translate(transform1, v2f32(-pen));
 	auto contact_dir = v2f32(normalize(v2f64(pen)));
@@ -213,7 +213,7 @@ tuple<bool, Contact2D> intersect_convex(
 	const m3x3f32& transform1, const m3x3f32& transform2,
 	f32 penetration_tolerance = 0
 ) {
-	PROFILE_SCOPE(__FUNCTION__);
+	PROFILE_SCOPE(__PRETTY_FUNCTION__);
 	auto f1 = support_function_of(shape1, transform1);
 	auto f2 = support_function_of(shape2, transform2);
 	auto [collided, triangle] = GJK(f1, f2);
@@ -359,7 +359,7 @@ Collision2D make_collision(Array<Contact2D> contacts, RigidBody ents[2], u32 sha
 }
 
 Array<Collision2D> detect_collisions(Arena& arena, Array<RigidBody> entities, f32 penetration_tolerance = 0) {
-	PROFILE_SCOPE(__FUNCTION__);
+	PROFILE_SCOPE(__PRETTY_FUNCTION__);
 	if (entities.size() < 2)
 		return {};
 
@@ -431,7 +431,7 @@ Array<Collision2D> detect_collisions(Arena& arena, Array<RigidBody> entities, f3
 }
 
 void resolve_collisions(Array<Collision2D> collisions) {
-	PROFILE_SCOPE(__FUNCTION__);
+	PROFILE_SCOPE(__PRETTY_FUNCTION__);
 	for (auto& col : collisions) if (has_all(col.flags, Collision2D::Physical) && col.contacts.size() > 0) {
 
 		{
@@ -533,10 +533,8 @@ struct Physics2D {
 
 		f32 velocities_scale = 1.f;
 
-		Editor() : SystemEditor("Physics2D", "Alt+P", { Input::KB::K_LEFT_ALT, Input::KB::K_P }) {}
-
 		void draw_shapes(Array<RigidBody> bodies, const m4x4f32& vp) {
-			PROFILE_SCOPE(__FUNCTION__);
+			PROFILE_SCOPE(__PRETTY_FUNCTION__);
 			sync(debug_draw.vp_matrix, vp);
 			for (auto bd : bodies) {
 				for (auto& s : bd.shapes) if (flattened) {
@@ -552,7 +550,7 @@ struct Physics2D {
 		}
 
 		void draw_collisions(Array<Collision2D> collisions, const m4x4f32& vp) {
-			PROFILE_SCOPE(__FUNCTION__);
+			PROFILE_SCOPE(__PRETTY_FUNCTION__);
 			sync(debug_draw.vp_matrix, vp);
 			for (auto [contacts, entities, physical] : collisions) {
 				Spacial2D* sp[] = { entities[0].spacial, entities[1].spacial };

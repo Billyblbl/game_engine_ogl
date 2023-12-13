@@ -223,7 +223,7 @@ struct Render {
 	}
 
 	static auto default_editor() {
-		return SystemEditor("Render", "Alt+R", { Input::KB::K_LEFT_ALT, Input::KB::K_R });
+		return create_editor("Render", "Alt+R", { Input::KB::K_LEFT_ALT, Input::KB::K_R });
 	}
 
 	void editor_window() {

@@ -26,52 +26,60 @@ static void ogl_debug_callback(GLenum source,
 	const GLchar* message,
 	const void* user_param
 ) {
-	for (auto&& i : OGLLogSeverity) if (i == severity) {
-		fprintf(stderr, "OpenGL Debug %u: %s on %u, %s\n", type, GLtoString(type).data(), id, message);
-	}
+	for (auto&& i : OGLLogSeverity) if (i == severity)
+		fprintf(stderr, "[%s] OpenGL Debug %u, %s on %u: %s\n", GLtoString(i).data(), type, GLtoString(type).data(), id, message);
 }
 
 static void glfw_error_callback(int error, const cstr description) {
 	fprintf(stderr, "GLFW Error %d: %s\n", error, description);
 }
 
-struct App;
-
-using Scene = bool(*)(App&);
-
 struct App {
 	GLFWwindow* window;
-	Input::Context& inputs;
+	Input::Context* inputs;
 	v2u32 pixel_dimensions;
-	Scene scene;
+	u64 scene_id;
+
+	static constexpr u64 ID_EXIT = 0;
+	static App create(const cstr window_title, v2u32 window_dimensions, u64 start_scene) {
+		PROFILE_SCOPE(__PRETTY_FUNCTION__);
+		//TODO Proper error handling
+		glfwSetErrorCallback(glfw_error_callback);
+		assert(glfwInit());
+		glfwWindowHint(GLFW_OPENGL_DEBUG_CONTEXT, GL_TRUE);
+		glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 4);
+		glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 6);
+		glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
+		glfwWindowHint(GLFW_OPENGL_FORWARD_COMPAT, GL_TRUE);
+		auto window = glfwCreateWindow(window_dimensions.x, window_dimensions.y, window_title, NULL, NULL);
+		assert(window);
+		auto& input_context = Input::init_context(window);
+		glfwMakeContextCurrent(window);
+		glfwSwapInterval(1); //* Enable vsync
+
+		int display_w, display_h;
+		glfwGetFramebufferSize(window, &display_w, &display_h);
+		default_framebuffer.dimensions = v2u32(display_w, display_h);
+		default_framebuffer.clear_attachement = clear_bit(Color0Attc) | clear_bit(DepthAttc);
+		return App{ window, &input_context, default_framebuffer.dimensions, start_scene };
+	}
+
+	void release() {
+		glfwDestroyWindow(window);
+		glfwTerminate();
+	}
+
+	bool request_change_scene(u64 target_scene) {
+		scene_id = target_scene;
+		return true;
+	}
+
+	bool request_exit() { return request_change_scene(App::ID_EXIT); }
+
 };
 
-auto create_app(const cstr window_title, v2u32 window_dimensions, Scene start_scene = null) {
-	//TODO Proper error handling
-	glfwSetErrorCallback(glfw_error_callback);
-	if (!glfwInit())
-		abort();
-	// Create window with graphics context
-	glfwWindowHint(GLFW_OPENGL_DEBUG_CONTEXT, GL_TRUE);
-	glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 4);
-	glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 6);
-	glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
-	glfwWindowHint(GLFW_OPENGL_FORWARD_COMPAT, GL_TRUE);
-	auto window = glfwCreateWindow(window_dimensions.x, window_dimensions.y, window_title, NULL, NULL);
-	if (window == NULL)
-		abort();
-	auto& input_context = Input::init_context(window);
-	glfwMakeContextCurrent(window);
-	glfwSwapInterval(1); // Enable vsync
-
-	int display_w, display_h;
-	glfwGetFramebufferSize(window, &display_w, &display_h);
-	default_framebuffer.dimensions = v2u32(display_w, display_h);
-	default_framebuffer.clear_attachement = clear_bit(Color0Attc) | clear_bit(DepthAttc);
-	return App{ window, input_context, default_framebuffer.dimensions, start_scene };
-}
-
-bool init_ogl(App& app, bool debug = true) {
+bool init_ogl(App& app, bool debug = DEBUG_GL) {
+	PROFILE_SCOPE(__PRETTY_FUNCTION__);
 	printf("Initializing OpenGL\n");
 	GLenum err = glewInit();
 	if (GLEW_OK != err)
@@ -97,7 +105,7 @@ bool init_ogl(App& app, bool debug = true) {
 	return true;
 }
 
-bool update(App& app, Scene target_scene) {
+bool update(App& app, u64 target_scene) {
 	PROFILE_SCOPE("Window update");
 	defer{ glfwSwapBuffers(app.window); };
 	int display_w, display_h;
@@ -106,22 +114,12 @@ bool update(App& app, Scene target_scene) {
 	app.pixel_dimensions.y = display_h;
 
 	if (glfwWindowShouldClose(app.window)) {
-		app.scene = null;
+		app.scene_id = 0;
 		return false;
 	}
 	PROFILE_SCOPE("Inputs");
-	Input::poll(app.inputs);
-	return app.scene == target_scene;
-}
-
-void destroy(App& app) {
-	glfwDestroyWindow(app.window);
-	glfwTerminate();
-}
-
-bool change_scene(App& app, Scene new_scene) {
-	app.scene = new_scene;
-	return true;
+	Input::poll(*app.inputs);
+	return app.scene_id == target_scene;
 }
 
 #endif

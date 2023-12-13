@@ -69,7 +69,7 @@ inline EntityHandle get_entity_genhandle(EntitySlot& ent) {
 }
 
 template<castable<EntitySlot> E, typename F = u64> auto gather(Arena& arena, Array<E> entities, F flags, auto mapper) {
-	PROFILE_SCOPE(__FUNCTION__);
+	PROFILE_SCOPE(__PRETTY_FUNCTION__);
 	using R = decltype(mapper(entities[0]));
 	auto list = List{ arena.push_array<R>(entities.size()), 0 };
 	for (auto&& i : entities) if (has_all(i.flags, flags))
@@ -85,7 +85,7 @@ template<castable<EntitySlot> E, typename F = u64> auto gather(Arena& arena, Arr
 template<typename I> tuple<bool, I> use_as(EntityHandle handle);
 
 template<typename I, castable<EntitySlot> E> auto gather(Arena& arena, Array<E> entities) {
-	PROFILE_SCOPE(__FUNCTION__);
+	PROFILE_SCOPE(__PRETTY_FUNCTION__);
 	auto list = List{ arena.push_array<I>(entities.size()), 0 };
 	for (auto&& i : entities) {
 		auto [good, res] = use_as<I>(get_entity_genhandle(i));

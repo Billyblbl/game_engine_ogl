@@ -64,18 +64,6 @@ template<typename K> AnimationGrid<K> load_animation_grid(const cstr path, Arena
 	return parse_animation_grid<K>(file, arena);
 }
 
-//TODO maybe? remove
-template<typename K> void unload(AnimationGrid<K>& animation, Arena& arena) {
-	// dealloc_array(arena, animation.keyframes);
-	// dealloc_array(arena, animation.config);
-	// dealloc_array(arena, animation.extents);
-	// dealloc_array(arena, animation.dimensions);
-	animation.dimensions = {};
-	animation.extents = {};
-	animation.config = {};
-	animation.keyframes = {};
-}
-
 // Index = ∑(i=0 to D-1)(coordinates[i] * ∏(j=i+1 to D-1)(dimensions[j]))
 u32 coord_to_index(Array<u32> dimensions, Array<u32> coord) {
 	auto sum = 0;
@@ -99,7 +87,6 @@ template<i32 D> u32 coord_to_index(glm::vec<D, u32> dimensions, glm::vec<D, u32>
 
 f32 wrap_one(f32 value, AnimationWrap w) {
 	using namespace glm;
-	
 	switch (w) {
 	case AnimRepeat: return mod(value, 1.f);
 	case AnimClamp: return clamp(value, std::nexttowardf(0.f, 1.f), std::nexttowardf(1.f, -1.f));

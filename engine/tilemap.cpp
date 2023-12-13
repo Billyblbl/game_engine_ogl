@@ -19,7 +19,7 @@ struct Tilemap {
 
 	static Tilemap load(Arena& arena, Atlas2D& texture_atlas, const cstr path, auto parse_object_group) {
 		//* https://libtmx.readthedocs.io/en/latest/renderer-from-scratch.html
-		PROFILE_SCOPE(__FUNCTION__);
+		PROFILE_SCOPE(__PRETTY_FUNCTION__);
 		printf("Loading tilemap %s\n", path);
 		Tilemap tm;
 
@@ -191,7 +191,7 @@ struct TilemapRenderer {
 		return rd;
 	}
 
-	void unload() {
+	void release() {
 		destroy_pipeline(pipeline);
 		unmap(instances_buffer);
 		unmap(tile_buffer);
@@ -205,7 +205,7 @@ struct TilemapRenderer {
 
 Array<Shape2D> object_shape(Arena& arena, tmx_object* obj_head) {
 	static v2f32 g_origin[] = { v2f32(0) };
-	PROFILE_SCOPE(__FUNCTION__);
+	PROFILE_SCOPE(__PRETTY_FUNCTION__);
 	auto surface_count = count<tmx_object, &tmx_object::next>(obj_head);
 	auto [scratch, scope] = scratch_push_scope(max(1lu << 22, surface_count * 2), &arena); defer{ scratch_pop_scope(scratch, scope); };
 	auto objs = List{ scratch.push_array<Shape2D>(surface_count * 2), 0 };
@@ -244,12 +244,12 @@ Array<Shape2D> object_shape(Arena& arena, tmx_object* obj_head) {
 }
 
 Array<Shape2D> tile_shapeset(Arena& arena, Array<tmx_tile*> tiles) {
-	PROFILE_SCOPE(__FUNCTION__);
+	PROFILE_SCOPE(__PRETTY_FUNCTION__);
 	return map(arena, tiles, [&](tmx_tile* tile) -> Shape2D { return make_shape_2d(identity_2d, 0, {}, tile ? object_shape(arena, tile->collision) : Array<Shape2D>{}); });
 }
 
 Shape2D tilemap_layer_shape(Arena& arena, const tmx_layer& layer, v2u32 dimensions, Array<Shape2D> shapeset, v2u32 tile_dimensions) {
-	PROFILE_SCOPE(__FUNCTION__);
+	PROFILE_SCOPE(__PRETTY_FUNCTION__);
 	auto [scratch, scope] = scratch_push_scope(1ul << 19, &arena); defer{ scratch_pop_scope(scratch, scope); };
 
 	Transform2D transform = identity_2d;
@@ -270,7 +270,7 @@ Shape2D tilemap_layer_shape(Arena& arena, const tmx_layer& layer, v2u32 dimensio
 }
 
 Array<Shape2D> tilemap_shapes(Arena& arena, const tmx_map& tree, Array<Shape2D> shapeset) {
-	PROFILE_SCOPE(__FUNCTION__);
+	PROFILE_SCOPE(__PRETTY_FUNCTION__);
 	//TODO fix transform
 	auto [scratch, scope] = scratch_push_scope(1lu << 17, &arena); defer{ scratch_pop_scope(scratch, scope); };
 	auto traverse = (
@@ -288,7 +288,6 @@ Array<Shape2D> tilemap_shapes(Arena& arena, const tmx_map& tree, Array<Shape2D> 
 				case L_GROUP: {
 					Transform2D transform = identity_2d;
 					transform.translation = v2f32(layer.offsetx, layer.offsety) / v2f32(tree.tile_width, tree.tile_width);
-					printf("layer offset (%f,%f)\n", transform.translation.x, transform.translation.y);
 					shapes.push(make_shape_2d(transform, 0, {}, recurse(recurse, layer.content.group_head)));
 				} break;
 				}

@@ -12,7 +12,7 @@ struct Transform2D {
 
 	operator m3x3f32() const {
 		using namespace glm;
-		PROFILE_SCOPE(__FUNCTION__);
+		PROFILE_SCOPE(__PRETTY_FUNCTION__);
 		return
 			translate(m3x3f32(1), translation) *
 			rotate(m3x3f32(1), radians(rotation)) *
@@ -21,7 +21,7 @@ struct Transform2D {
 
 	operator m4x4f32() const {
 		using namespace glm;
-		PROFILE_SCOPE(__FUNCTION__);
+		PROFILE_SCOPE(__PRETTY_FUNCTION__);
 		return
 			translate(v3f32(translation, 0)) *
 			rotate(radians(rotation), v3f32(0, 0, +1)) *

@@ -6,60 +6,53 @@
 #include <imgui_extension.cpp>
 #include <framebuffer.cpp>
 
+struct SystemEditor;
+template<typename T> concept EditorType = std::derived_from<T, SystemEditor> || std::same_as<T, SystemEditor>;
+
 struct SystemEditor {
 	string name = "";
 	string shortcut_str = "";
-	Input::KB::Key shortcut[2];
-	bool show_window = false;
-	SystemEditor() = default;
-	SystemEditor(string n, string sc_s, LiteralArray<Input::KB::Key> sc) {
-		name = n;
-		shortcut_str = sc_s;
-		shortcut[0] = *sc.begin();
-		shortcut[1] = *(sc.begin() + 1);
+	Input::KB::Key shortcut_keys[2];
+	bool show_window = true;
+
+	template<EditorType E = SystemEditor> static E create(string name, string shortcut_str, tuple<Input::KB::Key, Input::KB::Key> shortcut_keys) {
+		E ed;
+		ed.name = name;
+		ed.shortcut_str = shortcut_str;
+		auto [s0, s1] = shortcut_keys;
+		ed.shortcut_keys[0] = s0;
+		ed.shortcut_keys[1] = s1;
+		return ed;
 	}
+
+	bool menu_item() { return ImGui::MenuItem(name.data(), shortcut_str.data(), &show_window); }
+	bool keybind() { return shortcut(larray(shortcut_keys), &show_window); }
 };
 
-SystemEditor create_editor(string name, string shortcut_str, LiteralArray<Input::KB::Key> shortcut) {
+void system_menu(const cstr label, LiteralArray<SystemEditor*> editors) {
+	if (ImGui::BeginMenu(label)) {
+		defer{ ImGui::EndMenu(); };
+		for (auto ed : editors)
+			ed->menu_item();
+	}
+}
+
+void system_keybinds(LiteralArray<SystemEditor*> editors) {
+	for (auto ed : editors)
+		ed->keybind();
+}
+
+SystemEditor create_editor(string name, string shortcut_str, tuple<Input::KB::Key, Input::KB::Key> shortcut_keys) {
 	SystemEditor ed;
 	ed.name = name;
 	ed.shortcut_str = shortcut_str;
-	ed.shortcut[0] = *shortcut.begin();
-	ed.shortcut[1] = *(shortcut.begin() + 1);
+	auto [s0, s1] = shortcut_keys;
+	ed.shortcut_keys[0] = s0;
+	ed.shortcut_keys[1] = s1;
 	return ed;
 }
 
-bool shortcut_sub_editor(SystemEditor& ed) {
-	return shortcut(larray(ed.shortcut), &ed.show_window);
-}
-
-void shortcut_sub_editors(Array<SystemEditor*> eds) {
-	for (auto ed : eds) if (ed)
-		shortcut_sub_editor(*ed);
-}
-
-bool sub_editor_menu_item(SystemEditor& ed) {
-	return ImGui::MenuItem(ed.name.data(), ed.shortcut_str.data(), &ed.show_window);
-}
-
 bool begin_editor(SystemEditor& ed, ImGuiWindowFlags flags = 0) { return ImGui::Begin(ed.name.data(), &ed.show_window, flags); }
-
 void end_editor() { ImGui::End(); }
-
-void sub_editor_menu(const cstr label, Array<SystemEditor*> editors) {
-	if (ImGui::BeginMenu(label)) {
-		defer{ ImGui::EndMenu(); };
-		for (auto e : editors) if (e)
-			sub_editor_menu_item(*e);
-	}
-}
-
-template<typename... T, u64... indices> void add_editors_helper(List<SystemEditor*>& list, tuple<T...>& eds, std::integer_sequence<u64, indices...>) {
-	(..., list.push(&std::get<indices>(eds)));
-}
-
-template<typename... T> void add_editors(List<SystemEditor*>& list, tuple<T...>& eds) {
-	add_editors_helper(list, eds, std::make_integer_sequence<u64, sizeof...(T)>{});
-}
 
 #endif

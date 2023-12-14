@@ -45,20 +45,23 @@ struct Entity : public EntitySlot {
 		Physical = UserFlag << 3,
 		Controllable = UserFlag << 4,
 		Animated = UserFlag << 5,
-		// Tilemap = UserFlag << 6,
+		TilemapTree = UserFlag << 6,
+		Camera = UserFlag << 7,
 	};
 
 	static constexpr string Flags[] = {
 		BaseFlags[0],
 		BaseFlags[1],
 		BaseFlags[2],
+		BaseFlags[3],
 		"Sound",
 		"Draw",
 		"Collider",
 		"Physical",
 		"Controllable",
 		"Animated",
-		// "Tilemap"
+		"Tilemap",
+		"Camera"
 	};
 
 	Spacial2D space;
@@ -70,23 +73,30 @@ struct Entity : public EntitySlot {
 	Animator anim;
 	Array<SpriteAnimation> animations;
 	rtu32 spritesheet = { v2u32(0), v2u32(0) };
+	Tilemap tilemap;
+	OrthoCamera projection;
+	RenderTarget render_target;
 };
 
 template<> tuple<bool, RigidBody> use_as<RigidBody>(EntityHandle handle) {
 	if (!has_all(handle->flags, Entity::Collider)) return tuple(false, RigidBody{});
-	return tuple(true, RigidBody{
-		handle,
-		larray(handle->content<Entity>().shape),
-		&handle->content<Entity>().space,
-		(has_all(handle->flags, Entity::Physical) ? &handle->content<Entity>().body : null),
-		((has_all(handle->flags, Entity::Controllable) && handle->content<Entity>().ctrl.falling) ? handle->content<Entity>().ctrl.fall_multiplier : 1.f)
+	return {
+		true,
+		RigidBody{
+			handle,
+			larray(handle->content<Entity>().shape),
+			&handle->content<Entity>().space,
+			(has_all(handle->flags, Entity::Physical) ? &handle->content<Entity>().body : null),
+			((has_all(handle->flags, Entity::Controllable) && handle->content<Entity>().ctrl.falling) ? handle->content<Entity>().ctrl.fall_multiplier : 1.f)
 		}
-	);
+	};
 }
 
 template<> tuple<bool, SidescrollCharacter> use_as<SidescrollCharacter>(EntityHandle handle) {
 	if (!has_all(handle->flags, Entity::Controllable)) return tuple(false, SidescrollCharacter{});
-	return tuple(true, SidescrollCharacter{
+	return {
+		true,
+		SidescrollCharacter{
 			&handle->content<Entity>().ctrl,
 			&handle->content<Entity>().anim,
 			&handle->content<Entity>().sprite,
@@ -94,20 +104,32 @@ template<> tuple<bool, SidescrollCharacter> use_as<SidescrollCharacter>(EntityHa
 			handle->content<Entity>().animations,
 			handle->content<Entity>().spritesheet
 		}
-	);
+	};
+}
+
+template<> tuple<bool, Camera> use_as<Camera>(EntityHandle handle) {
+	if (!has_all(handle->flags, Entity::Camera)) return tuple(false, Camera{});
+	return {
+		true,
+		Camera{
+			&handle->content<Entity>().space,
+			&handle->content<Entity>().projection,
+			&handle->content<Entity>().render_target
+		}
+	};
 }
 
 template<> tuple<bool, SpriteRenderer::Instance> use_as<SpriteRenderer::Instance>(EntityHandle handle) {
 	if (!has_all(handle->flags, Entity::Draw)) return tuple(false, SpriteRenderer::Instance{});
-	return tuple(true, SpriteRenderer::make_instance(handle->content<Entity>().sprite, handle->content<Entity>().space.transform));
+	return { true, SpriteRenderer::make_instance(handle->content<Entity>().sprite, handle->content<Entity>().space.transform) };
 }
 
 template<> tuple<bool, Sound> use_as<Sound>(EntityHandle handle) {
 	if (!has_all(handle->flags, Entity::Sound)) return tuple(false, Sound{});
-	return tuple(true, Sound{ &handle->content<Entity>().audio_source, &handle->content<Entity>().space });
+	return { true, Sound{ &handle->content<Entity>().audio_source, &handle->content<Entity>().space } };
 }
 
-template<> tuple<bool, Spacial2D*> use_as<Spacial2D*>(EntityHandle handle) { return tuple(true, &handle->content<Entity>().space); }
+template<> tuple<bool, Spacial2D*> use_as<Spacial2D*>(EntityHandle handle) { return { true, &handle->content<Entity>().space }; }
 
 bool EditorWidget(const cstr label, Entity& ent) {
 	bool changed = false;
@@ -122,6 +144,13 @@ bool EditorWidget(const cstr label, Entity& ent) {
 		changed |= EditorWidget("Body", ent.body);
 		changed |= EditorWidget("Controller", ent.ctrl);
 		changed |= EditorWidget("Animator", ent.anim);
+
+		changed |= EditorWidget("animations", ent.animations);
+		changed |= EditorWidget("spritesheet", ent.spritesheet);
+		changed |= EditorWidget("tilemap", ent.tilemap);
+		changed |= EditorWidget("projection", ent.projection);
+		changed |= EditorWidget("render_target", ent.render_target);
+
 	}
 	return changed;
 }
@@ -129,7 +158,6 @@ bool EditorWidget(const cstr label, Entity& ent) {
 struct PlaygroundScene {
 
 	struct {
-		Render render;
 		SpriteRenderer draw_sprites;
 		TilemapRenderer draw_tilemap;
 		Atlas2D sprite_atlas;
@@ -143,13 +171,14 @@ struct PlaygroundScene {
 	List<Entity> entities;
 
 	Array<SpriteAnimation> animations;
-	Tilemap level;
 	rtu32 spritesheet;
 	EntityHandle player;
 	EntityHandle cam;
 	EntityHandle level_entity;
 
 	Arena resources_arena;
+
+	Tilemap level;//? this is held by only 1 entity, should this be held in the scene struct ?
 
 	Entity& create_test_body(string name, v2f32 position) {
 		auto& ent = allocate_entity(entities, name, Entity::Draw | Entity::Collider | Entity::Physical);
@@ -170,7 +199,7 @@ struct PlaygroundScene {
 
 	void release() {
 		PROFILE_SCOPE(__PRETTY_FUNCTION__);
-		level.release();
+		level_entity->content<Entity>().tilemap.release();
 		gfx.sprite_atlas.release();
 		gfx.draw_sprites.release();
 		gfx.draw_tilemap.release();
@@ -214,6 +243,7 @@ struct PlaygroundScene {
 					ent.body.inverse_inertia = 0.f;
 					ent.body.inverse_mass = 1.f;
 					ent.body.restitution = 0.f;
+					ent.enable();
 					return get_entity_genhandle(ent);
 				}
 			());
@@ -226,13 +256,25 @@ struct PlaygroundScene {
 					ent.body.restitution = .1f;
 					ent.body.friction = .1f;
 					ent.body.shape_index = 0;
+					ent.tilemap = level;
 					auto shapes = tilemap_shapes(resources_arena, *level.tree, tile_shapeset(resources_arena, carray(level.tree->tiles, level.tree->tilecount)));
 					ent.shape[0] = shapes[0];
+					ent.enable();
 					return get_entity_genhandle(ent);
 				}
 			());
 
-			cam = get_entity_genhandle(allocate_entity(entities, "Camera", 0));
+			cam = (
+				[&]() {
+					auto& ent = allocate_entity(entities, "Camera", Entity::Camera);
+					ent.render_target.fbf = default_framebuffer;
+					ent.render_target.clear_color = v4f32(v3f32(0.3), 1);
+					ent.projection.dimensions = v3f32(16, 9, 1000);
+					ent.projection.center = v3f32(0);
+					ent.enable();
+					return get_entity_genhandle(ent);
+				}
+			());
 		}
 
 		{
@@ -272,37 +314,34 @@ struct PlaygroundScene {
 			physics(gather<RigidBody>(scratch, entities.used()), gather<Spacial2D*>(scratch, entities.used()), it_count);
 		}
 
-		auto pov = Spacial2D{};
-		if (cam.valid()) {
-			cam->content<Entity>().space.transform.translation = (player.valid() ? player->content<Entity>().space.transform.translation : v2f32(0));
-			cam->content<Entity>().space.velocity.translation = (player.valid() ? player->content<Entity>().space.velocity.translation : v2f32(0));
-			pov = cam->content<Entity>().space;
-		}
+		if (cam.valid() && player.valid())
+			follow(cam->content<Entity>().space, player->content<Entity>().space);
 
-		audio(gather<Sound>(scratch_pop_scope(scratch, scope), entities.used()), &pov);
-		auto sprites = gather<SpriteRenderer::Instance>(scratch_pop_scope(scratch, scope), entities.used());
-		gfx.render(pov.transform,
+		audio(gather<Sound>(scratch_pop_scope(scratch, scope), entities.used()), &cam->content<Entity>().space);
+
+		for (auto& cam : gather<Camera>(scratch_pop_scope(scratch, scope), entities.used())) render(cam,
 			[&](m4x4f32 mat) {
-				gfx.draw_tilemap(level, level_entity->content<Entity>().space.transform, mat, gfx.sprite_atlas.texture);
-				gfx.draw_sprites(sprites, mat, gfx.sprite_atlas.texture);
+				if (level_entity.valid() && level_entity->enabled()) gfx.draw_tilemap(
+					level_entity->content<Entity>().tilemap,
+					level_entity->content<Entity>().space.transform,
+					mat, gfx.sprite_atlas.texture
+				);
+				gfx.draw_sprites(gather<SpriteRenderer::Instance>(scratch, entities.used()), mat, gfx.sprite_atlas.texture);
 			}
 		);
+
 		return true;
 	}
 
-	void editor(SystemEditor& rd, SystemEditor& au, Physics2D::Editor& ph, SystemEditor& ent, SystemEditor& misc) {
+	void editor(SystemEditor& au, Physics2D::Editor& ph, SystemEditor& ent, SystemEditor& misc) {
 		static auto debug_scratch = Arena::from_vmem(1 << 19);
 		if (ph.debug) {
 			PROFILE_SCOPE("Physics Debug");
-			auto vp = project(gfx.render.camera) * glm::inverse(m4x4f32(cam->content<Entity>().space.transform));
-			if (ph.colliders) ph.draw_shapes(gather<RigidBody>(debug_scratch.reset(), entities.used()), vp);
-			if (ph.collisions) ph.draw_collisions(physics.collisions.used(), vp);
-		}
-
-		if (rd.show_window) {
-			if (begin_editor(rd)) {
-				gfx.render.editor_window();
-			} end_editor();
+			if (auto [ok, c] = use_as<Camera>(cam); ok) {
+				auto vp = m4x4f32(c);
+				if (ph.colliders) ph.draw_shapes(gather<RigidBody>(debug_scratch.reset(), entities.used()), vp);
+				if (ph.collisions) ph.draw_collisions(physics.collisions.used(), vp);
+			}
 		}
 
 		if (au.show_window) {

@@ -32,13 +32,16 @@ struct EntitySlot {
 	static constexpr auto entity_flag_count = 64;
 	enum : u64 {
 		AllocatedEntity = 1 << 0,
-		PendingRelease = 1 << 1,
-		UserFlag = 1 << 2,
+		Enabled = 1 << 1,
+		Usable = AllocatedEntity | Enabled,
+		PendingRelease = 1 << 2,
+		UserFlag = 1 << 3,
 		FlagIndexCount = entity_flag_count
 	};
 	static constexpr string BaseFlags[] = {
 		"None",
 		"Allocated",
+		"Enabled",
 		"Pending Release",
 		"User Flag"
 	};
@@ -47,7 +50,9 @@ struct EntitySlot {
 	string name = "__entity__";
 	bool available() const { return !has_one(flags, AllocatedEntity | PendingRelease); }
 	void grab() { flags |= AllocatedEntity; }
-	void discard() { flags = (flags & ~AllocatedEntity) | PendingRelease; }
+	bool enabled() const { return flags & Enabled; }
+	void enable(bool state = true) { state ? (flags |= Enabled) : (flags &= ~Enabled); }
+	void discard() { flags = (flags & ~Usable) | PendingRelease; }
 	void recycle() { flags = 0; generation++; }
 	template<typename T> inline T& content() { return static_cast<T&>(*this); }
 };
@@ -55,8 +60,8 @@ struct EntitySlot {
 template<typename T> concept EntityLayout = castable<T, EntitySlot>;
 using EntityHandle = genhandle<EntitySlot, &EntitySlot::generation>;
 
-template<EntityLayout E> inline E& allocate_entity(List<E>& entities, string name = "__entity__", u64 flags = 0) {
-	auto i = linear_search(entities.used(), [](const E& ent){ return ent.available(); });
+template<EntityLayout E = EntitySlot> inline E& allocate_entity(List<E>& entities, string name = "__entity__", u64 flags = 0) {
+	auto i = linear_search(entities.used(), [](const E& ent) { return ent.available(); });
 	auto& slot = i < 0 ? entities.push(E{}) : entities[i];
 	slot.grab();
 	slot.name = name;
@@ -68,29 +73,13 @@ inline EntityHandle get_entity_genhandle(EntitySlot& ent) {
 	return get_genhandle<EntitySlot, &EntitySlot::generation>(ent);
 }
 
-template<castable<EntitySlot> E, typename F = u64> auto gather(Arena& arena, Array<E> entities, F flags, auto mapper) {
-	PROFILE_SCOPE(__PRETTY_FUNCTION__);
-	using R = decltype(mapper(entities[0]));
-	auto list = List{ arena.push_array<R>(entities.size()), 0 };
-	for (auto&& i : entities) if (has_all(i.flags, flags))
-		list.push(mapper(i));
-	// avoids shrink to empty array situation which might break some allocators
-	//TODO FIXTHIS(202307231757) -> shrink to content shouldn't break anything even if it reduces to 0 which would dealloc in most allocators
-	if (list.current > 0) {
-		list.shrink_to_content(arena);
-	}
-	return list.used();
-}
-
 template<typename I> tuple<bool, I> use_as(EntityHandle handle);
 
 template<typename I, castable<EntitySlot> E> auto gather(Arena& arena, Array<E> entities) {
 	PROFILE_SCOPE(__PRETTY_FUNCTION__);
 	auto list = List{ arena.push_array<I>(entities.size()), 0 };
-	for (auto&& i : entities) {
-		auto [good, res] = use_as<I>(get_entity_genhandle(i));
-		if (good) list.push(res);
-	}
+	for (auto&& i : entities) if (has_all(i.flags, EntitySlot::Usable)) if (auto [good, res] = use_as<I>(get_entity_genhandle(i)); good)
+		list.push(res);
 	if (list.current > 0)
 		list.shrink_to_content(arena);
 	return list.used();

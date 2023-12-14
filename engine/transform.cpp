@@ -79,6 +79,12 @@ inline Spacial2D& euler_integrate(Spacial2D& spacial, f32 dt) {
 	return spacial;
 }
 
+Spacial2D& follow(Spacial2D& sp, const Spacial2D& target) {
+	sp.transform.translation = target.transform.translation;
+	sp.velocity.translation = target.velocity.translation;
+	return sp;
+}
+
 m4x4f32 ortho_project(v3f32	dimensions, v3f32 center) {
 	auto min = -dimensions / 2.f - center;
 	auto max = +dimensions / 2.f - center;
@@ -122,6 +128,11 @@ bool EditorWidget(const char* label, OrthoCamera& data) {
 	if (ImGui::TreeNode(label)) {
 		changed |= EditorWidget("Dimensions", data.dimensions);
 		changed |= EditorWidget("Center", data.center);
+		if (ImGui::Button("Reset")) {
+			changed = true;
+			data.dimensions = v3f32(16, 9, 1000);
+			data.center = v3f32(0);
+		}
 		ImGui::TreePop();
 	}
 	return changed;

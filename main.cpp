@@ -9,7 +9,6 @@ bool editor_test(App& app, u64 scene_id) {
 	profile_scope_begin("Initialisation");
 	ImGui::init_ogl_glfw(app.window); defer{ ImGui::shutdown_ogl_glfw(); };
 	auto editor = create_editor("Editor", "Alt+X", { Input::KB::K_LEFT_ALT, Input::KB::K_X });
-	auto rd = SystemEditor::create("Render", "Alt+R", { Input::KB::K_LEFT_ALT, Input::KB::K_R });
 	auto au = SystemEditor::create("Audio", "Alt+O", { Input::KB::K_LEFT_ALT, Input::KB::K_O });
 	auto ent = SystemEditor::create("Entities", "Alt+E", { Input::KB::K_LEFT_ALT, Input::KB::K_E });
 	auto misc = SystemEditor::create("Misc", "Alt+M", { Input::KB::K_LEFT_ALT, Input::KB::K_M });
@@ -20,7 +19,7 @@ bool editor_test(App& app, u64 scene_id) {
 	while (update(app, scene_id)) {
 		PROFILE_SCOPE("Frame");
 		scene();
-		system_keybinds({ &editor, &rd, &au, &ph, &ent, &misc });
+		system_keybinds({ &editor, &au, &ph, &ent, &misc });
 		if (editor.show_window) {
 			PROFILE_SCOPE("Editor");
 			ImGui::NewFrame_OGL_GLFW(); defer{
@@ -29,7 +28,7 @@ bool editor_test(App& app, u64 scene_id) {
 			};
 			if (ImGui::BeginMainMenuBar()) {
 				defer{ ImGui::EndMainMenuBar(); };
-				system_menu("Windows", { &editor, &rd, &au, &ph, &ent, &misc });
+				system_menu("Windows", { &editor, &au, &ph, &ent, &misc });
 				if (ImGui::BeginMenu("Actions")) {
 					defer{ ImGui::EndMenu(); };
 					if (ImGui::MenuItem("Break"))
@@ -39,7 +38,7 @@ bool editor_test(App& app, u64 scene_id) {
 				}
 			}
 			ImGui::DockSpaceOverViewport(ImGui::GetWindowViewport(), ImGuiDockNodeFlags_PassthruCentralNode);
-			scene.editor(rd, au, ph, ent, misc);
+			scene.editor(au, ph, ent, misc);
 		}
 	}
 	return true;

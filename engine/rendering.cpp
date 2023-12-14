@@ -204,35 +204,34 @@ void wait_gpu() {
 #include <system_editor.cpp>
 #include <atlas.cpp>
 
-struct Render {
-	OrthoCamera camera;
-	FrameBuffer fbf;
-	v4f32 clear_color;
-
-	Render() {
-		camera = { v3f32(16.f, 9.f, 1000.f), v3f32(0) };
-		fbf = default_framebuffer;
-		clear_color = v4f32(v3f32(0.3), 1);
-	}
-
-	inline void operator()(const m4x4f32& pov, auto commands) {
-		PROFILE_SCOPE("Rendering");
-		begin_render(fbf);
-		clear(fbf, clear_color);
-		commands(project(camera) * glm::inverse(pov));
-	}
-
-	static auto default_editor() {
-		return create_editor("Render", "Alt+R", { Input::KB::K_LEFT_ALT, Input::KB::K_R });
-	}
-
-	void editor_window() {
-		EditorWidget("Camera", camera);
-		if (ImGui::Button("Reset Camera"))
-			camera = { v3f32(16.f, 9.f, 1000.f), v3f32(0) };
-		ImGui::ColorPicker4("Clear Color", glm::value_ptr(clear_color));
-	}
-
+struct RenderTarget {
+	FrameBuffer fbf = default_framebuffer;
+	v4f32 clear_color = v4f32(v3f32(0.3), 1);
 };
+
+bool EditorWidget(const cstr label, RenderTarget& target) {
+	bool changed = false;
+	if (ImGui::TreeNode(label)) {
+		defer { ImGui::TreePop(); };
+		changed |= EditorWidget(label, target.fbf);
+		changed |= ImGui::ColorPicker4("Clear Color", glm::value_ptr(target.clear_color));
+	}
+	return changed;
+}
+
+struct Camera {
+	Spacial2D* pov = null;
+	OrthoCamera* projection = null;
+	RenderTarget* target = null;
+	operator m4x4f32() const { return m4x4f32(*projection) * inverse(m4x4f32(pov->transform)); }
+};
+
+void render(const Camera& camera, auto commands) {
+	PROFILE_SCOPE(__PRETTY_FUNCTION__);
+	using namespace glm;
+	begin_render(camera.target->fbf);
+	clear(camera.target->fbf, camera.target->clear_color);
+	commands(camera);
+}
 
 #endif

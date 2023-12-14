@@ -146,18 +146,19 @@ struct AudioSource {
 	inline void unqueue(Array<const AudioBuffer> buffers) { AL_GUARD(alSourceUnqueueBuffers(id, buffers.size(), (ALuint*)buffers.data())); }
 	inline void queue(LiteralArray<AudioBuffer> buffers) { queue(larray(buffers)); }
 	inline void unqueue(LiteralArray<AudioBuffer> buffers) { unqueue(larray(buffers)); }
+
+	static AudioSource create() {
+		ALuint id;
+		AL_GUARD(alGenSources(1, &id));
+		return { id, INITIAL, 0 };
+	}
+
+	void release() {
+		AL_GUARD(alDeleteSources(1, &id));
+		id = 0;
+	}
+
 };
-
-AudioSource create_audio_source() {
-	ALuint id;
-	AL_GUARD(alGenSources(1, &id));
-	return { id, INITIAL, 0 };
-}
-
-void destroy(AudioSource& source) {
-	AL_GUARD(alDeleteSources(1, &source.id));
-	source.id = 0;
-}
 
 template<AL_Property P> bool AudioSourcePropertyWidget(const cstr label, AudioSource& source) {
 	auto data = source.get<P>();

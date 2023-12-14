@@ -61,6 +61,7 @@ template<typename T> concept EntityLayout = castable<T, EntitySlot>;
 using EntityHandle = genhandle<EntitySlot, &EntitySlot::generation>;
 
 template<EntityLayout E = EntitySlot> inline E& allocate_entity(List<E>& entities, string name = "__entity__", u64 flags = 0) {
+	PROFILE_SCOPE(__PRETTY_FUNCTION__);
 	auto i = linear_search(entities.used(), [](const E& ent) { return ent.available(); });
 	auto& slot = i < 0 ? entities.push(E{}) : entities[i];
 	slot.grab();
@@ -80,10 +81,15 @@ template<typename I, castable<EntitySlot> E> auto gather(Arena& arena, Array<E> 
 	auto list = List{ arena.push_array<I>(entities.size()), 0 };
 	for (auto&& i : entities) if (has_all(i.flags, EntitySlot::Usable)) if (auto [good, res] = use_as<I>(get_entity_genhandle(i)); good)
 		list.push(res);
-	if (list.current > 0)
-		list.shrink_to_content(arena);
-	return list.used();
+	return list.shrink_to_content(arena);
 }
 
+template<castable<EntitySlot> E> auto gather(Arena& arena, Array<E> entities, u64 flags) {
+	PROFILE_SCOPE(__PRETTY_FUNCTION__);
+	auto list = List{ arena.push_array<E*>(entities.size()), 0 };
+	for (auto& i : entities) if (has_all(i.flags, flags))
+		list.push(&i);
+	return list.shrink_to_content(arena);
+}
 
 #endif

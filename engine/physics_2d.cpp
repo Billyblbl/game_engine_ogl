@@ -466,19 +466,36 @@ void resolve_collisions(Array<Collision2D> collisions) {
 }
 
 struct Physics2D {
+	Arena physics_scratch;
+	List<Collision2D> collisions;
+	f32 dt;
+	u32 intersection_iterations;
+	u32 max_ticks;
+	v2f32 gravity;
+	f32 penetration_tolerance;
+	f32 tpu;
+	f32 time;
 
-	static constexpr u64 PhysicsMemory = (MAX_ENTITIES * MAX_ENTITIES * sizeof(Collision2D) + MAX_ENTITIES * MAX_ENTITIES * sizeof(Contact2D) * MaxContactPerCollision);
-	List<Collision2D> collisions = {};
-	Arena physics_scratch = Arena::from_vmem(PhysicsMemory);
-	f32 dt = 1.f / 60.f;
-	u32 intersection_iterations = 2;
-	u32 max_ticks = 5;
-	v2f32 gravity = v2f32(0);
-	f32 penetration_tolerance = 0;
-	f32 tpu = 0;
-	f32 time = 0;
+	static constexpr u64 default_physics_memory = (MAX_ENTITIES * MAX_ENTITIES * sizeof(Collision2D) + MAX_ENTITIES * MAX_ENTITIES * sizeof(Contact2D) * MaxContactPerCollision);
 
-	bool manual_update = false;
+	static Physics2D create(v2f32 gravity = v2f32(0, -9), f32 dt = 1.f / 60.f, u64 memory = default_physics_memory) {
+		Physics2D sim;
+		sim.physics_scratch = Arena::from_vmem(memory);
+		sim.collisions = {};
+		sim.dt = dt;
+		sim.gravity = gravity;
+		sim.intersection_iterations = 2;
+		sim.max_ticks = 5;
+		sim.penetration_tolerance = 0;
+		sim.tpu = 0;
+		sim.time = 0;
+		return sim;
+	}
+
+	void release() {
+		physics_scratch.vmem_release();
+		time = 0;
+	}
 
 	Arena& flush_state(u64 estimated_collisions_count = 10) {
 		u64 heuristic_collision_count = max(estimated_collisions_count, collisions.current * 2);
@@ -530,7 +547,7 @@ struct Physics2D {
 		bool world_aabbs = true;
 		bool radius = true;
 		bool flattened = false;
-
+		bool manual_update = false;
 		f32 velocities_scale = 1.f;
 
 		void draw_shapes(Array<RigidBody> bodies, const m4x4f32& vp) {
@@ -578,7 +595,7 @@ struct Physics2D {
 			}
 			EditorWidget("Gravity", system.gravity);
 			EditorWidget("Penetration Tolerance", system.penetration_tolerance);
-			EditorWidget("Manual update", system.manual_update);
+			EditorWidget("Manual update", manual_update);
 			EditorWidget("Delta Time", system.dt);
 			EditorWidget("Intersection iterations", system.intersection_iterations);
 			EditorWidget("Max ticks per update", system.max_ticks);
@@ -600,8 +617,6 @@ struct Physics2D {
 			}
 		}
 	};
-
-	static auto default_editor() { return Editor(); }
 
 };
 

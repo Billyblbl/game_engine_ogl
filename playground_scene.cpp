@@ -29,7 +29,7 @@
 const struct {
 	cstrp test_character_spritesheet_path = "test_character.png";
 	cstrp test_character_anim_path = "test_character.anim";
-	cstrp draw_pipeline = "./shaders/sprite.glsl";
+	cstrp sprite_pipeline = "./shaders/sprite.glsl";
 	cstrp test_sound = "./audio/file_example_OOG_1MG.ogg";
 	cstrp test_sidescroll_path = "12_Animated_Character_Template.png";
 	cstrp sidescroll_character_animation_recipe_path = "test_sidescroll_character.xml";
@@ -65,10 +65,10 @@ struct Entity : public EntitySlot {
 	};
 
 	Spacial2D space;
-	AudioSource audio_source;
+	AudioSource audio_source;//* need release, out of arena
 	Sprite sprite;
 	SidescrollControl ctrl;
-	Shape2D shape[1];
+	Array<Shape2D> shapes;//* need release, shared, in arena
 	Body body;
 	Animator anim;
 	Array<SpriteAnimation> animations;
@@ -84,7 +84,7 @@ template<> tuple<bool, RigidBody> use_as<RigidBody>(EntityHandle handle) {
 		true,
 		RigidBody{
 			handle,
-			larray(handle->content<Entity>().shape),
+			handle->content<Entity>().shapes,
 			&handle->content<Entity>().space,
 			(has_all(handle->flags, Entity::Physical) ? &handle->content<Entity>().body : null),
 			((has_all(handle->flags, Entity::Controllable) && handle->content<Entity>().ctrl.falling) ? handle->content<Entity>().ctrl.fall_multiplier : 1.f)
@@ -140,11 +140,10 @@ bool EditorWidget(const cstr label, Entity& ent) {
 		changed |= EditorWidget("Space", ent.space);
 		changed |= EditorWidget("Audio Source", ent.audio_source);
 		changed |= EditorWidget("Sprite", ent.sprite);
-		changed |= EditorWidget("Shape", ent.shape);
+		changed |= EditorWidget("Shape", ent.shapes);
 		changed |= EditorWidget("Body", ent.body);
 		changed |= EditorWidget("Controller", ent.ctrl);
 		changed |= EditorWidget("Animator", ent.anim);
-
 		changed |= EditorWidget("animations", ent.animations);
 		changed |= EditorWidget("spritesheet", ent.spritesheet);
 		changed |= EditorWidget("tilemap", ent.tilemap);
@@ -165,20 +164,18 @@ struct PlaygroundScene {
 	} gfx;
 
 	Physics2D physics;
-	Audio audio;
-	Time::Clock clock;
+	AudioDevice audio;
 
+	Arena resources_arena;
 	List<Entity> entities;
-
 	Array<SpriteAnimation> animations;
 	rtu32 spritesheet;
+	Tilemap level;
+
+	Time::Clock clock;
 	EntityHandle player;
 	EntityHandle cam;
 	EntityHandle level_entity;
-
-	Arena resources_arena;
-
-	Tilemap level;//? this is held by only 1 entity, should this be held in the scene struct ?
 
 	Entity& create_test_body(string name, v2f32 position) {
 		auto& ent = allocate_entity(entities, name, Entity::Draw | Entity::Collider | Entity::Physical);
@@ -193,17 +190,20 @@ struct PlaygroundScene {
 		ent.body.friction = .1f;
 		ent.body.shape_index = 0;
 		static v2f32 test_polygon[] = { v2f32(-1, -1) / 2.f, v2f32(+1, -1) / 2.f, v2f32(+1, +1) / 2.f, v2f32(-1, +1) / 2.f };
-		ent.shape[ent.body.shape_index] = make_shape_2d(identity_2d, 0, larray(test_polygon));
+		static Shape2D test_body_shape = make_shape_2d(identity_2d, 0, larray(test_polygon));
+		ent.shapes = carray(&test_body_shape, 1);
 		return ent;
 	}
 
 	void release() {
 		PROFILE_SCOPE(__PRETTY_FUNCTION__);
-		level_entity->content<Entity>().tilemap.release();
+		level.release();
 		gfx.sprite_atlas.release();
-		gfx.draw_sprites.release();
-		gfx.draw_tilemap.release();
 		resources_arena.vmem_release();
+		gfx.draw_tilemap.release();
+		gfx.draw_sprites.release();
+		audio.release();
+		physics.release();
 	}
 
 	static constexpr v4f32 white_pixel[] = { v4f32(1) };
@@ -212,11 +212,17 @@ struct PlaygroundScene {
 		resources_arena = Arena::from_vmem(resource_capacity);
 
 		{
-			auto [scratch, scope] = scratch_push_scope(1ull << 21); defer{ scratch_pop_scope(scratch, scope); };
-			PROFILE_SCOPE("Rendering init");
-			defer{ scratch_pop_scope(scratch, scope); };
-			gfx.draw_sprites = SpriteRenderer::create(assets.draw_pipeline);
+			PROFILE_SCOPE("Systems init");
+			physics = Physics2D::create();
+			audio = AudioDevice::init();
+			gfx.draw_sprites = SpriteRenderer::load(assets.sprite_pipeline);
 			gfx.draw_tilemap = TilemapRenderer::load(assets.tilemap_pipeline);
+		}
+
+		{
+			PROFILE_SCOPE("Ressources init");
+			auto [scratch, scope] = scratch_push_scope(1ull << 18); defer{ scratch_pop_scope(scratch, scope); };
+
 			gfx.sprite_atlas = Atlas2D::create(v2u32(1920, 1080));
 			gfx.white = gfx.sprite_atlas.push(make_image(larray(white_pixel), v2u32(1)));
 
@@ -257,8 +263,7 @@ struct PlaygroundScene {
 					ent.body.friction = .1f;
 					ent.body.shape_index = 0;
 					ent.tilemap = level;
-					auto shapes = tilemap_shapes(resources_arena, *level.tree, tile_shapeset(resources_arena, carray(level.tree->tiles, level.tree->tilecount)));
-					ent.shape[0] = shapes[0];
+					ent.shapes = tilemap_shapes(resources_arena, *level.tree, tile_shapeset(resources_arena, carray(level.tree->tiles, level.tree->tilecount)));
 					ent.enable();
 					return get_entity_genhandle(ent);
 				}
@@ -291,7 +296,7 @@ struct PlaygroundScene {
 
 	u64 update_count = 0;
 	bool operator()() {
-		PROFILE_SCOPE("Scene update");
+		PROFILE_SCOPE(__PRETTY_FUNCTION__);
 		defer{ update_count++; };
 		update(clock);
 		auto [scratch, scope] = scratch_push_scope(1ull << 21); defer{ scratch_pop_scope(scratch, scope); };
@@ -299,17 +304,11 @@ struct PlaygroundScene {
 		if (player.valid())
 			player_input(player->content<Entity>().ctrl);
 
-		if (physics.manual_update && (Input::KB::get(Input::KB::K_SPACE) & Input::Down)) {
-			printf("Manual stepping\n");
-			scratch_pop_scope(scratch, scope);
-			physics(gather<RigidBody>(scratch, entities.used()), gather<Spacial2D*>(scratch, entities.used()), 1);
-		}
-
 		if (Input::KB::get(Input::KB::K_ENTER) & Input::Down)
 			create_test_body("new test body", v2f32(0));
 
 		update_characters(gather<SidescrollCharacter>(scratch_pop_scope(scratch, scope), entities.used()), physics.collisions.used(), physics.gravity, clock);
-		if (auto it_count = physics.iteration_count(clock.current); !physics.manual_update && it_count > 0) {
+		if (auto it_count = physics.iteration_count(clock.current); it_count > 0) {
 			scratch_pop_scope(scratch, scope);
 			physics(gather<RigidBody>(scratch, entities.used()), gather<Spacial2D*>(scratch, entities.used()), it_count);
 		}
@@ -317,7 +316,7 @@ struct PlaygroundScene {
 		if (cam.valid() && player.valid())
 			follow(cam->content<Entity>().space, player->content<Entity>().space);
 
-		audio(gather<Sound>(scratch_pop_scope(scratch, scope), entities.used()), &cam->content<Entity>().space);
+		update_audio(audio, gather<Sound>(scratch_pop_scope(scratch, scope), entities.used()), cam->content<Entity>().space);
 
 		for (auto& cam : gather<Camera>(scratch_pop_scope(scratch, scope), entities.used())) render(cam,
 			[&](m4x4f32 mat) {
@@ -330,23 +329,30 @@ struct PlaygroundScene {
 			}
 		);
 
+		for (auto sound : gather(scratch_pop_scope(scratch, scope), entities.used(), Entity::PendingRelease | Entity::Sound))
+			sound->audio_source.release();
+
+		for (auto slot : gather(scratch_pop_scope(scratch, scope), entities.used(), Entity::PendingRelease))
+			slot->recycle();
+
 		return true;
 	}
 
 	void editor(SystemEditor& au, Physics2D::Editor& ph, SystemEditor& ent, SystemEditor& misc) {
 		static auto debug_scratch = Arena::from_vmem(1 << 19);
+		debug_scratch.reset();
 		if (ph.debug) {
 			PROFILE_SCOPE("Physics Debug");
 			if (auto [ok, c] = use_as<Camera>(cam); ok) {
 				auto vp = m4x4f32(c);
-				if (ph.colliders) ph.draw_shapes(gather<RigidBody>(debug_scratch.reset(), entities.used()), vp);
+				if (ph.colliders) ph.draw_shapes(gather<RigidBody>(debug_scratch, entities.used()), vp);
 				if (ph.collisions) ph.draw_collisions(physics.collisions.used(), vp);
 			}
 		}
 
 		if (au.show_window) {
 			if (begin_editor(au)) {
-				audio.editor_window();
+				audio_window(audio);
 			} end_editor();
 		}
 
@@ -357,8 +363,9 @@ struct PlaygroundScene {
 		}
 
 		if (ent.show_window) {
-			if (begin_editor(ent)) {
-				EditorWidget("Entities", entities.used(), false);
+			if (begin_editor(ent)) for (auto ent : gather(debug_scratch, entities.used(), Entity::AllocatedEntity)) {
+				ImGui::PushID(ent); defer{ ImGui::PopID(); };
+				EditorWidget((const cstrp)ent->name.data(), *ent);
 			} end_editor();
 		}
 

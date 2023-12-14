@@ -78,7 +78,7 @@ struct SpriteRenderer {
 		);
 	}
 
-	static SpriteRenderer create(const cstr pipeline_path = "./shaders/sprite.glsl", GLsizeiptr max_draw_batch = 256, const RenderMesh* mesh = null) {
+	static SpriteRenderer load(const cstr pipeline_path = "./shaders/sprite.glsl", GLsizeiptr max_draw_batch = 256, const RenderMesh* mesh = null) {
 		SpriteRenderer rd;
 		rd.pipeline = load_pipeline(pipeline_path);
 		rd.instances_buffer = map_buffer<Instance>(max_draw_batch);

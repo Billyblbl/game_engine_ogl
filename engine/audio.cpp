@@ -9,6 +9,7 @@
 #include <stb_vorbis.c>
 
 #include <blblstd.hpp>
+#include <spall/profiling.cpp>
 
 enum AL_Format : ALuint {
 	AL_NoFormat = 0,
@@ -24,18 +25,10 @@ struct AudioClip {
 	i32 freq;
 };
 
-struct AudioData {
-	ALCdevice* device;
-	ALCcontext* context;
-	Array<const string> extensions;
-	string device_name;
-};
-
 void print_AL_info(ALCdevice* device) {
 	printf("OpenAL vendor string: %s\n", AL_GUARD(alGetString(AL_VENDOR)));
 	printf("OpenAL renderer string: %s\n", AL_GUARD(alGetString(AL_RENDERER)));
 	printf("OpenAL version string: %s\n", AL_GUARD(alGetString(AL_VERSION)));
-	// printf("OpenAL extensions string: %s\n", AL_GUARD(alGetString(AL_EXTENSIONS)));
 	printf("OpenAL playback device: %s\n", AL_GUARD(alcGetString(device, ALC_ALL_DEVICES_SPECIFIER)));
 	ALCint major, minor;
 	AL_GUARD(alcGetIntegerv(device, ALC_MAJOR_VERSION, 1, &major));
@@ -43,52 +36,64 @@ void print_AL_info(ALCdevice* device) {
 	printf("ALC version: %d.%d\n", major, minor);
 }
 
-AudioData reinit(AudioData& audio);
+struct AudioDevice {
+	ALCdevice* handle;
+	ALCcontext* context;
+	Array<const string> extensions;
+	string name;
 
-AudioData init_audio(Array<const string> extensions = {}) {
-	AudioData audio;
-	//TODO device selection
-	printf("Initialising audio context\n");
-	audio.device = alcOpenDevice(null);
-	audio.context = alcCreateContext(audio.device, null);
-	AL_GUARD(alcMakeContextCurrent(audio.context));
-	audio.extensions = extensions;
-	audio.device_name = AL_GUARD(alcGetString(audio.device, ALC_ALL_DEVICES_SPECIFIER));
-	for (auto ext : audio.extensions) {
-		printf("Requiring %s\n", ext.data());
-		assert(AL_GUARD(alcIsExtensionPresent(audio.device, ext.data())));
+	static constexpr string default_exts[] = { "ALC_SOFT_reopen_device" };
+	static AudioDevice init(Array<const string> extensions = default_exts) {
+		PROFILE_SCOPE(__PRETTY_FUNCTION__);
+		AudioDevice audio;
+		//TODO device selection
+		printf("Initialising audio context\n");
+		audio.handle = alcOpenDevice(null);
+		audio.context = alcCreateContext(audio.handle, null);
+		AL_GUARD(alcMakeContextCurrent(audio.context));
+		audio.extensions = extensions;
+		audio.name = AL_GUARD(alcGetString(audio.handle, ALC_ALL_DEVICES_SPECIFIER));
+		for (auto ext : audio.extensions) {
+			printf("Requiring %s\n", ext.data());
+			assert(AL_GUARD(alcIsExtensionPresent(audio.handle, ext.data())));
+		}
+		print_AL_info(audio.handle);
+		return audio;
 	}
-	print_AL_info(audio.device);
-	return audio;
+
+	AudioDevice& reinit(Array<AudioSource*> sounds = {}) {
+		PROFILE_SCOPE(__PRETTY_FUNCTION__);
+		printf("Changing Audio device\n");
+		if (auto reopen = (ALCboolean(*)(ALCdevice*, const ALCchar*, const ALCint*))AL_GUARD(alcGetProcAddress(handle, "alcReopenDeviceSOFT")))
+			AL_GUARD(reopen(handle, null, null));
+		name = AL_GUARD(alcGetString(handle, ALC_ALL_DEVICES_SPECIFIER));
+		print_AL_info(handle);
+		for (auto source : sounds) if (source)
+			source->cache_pop();
+		return *this;
+	}
+
+	void release() {
+		alcMakeContextCurrent(NULL);
+		alcDestroyContext(context);
+		alcCloseDevice(handle);
+		context = null;
+		handle = null;
+		extensions = {};
+		name = "";
+	}
+
+	bool changed() {
+		ALCint connected = false;
+		AL_GUARD(alcGetIntegerv(handle, ALC_CONNECTED, 1, &connected));
+		//* using null here in order to actually fetch the device we SHOULD be writing to
+		return !connected || name != AL_GUARD(alcGetString(null, ALC_ALL_DEVICES_SPECIFIER));
+	}
+
 };
 
-bool changed_audio(const AudioData& audio) {
-	ALCint connected = false;
-	AL_GUARD(alcGetIntegerv(audio.device, ALC_CONNECTED, 1, &connected));
-	//* using null here in order to actually fetch the device we SHOULD be writing to
-	return !connected || audio.device_name != AL_GUARD(alcGetString(null, ALC_ALL_DEVICES_SPECIFIER));
-}
-
-AudioData reinit(AudioData& audio) {
-	printf("Changing Audio device\n");
-	if (auto reopen = (ALCboolean(*)(ALCdevice*, const ALCchar*, const ALCint*))AL_GUARD(alcGetProcAddress(audio.device, "alcReopenDeviceSOFT")))
-		AL_GUARD(reopen(audio.device, null, null));
-	audio.device_name = AL_GUARD(alcGetString(audio.device, ALC_ALL_DEVICES_SPECIFIER));
-	print_AL_info(audio.device);
-	return audio;
-}
-
-void deinit_audio(AudioData& audio) {
-	alcMakeContextCurrent(NULL);
-	alcDestroyContext(audio.context);
-	alcCloseDevice(audio.device);
-	audio.context = null;
-	audio.device = null;
-	audio.extensions = {};
-	audio.device_name = "";
-}
-
 AudioClip load_clip_file(const cstr path) {
+	PROFILE_SCOPE(__PRETTY_FUNCTION__);
 	i32 channels, freq;
 	i16* output;
 	auto samples = stb_vorbis_decode_filename(path, &channels, &freq, &output);
@@ -97,6 +102,7 @@ AudioClip load_clip_file(const cstr path) {
 }
 
 void write_audio_clip(AudioBuffer buffer, AudioClip clip) {
+	PROFILE_SCOPE(__PRETTY_FUNCTION__);
 	AL_GUARD(alBufferData(buffer.id, clip.format, clip.samples.data(), clip.samples.size_bytes(), clip.freq));
 }
 
@@ -162,69 +168,49 @@ namespace ALListener {
 }
 
 #include <transform.cpp>
-#include <inputs.cpp>
-#include <system_editor.cpp>
-
-#include <spall/profiling.cpp>
 
 struct Sound {
 	AudioSource* source;
 	Spacial2D* space;
 };
 
-struct Audio {
-	static constexpr auto MAX_AUDIO_BUFFER_COUNT = 10;
-	static constexpr string exts[] = { "ALC_SOFT_reopen_device" };
-	AudioData data = init_audio(larray(exts));
-	List<AudioBuffer> buffers = { alloc_array<AudioBuffer>(std_allocator, MAX_AUDIO_BUFFER_COUNT), 0 };
-
-	~Audio() {
-		deinit_audio(data);
+void update_audio(AudioDevice& device, Array<Sound> sounds, const Spacial2D& poh = { identity_2d, null_transform_2d, null_transform_2d }) {
+	PROFILE_SCOPE(__PRETTY_FUNCTION__);
+	if (device.changed()) {
+		AudioSource* buff[sounds.size()];
+		auto scratch = Arena::from_array(carray(buff, sounds.size()));
+		device.reinit(map(scratch, sounds, [](Sound& s) { return s.source; }));
 	}
-
-	void migrate_audio(Array<Sound> entities) {
-		data = reinit(data);
-		for (auto [source, _] : entities) if (source)
-			source->cache_pop();
+	for (auto& [source, spacial] : sounds) {
+		source->set<POSITION>(v3f32(spacial->transform.translation, 0));
+		source->set<VELOCITY>(v3f32(spacial->velocity.translation, 0));
+		source->cache_push();//TODO check if we can move this to start of reinit instead
 	}
+	ALListener::set<POSITION>(v3f32(poh.transform.translation, 0));
+	ALListener::set<VELOCITY>(v3f32(poh.velocity.translation, 0));
+}
 
-	void operator()(Array<Sound> entities, Spacial2D* poh = nullptr) {
-		PROFILE_SCOPE("Audio");
-		if (changed_audio(data))
-			migrate_audio(entities);
-		for (auto& [source, spacial] : entities) {
-			source->set<POSITION>(v3f32(spacial->transform.translation, 0));
-			source->set<VELOCITY>(v3f32(spacial->velocity.translation, 0));
-			source->cache_push();
+#include <system_editor.cpp>
+
+void audio_window(AudioDevice& device) {
+	ImGui::Text("Device : %p:%s", device.handle, device.name.data());
+	ImGui::Text("ALC_DEVICES_SPECIFIER : %s\n", alcGetString(device.handle, ALC_DEVICE_SPECIFIER));
+	ImGui::Text("ALC_DEFAULT_DEVICE_SPECIFIER : %s\n", alcGetString(device.handle, ALC_DEFAULT_DEVICE_SPECIFIER));
+	ImGui::Text("ALC_ALL_DEVICES_SPECIFIER : %s\n", alcGetString(device.handle, ALC_ALL_DEVICES_SPECIFIER));
+	ImGui::Text("ALC_DEFAULT_ALL_DEVICES_SPECIFIER : %s\n", alcGetString(device.handle, ALC_DEFAULT_ALL_DEVICES_SPECIFIER));
+
+	if (device.extensions.size() > 0) {
+		ImGui::Text("%u", device.extensions.size());
+		ImGui::SameLine();
+		if (ImGui::TreeNode("Extensions")) {
+			for (auto ext : device.extensions)
+				ImGui::Text("%s\n", ext.data());
+			ImGui::TreePop();
 		}
-		if (poh) {
-			ALListener::set<POSITION>(v3f32(poh->transform.translation, 0));
-			ALListener::set<VELOCITY>(v3f32(poh->velocity.translation, 0));
-		}
+	} else {
+		ImGui::Text("No extensions");
 	}
-
-	static auto default_editor() { return SystemEditor("Audio", "Alt+A", { Input::KB::K_LEFT_ALT,Input::KB::K_O }); }
-
-	void editor_window() {
-		ImGui::Text("Device : %p:%s", data.device, data.device_name.data());
-		ImGui::Text("ALC_DEVICES_SPECIFIER : %s\n", alcGetString(data.device, ALC_DEVICE_SPECIFIER));
-		ImGui::Text("ALC_DEFAULT_DEVICE_SPECIFIER : %s\n", alcGetString(data.device, ALC_DEFAULT_DEVICE_SPECIFIER));
-		ImGui::Text("ALC_ALL_DEVICES_SPECIFIER : %s\n", alcGetString(data.device, ALC_ALL_DEVICES_SPECIFIER));
-		ImGui::Text("ALC_DEFAULT_ALL_DEVICES_SPECIFIER : %s\n", alcGetString(data.device, ALC_DEFAULT_ALL_DEVICES_SPECIFIER));
-
-		if (data.extensions.size() > 0) {
-			ImGui::Text("%u", data.extensions.size());
-			ImGui::SameLine();
-			if (ImGui::TreeNode("Extensions")) {
-				for (auto ext : data.extensions)
-					ImGui::Text("%s\n", ext.data());
-				ImGui::TreePop();
-			}
-		} else {
-			ImGui::Text("No extensions");
-		}
-		ALListener::EditorWidget("Listener");
-	};
+	ALListener::EditorWidget("Listener");
 };
 
 #endif

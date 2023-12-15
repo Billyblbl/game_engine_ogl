@@ -256,22 +256,62 @@ Shape2D tilemap_layer_shape(Arena& arena, const tmx_layer& layer, v2u32 dimensio
 	transform.translation = v2f32(layer.offsetx, -layer.offsety) / v2f32(tile_dimensions);
 	transform.scale.y = -1;
 
+	v2u32 chunk_dimensions = dimensions;
+	if (auto x_prop = tmx_get_property(layer.properties, "chunk_optimize_x"); x_prop && x_prop->type == PT_INT) chunk_dimensions.x = x_prop->value.integer;
+	if (auto y_prop = tmx_get_property(layer.properties, "chunk_optimize_y"); y_prop && y_prop->type == PT_INT) chunk_dimensions.y = y_prop->value.integer;
+
 	auto gids = Tilemap::layer_gids(scratch, layer, dimensions);
-	auto shapes = List{ arena.push_array<Shape2D>(dimensions.x * dimensions.y), 0 };
-	for (auto y : u64xrange{ 0, dimensions.y }) for (auto x : u64xrange{ 0, dimensions.x }) {
-		auto gid = cast<u32>(gids[v2f32(x, y)])[0];
-		if (gid == 0) continue;
-		Transform2D cell_transform = identity_2d;
-		cell_transform.translation = v2f32(x, y);
-		cell_transform.scale = v2f32(1) / v2f32(tile_dimensions);
-		shapes.push(transform_shape(shapeset[gid], cell_transform));
-	}
-	return make_shape_2d(transform, 0, {}, shapes.shrink_to_content(arena));
+	auto chunk_count = chunk_dimensions.x * chunk_dimensions.y;
+
+	auto leaf_chunk = (
+		[&](rtu32 tilemap_rect) -> Array<Shape2D> {
+			auto rect_dims = dim_vec(tilemap_rect);
+			auto shapes = List{ arena.push_array<Shape2D>(rect_dims.x * rect_dims.y), 0 };
+			auto start = shapes.current;
+			for (auto y : u64xrange{ tilemap_rect.min.y, tilemap_rect.max.y }) for (auto x : u64xrange{ tilemap_rect.min.x, tilemap_rect.max.x }) {
+				auto gid = cast<u32>(gids[v2f32(x, y)])[0];
+				if (gid == 0) continue;
+				Transform2D cell_transform = identity_2d;
+				cell_transform.translation = v2f32(x, y);
+				cell_transform.scale = v2f32(1) / v2f32(tile_dimensions);
+				shapes.push(transform_shape(shapeset[gid], cell_transform));
+			}
+			return shapes.shrink_to_content(arena);
+		}
+	);
+
+	auto sub_rect = (
+		[&](rtu32 tilemap_rect, v2u32 coord) -> rtu32 {
+			auto rect_dims = dim_vec(tilemap_rect);
+			auto cell_size = rect_dims / chunk_dimensions;
+			auto res = rtu32{ tilemap_rect.min + coord * cell_size, tilemap_rect.min + (coord + v2u32(1)) * cell_size };
+			//* the ends of the rect gets extended to account for the tiles that might have been lost in the remainder of cell_size computation
+			auto ends = glm::equal(coord, chunk_dimensions - v2u32(1));
+			for (auto i : u64xrange{ 0, 2 }) if (ends[i])
+				res.max[i] = tilemap_rect.max[i];
+			return res;
+		}
+	);
+
+	auto generate = (
+		[&](auto& recurse, rtu32 tilemap_rect) -> Array<Shape2D> {
+			auto rect_dims = dim_vec(tilemap_rect);
+			auto tile_count = rect_dims.x * rect_dims.y;
+			if (chunk_count < tile_count) {
+				auto shapes = List{ scratch.push_array<Shape2D>(chunk_dimensions.x * chunk_dimensions.y), 0 };
+				for (auto y : u64xrange{ 0, chunk_dimensions.y }) for (auto x : u64xrange{ 0, chunk_dimensions.x })
+					if (auto sub_shapes = recurse(recurse, sub_rect(tilemap_rect, v2u32(x, y))); sub_shapes.size() > 0)
+						shapes.push(make_shape_2d(m3x3f32(1), 0, {}, sub_shapes));
+				return arena.push_array(shapes.shrink_to_content(scratch));
+			} else return leaf_chunk(tilemap_rect);
+		}
+	);
+
+	return make_shape_2d(transform, 0, {}, generate(generate, { v2u32(0), dimensions }));
 }
 
 Array<Shape2D> tilemap_shapes(Arena& arena, const tmx_map& tree, Array<Shape2D> shapeset) {
 	PROFILE_SCOPE(__PRETTY_FUNCTION__);
-	//TODO fix transform
 	auto [scratch, scope] = scratch_push_scope(1lu << 17, &arena); defer{ scratch_pop_scope(scratch, scope); };
 	auto traverse = (
 		[&](auto const& recurse, tmx_layer* list)->Array<Shape2D> {

@@ -2,6 +2,10 @@
 <map version="1.10" tiledversion="1.10.2" orientation="orthogonal" renderorder="right-down" width="5" height="5" tilewidth="32" tileheight="32" infinite="0" nextlayerid="2" nextobjectid="1">
  <tileset firstgid="1" source="test.tsx"/>
  <layer id="1" name="Tile Layer 1" width="5" height="5">
+  <properties>
+   <property name="chunk_optimize_x" type="int" value="2"/>
+   <property name="chunk_optimize_y" type="int" value="2"/>
+  </properties>
   <data encoding="csv">
 1,0,15,0,1,
 0,1,15,1,0,

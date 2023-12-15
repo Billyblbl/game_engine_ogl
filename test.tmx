@@ -27,6 +27,10 @@
 </data>
   </layer>
   <layer id="3" name="parallax test" width="30" height="20">
+   <properties>
+    <property name="chunk_optimize_x" type="int" value="3"/>
+    <property name="chunk_optimize_y" type="int" value="3"/>
+   </properties>
    <data encoding="csv">
 13,13,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,13,13,13,13,
 0,0,13,13,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,13,13,0,0,0,

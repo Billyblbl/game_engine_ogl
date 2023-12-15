@@ -10,6 +10,7 @@
 #include <math.cpp>
 #include <framebuffer.cpp>
 #include <spall/profiling.cpp>
+#include <time.cpp>
 
 const static GLenum OGLLogSeverity[] = {
 	GL_DEBUG_SEVERITY_HIGH,
@@ -39,6 +40,7 @@ struct App {
 	Input::Context* inputs;
 	v2u32 pixel_dimensions;
 	u64 scene_id;
+	Time::Clock runtime;
 
 	static constexpr u64 ID_EXIT = 0;
 	static App create(const cstr window_title, v2u32 window_dimensions, u64 start_scene) {
@@ -61,7 +63,7 @@ struct App {
 		glfwGetFramebufferSize(window, &display_w, &display_h);
 		default_framebuffer.dimensions = v2u32(display_w, display_h);
 		default_framebuffer.clear_attachement = clear_bit(Color0Attc) | clear_bit(DepthAttc);
-		return App{ window, &input_context, default_framebuffer.dimensions, start_scene };
+		return App{ window, &input_context, default_framebuffer.dimensions, start_scene, Time::start() };
 	}
 
 	void release() {
@@ -119,6 +121,7 @@ bool update(App& app, u64 target_scene) {
 	}
 	PROFILE_SCOPE("Inputs");
 	Input::poll(*app.inputs);
+	update(app.runtime);
 	return app.scene_id == target_scene;
 }
 

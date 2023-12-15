@@ -68,7 +68,7 @@ struct Tilemap {
 					for (auto& layer : traverse_by<tmx_layer, &tmx_layer::next>(list)) if (layer.visible) {
 						switch (layer.type) {
 						case L_GROUP: { recurse(recurse, layer.content.group_head); } break;
-						case L_OBJGR: { parse_object_group(layer.content.objgr); } break;
+						case L_OBJGR: { parse_object_group(layer.content.objgr, v2u32(tm.tree->tile_width, tm.tree->tile_height)); } break;
 						case L_IMAGE: {
 							layer.user_data.integer = views.current;
 							views.push(texture_atlas.load(layer.content.image->source));
@@ -94,7 +94,7 @@ struct Tilemap {
 		return tm;
 	}
 
-	static Tilemap load(Arena& arena, Atlas2D& texture_atlas, const cstr path) { return load(arena, texture_atlas, path, [](tmx_object_group*) {}); }
+	static Tilemap load(Arena& arena, Atlas2D& texture_atlas, const cstr path) { return load(arena, texture_atlas, path, [](tmx_object_group*, v2u32) {}); }
 
 	void release() {
 		tmx_map_free(tree);

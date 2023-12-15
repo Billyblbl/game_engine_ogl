@@ -231,28 +231,64 @@ struct PlaygroundScene {
 
 			auto layout = build_layout(scratch, assets.sidescroll_character_animation_recipe_path);
 			animations = build_sidescroll_character_animations(resources_arena, layout, img.dimensions);
-
-			level = Tilemap::load(resources_arena, gfx.sprite_atlas, assets.level);
 		}
 
 		{
 			PROFILE_SCOPE("Scene content init");
 			entities = List{ resources_arena.push_array<Entity>(MAX_ENTITIES), 0 };
-
-			player = (
-				[&]() {
-					auto& ent = create_test_body("player", v2f32(0));
-					ent.flags |= (Entity::Controllable | Entity::Animated);
-					ent.spritesheet = spritesheet;
-					ent.sprite.view = { v2u32(0), dim_vec(spritesheet) };
-					ent.animations = animations;
-					ent.body.inverse_inertia = 0.f;
-					ent.body.inverse_mass = 1.f;
-					ent.body.restitution = 0.f;
-					ent.enable();
-					return get_entity_genhandle(ent);
+			player = { null, 0 };
+			level = Tilemap::load(resources_arena, gfx.sprite_atlas, assets.level,
+				[&](tmx_object_group* group, v2f32 tile_dimensions) {
+					for (auto& obj : traverse_by<tmx_object, &tmx_object::next>(group->head)) {
+						if (string(obj.type) == string("test_entity_construct")) {
+							u64 flags = 0;
+							for (auto i : u64xrange{ 0, array_size(Entity::Flags) }) if (auto prop = tmx_get_property(obj.properties, Entity::Flags[i].data()); prop && prop->type == PT_BOOL && prop->value.boolean)
+								flags |= 1 << i;
+							auto& ent = allocate_entity(entities, obj.name, flags);
+							ent.enable(obj.visible);
+							ent.space.transform.translation = v2f32(obj.x, -obj.y) / tile_dimensions;
+							ent.space.transform.rotation = glm::radians(obj.rotation);
+						} else if (string(obj.type) == string("test_body")) {
+							auto& ent = create_test_body(obj.name, v2f32(obj.x, -obj.y) / tile_dimensions);
+							ent.space.transform.rotation = glm::radians(obj.rotation);
+							ent.enable(obj.visible);
+						} else if (string(obj.type) == string("player")) {
+							player = (
+								[&]() {
+									auto& ent = create_test_body(obj.name, v2f32(obj.x, -obj.y) / tile_dimensions);
+									ent.space.transform.rotation = glm::radians(obj.rotation);
+									ent.flags |= (Entity::Controllable | Entity::Animated);
+									ent.spritesheet = spritesheet;
+									ent.sprite.view = { v2u32(0), dim_vec(spritesheet) };
+									ent.animations = animations;
+									ent.body.inverse_inertia = 0.f;
+									ent.body.inverse_mass = 1.f;
+									ent.body.restitution = 0.f;
+									ent.enable(obj.visible);
+									return get_entity_genhandle(ent);
+								}
+							());
+						}
+					}
 				}
-			());
+			);
+
+			if (!player.valid()) {
+				player = (
+					[&]() {
+						auto& ent = create_test_body("player", v2f32(0));
+						ent.flags |= (Entity::Controllable | Entity::Animated);
+						ent.spritesheet = spritesheet;
+						ent.sprite.view = { v2u32(0), dim_vec(spritesheet) };
+						ent.animations = animations;
+						ent.body.inverse_inertia = 0.f;
+						ent.body.inverse_mass = 1.f;
+						ent.body.restitution = 0.f;
+						ent.enable();
+						return get_entity_genhandle(ent);
+					}
+				());
+			}
 
 			level_entity = (
 				[&]() {

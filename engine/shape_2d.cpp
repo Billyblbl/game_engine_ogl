@@ -18,7 +18,6 @@ template<typename T, i32 Row, i32 Col, glm::qualifier Q> bool EditorWidget(const
 	return changed;
 }
 
-using xf32 = std::numeric_limits<f32>;
 
 inline rtf32 aabb_point_cloud(Array<v2f32> vertices, const m3x3f32& transform = m3x3f32(1)) {
 	PROFILE_SCOPE(__PRETTY_FUNCTION__);

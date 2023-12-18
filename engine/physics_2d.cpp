@@ -481,11 +481,11 @@ struct Physics2D {
 	static Physics2D create(v2f32 gravity = v2f32(0, -9), f32 dt = 1.f / 60.f, u64 memory = default_physics_memory) {
 		Physics2D sim;
 		sim.physics_scratch = Arena::from_vmem(memory);
-		sim.collisions = {};
+		sim.collisions = { {}, 0 };
 		sim.dt = dt;
 		sim.gravity = gravity;
 		sim.intersection_iterations = 2;
-		sim.max_ticks = 5;
+		sim.max_ticks = 1;
 		sim.penetration_tolerance = 0;
 		sim.tpu = 0;
 		sim.time = 0;

@@ -88,11 +88,17 @@ extern "C" {
 
 #endif
 
+#ifdef PROFILE_TRACE_ON
 #define PROFILE_PROCESS(n) profile_process_begin(n);\
 defer { profile_process_end(); };
 #define PROFILE_THREAD(s) profile_thread_begin(s);\
 defer { profile_thread_end(); };
 #define PROFILE_SCOPE(n) profile_scope_begin(n); \
 defer { profile_scope_end(); };
+#else
+#define PROFILE_PROCESS(n)
+#define PROFILE_THREAD(s)
+#define PROFILE_SCOPE(n)
+#endif
 
 #endif

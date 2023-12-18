@@ -158,6 +158,13 @@ struct AudioSource {
 		id = 0;
 	}
 
+	static void batch_release(Array<ALuint> ids) { AL_GUARD(alDeleteSources(ids.size(), ids.data())); }
+	static Array<AudioSource> batch_create(Arena arena, ALsizei count) {
+		ALuint ids[count];
+		AL_GUARD(alGenSources(count, ids));
+		return map(arena, carray(ids, count), [](ALuint id) -> AudioSource { return { id, INITIAL, 0 }; });
+	}
+
 };
 
 template<AL_Property P> bool AudioSourcePropertyWidget(const cstr label, AudioSource& source) {

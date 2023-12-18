@@ -47,6 +47,7 @@ struct Entity : public EntitySlot {
 		Animated = UserFlag << 5,
 		TilemapTree = UserFlag << 6,
 		Camera = UserFlag << 7,
+		Temporary = UserFlag << 8,
 	};
 
 	static constexpr string Flags[] = {
@@ -61,7 +62,8 @@ struct Entity : public EntitySlot {
 		"Controllable",
 		"Animated",
 		"Tilemap",
-		"Camera"
+		"Camera",
+		"Temporary"
 	};
 
 	Spacial2D space;
@@ -76,6 +78,7 @@ struct Entity : public EntitySlot {
 	Tilemap tilemap;
 	OrthoCamera projection;
 	RenderTarget render_target;
+	Time::Timer lifetime;
 };
 
 template<> tuple<bool, RigidBody> use_as<RigidBody>(EntityHandle handle) {
@@ -335,7 +338,7 @@ struct PlaygroundScene {
 		PROFILE_SCOPE(__PRETTY_FUNCTION__);
 		defer{ update_count++; };
 		update(clock);
-		auto [scratch, scope] = scratch_push_scope(1ull << 21); defer{ scratch_pop_scope(scratch, scope); };
+		auto [scratch, scope] = scratch_push_scope(1ull << 18); defer{ scratch_pop_scope(scratch, scope); };
 
 		if (player.valid())
 			player_input(player->content<Entity>().ctrl);
@@ -346,7 +349,11 @@ struct PlaygroundScene {
 		update_characters(gather<SidescrollCharacter>(scratch_pop_scope(scratch, scope), entities.used()), physics.collisions.used(), physics.gravity, clock);
 		if (auto it_count = physics.iteration_count(clock.current); it_count > 0) {
 			scratch_pop_scope(scratch, scope);
-			physics(gather<RigidBody>(scratch, entities.used()), gather<Spacial2D*>(scratch, entities.used()), it_count);
+			physics(
+				gather<RigidBody>(scratch, entities.used()),
+				gather<Spacial2D*>(scratch, entities.used()),
+				it_count
+			);
 		}
 
 		if (cam.valid() && player.valid())
@@ -365,12 +372,18 @@ struct PlaygroundScene {
 			}
 		);
 
-		for (auto sound : gather(scratch_pop_scope(scratch, scope), entities.used(), Entity::PendingRelease | Entity::Sound))
-			sound->audio_source.release();
+		for (auto temp : gather(scratch_pop_scope(scratch, scope), entities.used(), Entity::Usable | Entity::Temporary)) if (temp->lifetime.over(clock.current))
+			temp->discard();
+
+		{
+			scratch_pop_scope(scratch, scope);
+			auto stale_sources = gather(scratch, entities.used(), Entity::PendingRelease | Entity::Sound);
+			auto ids = map(scratch, stale_sources, [](Entity& ent) -> ALuint { return ent.audio_source.id; });
+			AudioSource::batch_release(ids);
+		}
 
 		for (auto slot : gather(scratch_pop_scope(scratch, scope), entities.used(), Entity::PendingRelease))
 			slot->recycle();
-
 		return true;
 	}
 

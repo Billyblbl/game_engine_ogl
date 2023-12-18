@@ -245,4 +245,6 @@ auto range2(v2u64 dimensions) {
 	};
 }
 
+using xf32 = std::numeric_limits<f32>;
+
 #endif

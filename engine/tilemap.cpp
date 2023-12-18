@@ -23,10 +23,8 @@ struct Tilemap {
 		printf("Loading tilemap %s\n", path);
 		Tilemap tm;
 
-		profile_scope_begin("tmx_load");
 		auto source = tmx_load(path);
 		if (!source)(tmx_perror("Tilemap Loading"), abort());//TODO handle failed load
-		profile_scope_end();
 
 		auto heuristic_layer_count = count<tmx_layer, &tmx_layer::next>(source->ly_head);
 		tm.layer_atlas = Atlas2D::create(v2u32(source->width, source->height * heuristic_layer_count), R32UI);

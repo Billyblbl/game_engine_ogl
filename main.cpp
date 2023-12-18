@@ -6,7 +6,6 @@
 
 bool editor_test(App& app, u64 scene_id) {
 	PROFILE_SCOPE(__PRETTY_FUNCTION__);
-	profile_scope_begin("Initialisation");
 	ImGui::init_ogl_glfw(app.window); defer{ ImGui::shutdown_ogl_glfw(); };
 	auto editor = create_editor("Editor", "Alt+X", { Input::KB::K_LEFT_ALT, Input::KB::K_X });
 	auto au = SystemEditor::create("Audio", "Alt+O", { Input::KB::K_LEFT_ALT, Input::KB::K_O });
@@ -14,7 +13,6 @@ bool editor_test(App& app, u64 scene_id) {
 	auto misc = SystemEditor::create("Misc", "Alt+M", { Input::KB::K_LEFT_ALT, Input::KB::K_M });
 	auto ph = SystemEditor::create<Physics2D::Editor>("Physics2D", "Alt+P", { Input::KB::K_LEFT_ALT, Input::KB::K_P });
 	auto scene = PlaygroundScene(); defer{ scene.release(); };
-	profile_scope_end();
 
 	while (update(app, scene_id)) {
 		PROFILE_SCOPE("Frame");

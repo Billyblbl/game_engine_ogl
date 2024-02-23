@@ -4,61 +4,48 @@
 #include <glutils.cpp>
 #include <blblstd.hpp>
 
-template<typename T> struct MappedObject {
+struct GPUBuffer {
 	GLuint id;
-	T* obj;
+	u64 size;
+	GLbitfield flags;
+
+	static GPUBuffer create(u64 size, GLbitfield flags = 0, Buffer initial_data = {}) {
+		GPUBuffer buff;
+		buff.size = size;
+		buff.flags = flags;
+		GL_GUARD(glCreateBuffers(1, &buff.id));
+		auto initial_ptr = initial_data.data() ? initial_data.data() : null;
+		GL_GUARD(glNamedBufferStorage(buff.id, buff.size, initial_ptr, buff.flags));
+		return buff;
+	}
+
+	void release() { GL_GUARD(glDeleteBuffers(1, &id)); }
+
+	num_range<u64> write(Buffer buff, u64 offset = 0) {
+		GL_GUARD(glNamedBufferSubData(id, offset, buff.size_bytes(), buff.data()));
+		return { offset, offset + buff.size_bytes() };
+	}
+
+	Buffer map(num_range<u64> range = {}) {
+		if (range.size() == 0)
+			range = { 0, u64(size) };
+		auto mapping = GL_GUARD(glMapNamedBufferRange(id, range.min, range.size(), GL_MAP_WRITE_BIT | GL_MAP_PERSISTENT_BIT | GL_MAP_FLUSH_EXPLICIT_BIT));
+		return carray((byte*)mapping, range.size());
+	}
+
+	void unmap() { GL_GUARD(glUnmapNamedBuffer(id)); }
+
+	num_range<u64> sync(Buffer buff, u64 offset = 0) {
+		auto r = write(buff, offset);
+		flush(r);
+		return r;
+	}
+
+	void flush(num_range<u64> range = {}) {
+		if (range.size() == 0)
+			range = { 0, u64(size) };
+		GL_GUARD(glFlushMappedNamedBufferRange(id, range.min, range.size()));
+	}
 };
-
-template<typename T> MappedObject<T> map_object(const T& obj) {
-	T* ptr = nullptr;
-	auto id = create_buffer_single(obj, &ptr);
-	return MappedObject { id, ptr };
-}
-
-template<typename T> struct MappedBuffer {
-	GLuint id;
-	Array<T> content;
-};
-
-template<typename T> MappedBuffer<T> map_buffer(Array<T> data) {
-	auto arr = Array<T>();
-	auto id = create_buffer_array(data, &arr);
-	return MappedBuffer { id, arr };
-}
-
-template<typename T> MappedBuffer<T> map_buffer(GLsizeiptr size) {
-	auto data = Array<byte>();
-	auto id = create_buffer(size * sizeof(T), &data);
-	return MappedBuffer { id, cast<T>(data) };
-}
-
-template<typename T> void unmap(MappedBuffer<T>& buffer) {
-	unmap(buffer.id, buffer.content.size_bytes());
-	delete_buffer(buffer.id);
-	buffer.id = 0;
-	buffer.content = {};
-}
-
-template<typename T> void unmap(MappedObject<T>& obj) {
-	unmap(obj.id, sizeof(T));
-	delete_buffer(obj.id);
-	obj.id = 0;
-}
-
-template<typename T> Array<T> sync(MappedBuffer<T> buffer) {
-	flush_mapped_buffer(buffer.id, {0, buffer.content.size_bytes()});
-	return buffer.content;
-}
-
-template<typename T> T& sync(MappedObject<T> obj) {
-	flush_mapped_buffer(obj.id, {0, sizeof(T)});
-	return *obj.obj;
-}
-
-template<typename T> T& sync(MappedObject<T> obj, const T& new_value) {
-	*obj.obj = new_value;
-	flush_mapped_buffer(obj.id, {0, sizeof(T)});
-	return *obj.obj;
-}
 
 #endif

@@ -158,7 +158,7 @@ rtu32 animate_sidescroll_character(Animator& animator, Array<SpriteAnimation> an
 		}
 	);
 	u32 state = animator.select_state(selector(), time);
-	//? should the coordinates be stored in the animator and the actual rect animation dealt with by a specific anime_sprite functions ?
+	//? should the coordinates be stored in the animator and the actual rect animation dealt with by a specific animate_sprite functions ?
 	switch (state) {
 	case LOCOMOTION: return animate(animations[state], v2f32(animator.state_time(time), abs(ctrl.movement.x)));
 	case JUMP: return animate(animations[state], v1f32(animator.state_time(time)));

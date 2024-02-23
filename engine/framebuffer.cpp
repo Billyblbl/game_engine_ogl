@@ -107,7 +107,7 @@ void end_render() {
 	GL_GUARD(glBindFramebuffer(GL_FRAMEBUFFER, default_framebuffer.id));
 }
 
-void clear(FrameBuffer& fbf, v4f32 color = v4f32(0), GLbitfield bits = ~0) {
+void clear(FrameBuffer& fbf, v4f32 color = v4f32(0), GLbitfield bits = ~GLbitfield(0)) {
 	GL_GUARD(glClearColor(color.r, color.g, color.b, color.a));
 	GL_GUARD(glClear(fbf.clear_attachement & bits));
 }

@@ -5,10 +5,11 @@
 #include <glutils.cpp>
 #include <math.cpp>
 #include <blblstd.hpp>
+#include <buffer.cpp>
 
 struct VertexAttributeSpecs {
-	GLint memberCount = 0;
-	GLenum memberType = 0;
+	GLint member_count = 0;
+	GLenum member_type = 0;
 	size_t offset = 0;
 	GLsizei stride = 0;
 };
@@ -30,48 +31,46 @@ template<> constexpr auto make_vertex_attribute_spec<glm::ivec4>(usize offset, G
 // template<typename T> constexpr VertexAttributeSpecs vertexAttributesArray[] = {};
 template<typename T> const Array<const VertexAttributeSpecs> vertexAttributesOf;
 
-// TODO find why "assert(vertexAttributesOf<T>.size() > 0); // No Attributes defined" always fails even with DefaultVertex2D
-// template<typename T> GLuint recordVAO(GLuint vbo, GLuint ibo) {
-// 	fprintf(stdout, "vertex attributes %u\n", vertexAttributesOf<T>.size());
-// 	fprintf(stdout, "vertex type %s\n", typeid(T).name() );
-// 	fflush(stdout);
-// 	assert(vertexAttributesOf<T>.size() > 0); // No Attributes defined
-// 	// assert(vertexAttributesOf<T> == vertexAttributesOf<DefaultVertex2D>); // Type is DefaultVertex2d
-// 	return recordVAO(vertexAttributesOf<T>, sizeof(T), vbo, ibo);
-// }
-
-GLuint record_VAO(
-	Array<const VertexAttributeSpecs>	attributes,
-	GLuint vbo,
-	GLuint ibo
-) {
+struct VertexArray {
 	GLuint id;
-	GL_GUARD(glCreateVertexArrays(1, &id));
+	u32 element_count;
+	GLenum index_type;
+	GLenum draw_mode;
+	Array<const VertexAttributeSpecs> layout;
 
-	GL_GUARD(glBindVertexArray(id));
-	GL_GUARD(glBindBuffer(GL_ARRAY_BUFFER, vbo));
-	GL_GUARD(glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, ibo));
-
-	for (GLuint i = 0; i < attributes.size(); i++) {
-		auto& attribute = attributes[i];
-		GL_GUARD(glEnableVertexAttribArray(i));
-		GL_GUARD(glVertexAttribPointer(i, attribute.memberCount, attribute.memberType, GL_FALSE, attribute.stride, reinterpret_cast<GLvoid*>(attribute.offset)));
+	void bind_vertex_data(GLuint vbo, GLuint ibo, u32 count, u64 offset = 0) {
+		GL_GUARD(glBindVertexArray(id));
+		GL_GUARD(glBindBuffer(GL_ARRAY_BUFFER, vbo));
+		GL_GUARD(glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, ibo));
+		for (GLuint i : u64xrange{ 0, layout.size() }) {
+			GL_GUARD(glEnableVertexArrayAttrib(id, i));
+			GL_GUARD(glVertexAttribPointer(i, layout[i].member_count, layout[i].member_type, GL_FALSE, layout[i].stride, (GLvoid*)(layout[i].offset + offset)));
+		}
+		GL_GUARD(glBindVertexArray(0));
+		GL_GUARD(glBindBuffer(GL_ARRAY_BUFFER, 0));
+		GL_GUARD(glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, 0));
+		for (GLuint i : u64xrange{ 0, layout.size() })
+			GL_GUARD(glDisableVertexArrayAttrib(id, i));
+		element_count = count;
 	}
 
-	GL_GUARD(glBindVertexArray(0));
-	GL_GUARD(glBindBuffer(GL_ARRAY_BUFFER, 0));
-	GL_GUARD(glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, 0));
+	static VertexArray create(Array<const VertexAttributeSpecs> vertex_attributes, GLuint draw_mode = GL_TRIANGLES, GLenum index_type = gl_type_table<u32>.upload_type) {
+		VertexArray va;
+		va.layout = vertex_attributes;
+		va.draw_mode = draw_mode;
+		va.index_type = index_type;
+		GL_GUARD(glCreateVertexArrays(1, &va.id));
+		return va;
+	}
 
-	for (GLuint i = 0; i < attributes.size(); i++)
-		GL_GUARD(glDisableVertexAttribArray(i));
-	return id;
-}
+	void release() { GL_GUARD(glDeleteVertexArrays(1, &id)); }
+};
 
 #pragma region defaults
 
 struct DefaultVertex2D {
-	glm::vec2 position;
-	glm::vec2 uv;
+	v2f32 position;
+	v2f32 uv;
 };
 
 const VertexAttributeSpecs defaultVertex2DAttributes[] = {

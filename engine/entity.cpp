@@ -31,11 +31,11 @@ template<typename T, u64 T::* gen> genhandle<T, gen> get_genhandle(T& slot) {
 struct EntitySlot {
 	static constexpr auto entity_flag_count = 64;
 	enum : u64 {
-		AllocatedEntity = 1 << 0,
-		Enabled = 1 << 1,
-		Usable = AllocatedEntity | Enabled,
-		PendingRelease = 1 << 2,
-		UserFlag = 1 << 3,
+		SlotAllocatedEntity = 1 << 0,
+		SlotEnabled = 1 << 1,
+		SlotUsable = SlotAllocatedEntity | SlotEnabled,
+		SlotPendingRelease = 1 << 2,
+		SlotUserFlag = 1 << 3,
 		FlagIndexCount = entity_flag_count
 	};
 	static constexpr string BaseFlags[] = {
@@ -48,11 +48,11 @@ struct EntitySlot {
 	u64 flags = 0;
 	u64 generation = 0;
 	string name = "__entity__";
-	bool available() const { return !has_one(flags, AllocatedEntity | PendingRelease); }
-	void grab() { flags |= AllocatedEntity; }
-	bool enabled() const { return flags & Enabled; }
-	void enable(bool state = true) { state ? (flags |= Enabled) : (flags &= ~Enabled); }
-	void discard() { flags = (flags & ~Usable) | PendingRelease; }
+	bool available() const { return !has_one(flags, SlotAllocatedEntity | SlotPendingRelease); }
+	void grab() { flags |= SlotAllocatedEntity; }
+	bool enabled() const { return flags & SlotEnabled; }
+	void enable(bool state = true) { state ? (flags |= SlotEnabled) : (flags &= ~SlotEnabled); }
+	void discard() { flags = (flags & ~SlotUsable) | SlotPendingRelease; }
 	void recycle() { flags = 0; generation++; }
 	template<typename T> inline T& content() { return static_cast<T&>(*this); }
 };
@@ -79,7 +79,7 @@ template<typename I> tuple<bool, I> use_as(EntityHandle handle);
 template<typename I, castable<EntitySlot> E> auto gather(Arena& arena, Array<E> entities) {
 	PROFILE_SCOPE(__PRETTY_FUNCTION__);
 	auto list = List{ arena.push_array<I>(entities.size()), 0 };
-	for (auto&& i : entities) if (has_all(i.flags, EntitySlot::Usable)) if (auto [good, res] = use_as<I>(get_entity_genhandle(i)); good)
+	for (auto&& i : entities) if (has_all(i.flags, EntitySlot::SlotUsable)) if (auto [good, res] = use_as<I>(get_entity_genhandle(i)); good)
 		list.push(res);
 	return list.shrink_to_content(arena);
 }

@@ -21,14 +21,14 @@ GLuint create_shader(string source, GLenum type) {
 
 	const cstrp content[] = {
 		"#version 450 core\n"
-		"#define ", GLtoString(type).substr(3).data(),"\n\n", // shader type macro
+		"#define ", GLtoString(type).substr(3).data(),"\n\n", //* shader type macro
 		"#ifdef VERTEX_SHADER\n"
 		"#define pass out\n"
 		"#endif\n"
 		"#ifdef FRAGMENT_SHADER\n"
 		"#define pass in\n"
 		"#endif\n",
-		source.data()
+		source.data()//! expects source to be null terminated
 	};
 	const auto size = array_size(content);
 
@@ -65,81 +65,65 @@ GLuint load_shader(const char* path, GLenum type) {
 	}
 }
 
-struct GPUBinding {
-	enum { None = 0, Texture, UBO, SSBO } type;
+struct ShaderInput {
+	enum Type : GLenum { None = 0, Texture = GL_UNIFORM, UBO = GL_UNIFORM_BLOCK, SSBO = GL_SHADER_STORAGE_BLOCK } type;
+	string name;
 	GLuint id;
-	GLuint target;
-	GLsizeiptr size;
+	union {
+		GPUBuffer backing_buffer;
+		GLuint texture;
+	};
+
+	num_range<u64> bind(num_range<u64> range = {}) const {
+		switch (type) {
+		case Texture: { GL_GUARD(glBindTextureUnit(id, texture)); } break;
+		case UBO: { GL_GUARD(glBindBufferRange(GL_UNIFORM_BUFFER, id, backing_buffer.id, range.min, range.size())); } break;
+		case SSBO: { GL_GUARD(glBindBufferRange(GL_SHADER_STORAGE_BUFFER, id, backing_buffer.id, range.min, range.size())); } break;
+		}
+		return range;
+	}
+
+	void unbind() const {
+		switch (type) {
+		case Texture: { GL_GUARD(glBindTextureUnit(id, 0)); } break;
+		case UBO: { GL_GUARD(glBindBufferRange(GL_UNIFORM_BUFFER, id, 0, 0, 0)); } break;
+		case SSBO: { GL_GUARD(glBindBufferRange(GL_SHADER_STORAGE_BUFFER, id, 0, 0, 0)); } break;
+		}
+	}
+
+	static ShaderInput create_slot(GLuint pipeline, Type type, const cstr name, u64 backing_size = 0) {
+		ShaderInput slot;
+		slot.name = name;
+		slot.type = type;
+		switch (type) {
+		case Texture: { slot.id = GL_GUARD(glGetProgramResourceLocation(pipeline, type, name)); } break;
+		case UBO: case SSBO: {
+			slot.id = GL_GUARD(glGetProgramResourceIndex(pipeline, type, name));
+			slot.backing_buffer = GPUBuffer::create(backing_size, GL_MAP_WRITE_BIT | GL_MAP_PERSISTENT_BIT | GL_DYNAMIC_STORAGE_BIT);
+			break;
+		}
+		}
+		return slot;
+	}
+
+	void release() {
+		switch (type) {
+		case UBO:
+		case SSBO: { backing_buffer.release(); }
+		}
+	}
+
+	void bind_texture(GLuint id) { texture = id; bind(); }
+	template<typename T> num_range<u64> bind_content(Array<T> content, u64 offset = 0) { return bind(backing_buffer.write(cast<byte>(content), offset)); }
+	template<typename T> num_range<u64> bind_object(const T& content, u64 offset = 0) { return bind_content(carray(&content, 1), offset); }
 };
 
-void inline bind(const GPUBinding& binding) {
-	switch (binding.type) {
-		// case GPUBinding::Texture: printf("Binding texture %u to %u\n", binding.id, binding.target); GL_GUARD(glBindTextureUnit(binding.target, binding.id)); break;
-	case GPUBinding::Texture: GL_GUARD(glBindTextureUnit(binding.target, binding.id)); break;
-	case GPUBinding::UBO: GL_GUARD(glBindBufferRange(GL_UNIFORM_BUFFER, binding.target, binding.id, 0, binding.size)); break;
-	case GPUBinding::SSBO: GL_GUARD(glBindBufferRange(GL_SHADER_STORAGE_BUFFER, binding.target, binding.id, 0, binding.size)); break;
-		//TODO better error handling
-	default: assert(false); break;
-	}
-}
+//*
+//* https://www.khronos.org/opengl/wiki/Vertex_Rendering#Multi-Draw
+// TODO glMultiDrawElementsIndirect
+//*
 
-void inline unbind(const GPUBinding& binding) {
-	switch (binding.type) {
-	case GPUBinding::Texture: GL_GUARD(glBindTextureUnit(binding.target, 0)); break;
-	case GPUBinding::UBO: GL_GUARD(glBindBufferRange(GL_UNIFORM_BUFFER, binding.target, 0, 0, binding.size)); break;
-	case GPUBinding::SSBO: GL_GUARD(glBindBufferRange(GL_SHADER_STORAGE_BUFFER, binding.target, 0, 0, binding.size)); break;
-		//TODO better error handling
-	default: assert(false); break;
-	}
-}
-
-
-void draw(
-	GLuint pipeline,
-	const RenderMesh& mesh,
-	u32 instance_count = 1,
-	Array<const GPUBinding> bindings = {}
-) {
-	GL_GUARD(glUseProgram(pipeline));
-	GL_GUARD(glBindVertexArray(mesh.vao));
-	for (auto&& binding : bindings) bind(binding);
-	// TODO redo render mesh & draw usage
-	GL_GUARD(glDrawElementsInstanced(mesh.draw_mode, mesh.element_count, mesh.index_type, nullptr, instance_count));
-	for (auto&& binding : bindings) unbind(binding);
-	GL_GUARD(glBindVertexArray(0));
-	GL_GUARD(glUseProgram(0));
-}
-
-void draw(
-	GLuint pipeline,
-	const RenderMesh& mesh,
-	u32 instance_count,
-	LiteralArray<GPUBinding> bindings
-) {
-	draw(pipeline, mesh, instance_count, larray(bindings));
-}
-
-struct Pipeline {
-	GLuint id;
-
-	void operator()(
-		const RenderMesh& mesh,
-		u32 instance_count = 1,
-		Array<const GPUBinding> bindings = {}
-		) const {
-		draw(id, mesh, instance_count, bindings);
-	}
-
-	void operator()(
-		const RenderMesh& mesh,
-		u32 instance_count,
-		LiteralArray<GPUBinding> bindings
-		) const {
-		draw(id, mesh, instance_count, larray(bindings));
-	}
-};
-
-Pipeline create_render_pipeline(GLuint vertex_shader, GLuint fragment_shader) {
+GLuint create_render_pipeline(GLuint vertex_shader, GLuint fragment_shader) {
 	if (vertex_shader == 0 || fragment_shader == 0) {
 		fprintf(stderr, "Failed to build render pipeline, invalid shader\n");
 		return { 0 };
@@ -161,13 +145,27 @@ Pipeline create_render_pipeline(GLuint vertex_shader, GLuint fragment_shader) {
 		GL_GUARD(glGetProgramInfoLog(program, logLength, nullptr, log));
 		fprintf(stderr, "Failed to build render pipeline %u, pipeline program log : %s\n", program, log);
 		return { 0 };
-	} else
+	} else {
+		//* Debug stuff
+		// printf("Pipeline input description:\n");
+		// GLint uniform_count = 0;
+		// GL_GUARD(glGetProgramInterfaceiv(program, GL_UNIFORM, GL_ACTIVE_RESOURCES, &uniform_count));
+		// const GLenum properties[4] = { GL_BLOCK_INDEX, GL_TYPE, GL_NAME_LENGTH, GL_LOCATION };
+		// for (auto unif : u32xrange{ 0, uniform_count }) {
+		// 	GLint values[4];
+		// 	GL_GUARD(glGetProgramResourceiv(program, GL_UNIFORM, unif, 4, properties, 4, NULL, values));
+		// 	char name[values[2]];
+		// 	GL_GUARD(glGetProgramResourceName(program, GL_UNIFORM, unif, values[2], NULL, name));
+		// 	printf("%s [%i] : %i -> %s, loc %i\n", name, values[0], values[1], GLtoString(values[1]).data(), values[3]);
+		// }
 		return { program };
+	}
 }
 
-Pipeline load_pipeline(const char* path) {
+GLuint load_pipeline(const char* path) {
 	printf("Loading pipeline %s\n", path);
 	fflush(stdout);
+	//TODO discard all this fstream garbage
 	if (std::ifstream file{ path, std::ios::binary | std::ios::ate }) {
 		usize size = file.tellg();
 		char buffer[size + 1] = { 0 };
@@ -187,14 +185,10 @@ Pipeline load_pipeline(const char* path) {
 
 }
 
-void destroy_pipeline(Pipeline& pipeline) {
-	GL_GUARD(glDeleteProgram(pipeline.id));
-	pipeline.id = 0;
+void destroy_pipeline(GLuint& pipeline) {
+	GL_GUARD(glDeleteProgram(pipeline));
+	pipeline = 0;
 }
-
-inline GPUBinding bind_to(const TexBuffer& mapping, GLuint target) { return GPUBinding{ GPUBinding::Texture, mapping.id, target, mapping.dimensions.x * mapping.dimensions.y * mapping.dimensions.z * mapping.dimensions.w }; }
-template<typename T> inline GPUBinding bind_to(const MappedObject<T>& mapping, GLuint target) { return GPUBinding{ GPUBinding::UBO, mapping.id, target, sizeof(T) }; }
-template<typename T> inline GPUBinding bind_to(const MappedBuffer<T>& mapping, GLuint target) { return GPUBinding{ GPUBinding::SSBO, mapping.id, target, (GLsizeiptr)mapping.content.size_bytes() }; }
 
 void wait_gpu() {
 	GL_GUARD(glFinish());
@@ -212,7 +206,7 @@ struct RenderTarget {
 bool EditorWidget(const cstr label, RenderTarget& target) {
 	bool changed = false;
 	if (ImGui::TreeNode(label)) {
-		defer { ImGui::TreePop(); };
+		defer{ ImGui::TreePop(); };
 		changed |= EditorWidget(label, target.fbf);
 		changed |= ImGui::ColorPicker4("Clear Color", glm::value_ptr(target.clear_color));
 	}
@@ -226,7 +220,7 @@ struct Camera {
 	operator m4x4f32() const { return m4x4f32(*projection) * inverse(m4x4f32(pov->transform)); }
 };
 
-void render(const Camera& camera, auto commands) {
+inline void render(const Camera& camera, auto commands) {
 	PROFILE_SCOPE(__PRETTY_FUNCTION__);
 	using namespace glm;
 	begin_render(camera.target->fbf);

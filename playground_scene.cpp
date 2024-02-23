@@ -1,6 +1,9 @@
 #ifndef GPLAYGROUND_SCENE
 # define GPLAYGROUND_SCENE
 
+#define PROFILE_TRACE_ON
+#include <spall/profiling.cpp>
+
 #include <imgui_extension.cpp>
 #include <application.cpp>
 #include <rendering.cpp>
@@ -20,7 +23,6 @@
 #include <high_order.cpp>
 
 #include <texture_shape_generation.cpp>
-#include <spall/profiling.cpp>
 
 #include <tilemap.cpp>
 
@@ -39,6 +41,11 @@ const struct {
 
 struct Entity : public EntitySlot {
 	enum : u64 {
+		AllocatedEntity = SlotAllocatedEntity,
+		Enabled = SlotEnabled,
+		Usable = SlotUsable,
+		PendingRelease = SlotPendingRelease,
+		UserFlag = SlotUserFlag,
 		Sound = UserFlag << 0,
 		Draw = UserFlag << 1,
 		Collider = UserFlag << 2,
@@ -343,8 +350,8 @@ struct PlaygroundScene {
 		if (player.valid())
 			player_input(player->content<Entity>().ctrl);
 
-		if (Input::KB::get(Input::KB::K_ENTER) & Input::Down)
-			create_test_body("new test body", v2f32(0));
+		if (Input::KB::get(Input::KB::K_ENTER) & Input::Down) for (auto i : u64xrange{ 0, 10 })
+			create_test_body("new test body", player->content<Entity>().space.transform.translation + v2f32(0, 2)).enable();
 
 		update_characters(gather<SidescrollCharacter>(scratch_pop_scope(scratch, scope), entities.used()), physics.collisions.used(), physics.gravity, clock);
 		if (auto it_count = physics.iteration_count(clock.current); it_count > 0) {
@@ -378,7 +385,7 @@ struct PlaygroundScene {
 		{
 			scratch_pop_scope(scratch, scope);
 			auto stale_sources = gather(scratch, entities.used(), Entity::PendingRelease | Entity::Sound);
-			auto ids = map(scratch, stale_sources, [](Entity& ent) -> ALuint { return ent.audio_source.id; });
+			auto ids = map(scratch, stale_sources, [](Entity* ent) -> ALuint { return ent->audio_source.id; });
 			AudioSource::batch_release(ids);
 		}
 

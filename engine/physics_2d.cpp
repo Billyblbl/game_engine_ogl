@@ -41,7 +41,7 @@ Segment<v2f32> support_fat_point_cloud(Array<v2f32> vertices, const m3x3f32& mat
 
 template<typename F> concept support_function = requires(const F & f, v2f32 direction) { { f(direction) } -> std::same_as<Segment<v2f32>>; };
 
-auto support_function_of(const Shape2D& shape, const m3x3f32& transform) {
+inline auto support_function_of(const Shape2D& shape, const m3x3f32& transform) {
 	return ([&shape, transform](v2f32 direction) -> Segment<v2f32> { return support_fat_point_cloud(shape.points, transform * shape.transform, shape.radius, direction); });
 }
 
@@ -538,7 +538,7 @@ struct Physics2D {
 	}
 
 	struct Editor : public SystemEditor {
-		ShapeRenderer debug_draw = load_shape_renderer();
+		ShapeRenderer debug_draw = ShapeRenderer::load();
 		bool debug = false;
 		bool colliders = true;
 		bool wireframe = true;
@@ -552,7 +552,7 @@ struct Physics2D {
 
 		void draw_shapes(Array<RigidBody> bodies, const m4x4f32& vp) {
 			PROFILE_SCOPE(__PRETTY_FUNCTION__);
-			sync(debug_draw.vp_matrix, vp);
+			debug_draw.vp_matrix.backing_buffer.sync(cast<byte>(carray(&vp, 1)));
 			for (auto bd : bodies) {
 				for (auto& s : bd.shapes) if (flattened) {
 					auto [scratch, scope] = scratch_push_scope(1 << 16); defer{ scratch_pop_scope(scratch, scope); };
@@ -561,20 +561,25 @@ struct Physics2D {
 				} else {
 					debug_draw(s, bd.spacial->transform, vp, v4f32(1, 1, 0, 1), wireframe, local_aabbs, world_aabbs, radius);
 				}
-				sync(debug_draw.instance, { v4f32(1, 0, 0, 1) });
+
+				ShapeRenderer::ShapeRenderInfo info = { v4f32(1, 0, 0, 1) };
+				debug_draw.instance.backing_buffer.sync(cast<byte>(carray(&info, 1)));
 				debug_draw.draw_line(Segment<v2f32> { bd.spacial->transform.translation, (bd.spacial->transform.translation + velocities_scale * bd.spacial->velocity.translation)});
 			}
 		}
 
 		void draw_collisions(Array<Collision2D> collisions, const m4x4f32& vp) {
 			PROFILE_SCOPE(__PRETTY_FUNCTION__);
-			sync(debug_draw.vp_matrix, vp);
+			debug_draw.vp_matrix.backing_buffer.sync(cast<byte>(carray(&vp, 1)));
 			for (auto [contacts, entities, physical] : collisions) {
 				Spacial2D* sp[] = { entities[0].spacial, entities[1].spacial };
-				sync(debug_draw.instance, { v4f32(1, 0, 1, 1) });
+
+				ShapeRenderer::ShapeRenderInfo info = { v4f32(1, 0, 1, 1) };
+				debug_draw.instance.backing_buffer.sync(cast<byte>(carray(&info, 1)));
 				debug_draw.draw_line({ sp[0]->transform.translation , sp[1]->transform.translation });
 				if (physical) for (auto& contact : contacts) {
-					sync(debug_draw.instance, { v4f32(0, 1, 1, 1) });
+					info = { v4f32(0, 1, 1, 1) };
+					debug_draw.instance.backing_buffer.sync(cast<byte>(carray(&info, 1)));
 					for (auto i : u64xrange{ 0, 2 })
 						debug_draw.draw_line({ sp[i]->transform.translation, sp[i]->transform.translation + contact.levers[i] });
 				}

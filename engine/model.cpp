@@ -5,14 +5,31 @@
 #include <math.cpp>
 #include <vertex.cpp>
 #include <glutils.cpp>
+#include <buffer.cpp>
 
 struct RenderMesh {
-	GLuint vbo;
-	GLuint ibo;
-	GLuint vao;
-	u32 element_count;
-	GLenum index_type;
-	GLenum draw_mode;
+	GPUBuffer vbo;
+	GPUBuffer ibo;
+	VertexArray vao;
+
+	template<typename Vertex = DefaultVertex2D> static RenderMesh upload(
+		Array<const Vertex> vertex_data,
+		Array<const u32> indices,
+		GLuint draw_mode = GL_TRIANGLES
+	) {
+		RenderMesh rm;
+		rm.vbo = GPUBuffer::create(vertex_data.size_bytes(), 0, cast<byte>(vertex_data));
+		rm.ibo = GPUBuffer::create(indices.size_bytes(), 0, cast<byte>(indices));
+		rm.vao = VertexArray::create(vertexAttributesOf<Vertex>, draw_mode);
+		rm.vao.bind_vertex_data(rm.vbo.id, rm.ibo.id, indices.size());
+		return rm;
+	}
+
+	void release() {
+		vao.release();
+		vbo.release();
+		ibo.release();
+	}
 };
 
 //
@@ -107,22 +124,22 @@ Array<u32> get_9slice_indices() {
 
 auto create_9slice_points(v2f32 content, v2f32 borders) {
 	return std::array{
-		v2f32(-content.x / 2.f - borders.x / 2.f,  content.y / 2.f + borders.y / 2.f),
-		v2f32(-content.x / 2.f									,  content.y / 2.f + borders.y / 2.f),
-		v2f32(content.x / 2.f									,  content.y / 2.f + borders.y / 2.f),
-		v2f32(content.x / 2.f + borders.x / 2.f,  content.y / 2.f + borders.y / 2.f),
-		v2f32(-content.x / 2.f - borders.x / 2.f,  content.y / 2.f),
-		v2f32(-content.x / 2.f									,  content.y / 2.f),
-		v2f32(content.x / 2.f									,  content.y / 2.f),
-		v2f32(content.x / 2.f + borders.x / 2.f,  content.y / 2.f),
+		v2f32(-content.x / 2.f - borders.x / 2.f, +content.y / 2.f + borders.y / 2.f),
+		v2f32(-content.x / 2.f									, +content.y / 2.f + borders.y / 2.f),
+		v2f32(+content.x / 2.f									, +content.y / 2.f + borders.y / 2.f),
+		v2f32(+content.x / 2.f + borders.x / 2.f, +content.y / 2.f + borders.y / 2.f),
+		v2f32(-content.x / 2.f - borders.x / 2.f, +content.y / 2.f),
+		v2f32(-content.x / 2.f									, +content.y / 2.f),
+		v2f32(+content.x / 2.f									, +content.y / 2.f),
+		v2f32(+content.x / 2.f + borders.x / 2.f, +content.y / 2.f),
 		v2f32(-content.x / 2.f - borders.x / 2.f, -content.y / 2.f),
 		v2f32(-content.x / 2.f									, -content.y / 2.f),
-		v2f32(content.x / 2.f									, -content.y / 2.f),
-		v2f32(content.x / 2.f + borders.x / 2.f, -content.y / 2.f),
+		v2f32(+content.x / 2.f									, -content.y / 2.f),
+		v2f32(+content.x / 2.f + borders.x / 2.f, -content.y / 2.f),
 		v2f32(-content.x / 2.f - borders.x / 2.f, -content.y / 2.f - borders.y / 2.f),
 		v2f32(-content.x / 2.f									, -content.y / 2.f - borders.y / 2.f),
-		v2f32(content.x / 2.f									, -content.y / 2.f - borders.y / 2.f),
-		v2f32(content.x / 2.f + borders.x / 2.f, -content.y / 2.f - borders.y / 2.f)
+		v2f32(+content.x / 2.f									, -content.y / 2.f - borders.y / 2.f),
+		v2f32(+content.x / 2.f + borders.x / 2.f, -content.y / 2.f - borders.y / 2.f)
 	};
 }
 
@@ -141,42 +158,9 @@ auto create_rect_9slice(v2f32 content, v2f32 borders) {
 	);
 }
 
-template<typename Vertex = DefaultVertex2D, typename Index = glm::u32>
-RenderMesh upload_mesh(Array<const VertexAttributeSpecs> vertex_attributes, Array<Vertex> vertices, Array<Index> indices, GLuint draw_mode = GL_TRIANGLES) {
-	auto vbo = create_buffer_array(vertices);
-	auto ibo = indices.size() != 0 ? create_buffer_array(indices) : 0;
-	// auto vao = recordVAO<Vertex>(vbo, ibo);
-	auto vao = record_VAO(vertex_attributes, vbo, ibo);
-	return {
-		vbo, ibo, vao,
-		(u32)indices.size(),
-		gl_type_table<Index>.upload_type,
-		draw_mode
-	};
-}
-
-template<typename Vertex = DefaultVertex2D, typename Index = glm::u32>
-RenderMesh map_mesh(Array<const VertexAttributeSpecs> vertex_attributes, u32 vertex_count, u32 index_count, GLuint draw_mode = GL_TRIANGLES) {
-	auto vbo = map_buffer<Vertex>(vertex_count);
-	auto ibo = map_buffer<Index>(index_count);
-	auto vao = record_VAO(vertex_attributes, vbo.id, ibo.id);
-	return {
-		vbo.id, ibo.id, vao.id,
-		index_count,
-		gl_type_table<Index>.type,
-		draw_mode
-	};
-}
-
-void delete_mesh(RenderMesh& mesh) {
-	GL_GUARD(glDeleteVertexArrays(1, &mesh.vao));
-	GLuint buffers[] = { mesh.vbo, mesh.ibo };
-	GL_GUARD(glDeleteBuffers(2, buffers));
-}
-
 RenderMesh create_rect_mesh(v2f32 dimensions) {
 	auto [vertices, indices] = create_rect(dimensions);
-	return upload_mesh(vertexAttributesOf<DefaultVertex2D>, Array<DefaultVertex2D>(vertices.data(), vertices.size()), indices);
+	return RenderMesh::upload(Array<const DefaultVertex2D>(vertices.data(), vertices.size()), indices);
 }
 
 RenderMesh create_rect_mesh(v2u32 source_dimensions, f32 ppu) {

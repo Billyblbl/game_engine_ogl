@@ -1,6 +1,8 @@
 #ifndef GTMX_MODULE
 # define GTMX_MODULE
 
+#include <stdlib.h>
+
 #include <tmx_utils.h>
 #include <tmx.h>
 

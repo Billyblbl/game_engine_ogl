@@ -16,7 +16,6 @@ namespace Time {
 		f32 start = xf32::max();
 		bool enable(f32 t) { return over(start = t); }
 		bool over(f32 t) { return start + duration < t; }
-		bool advance(f32 t) {  }
 	};
 
 	struct Clock {
@@ -36,7 +35,7 @@ namespace Time {
 
 	inline Clock start() {
 		Clock clock;
-		clock.start = clock.this_frame = steady_clock::now();
+		clock.start = (clock.this_frame = steady_clock::now());
 		clock.current = 0;
 		clock.dt = 0;
 		return clock;

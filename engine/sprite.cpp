@@ -46,10 +46,14 @@ struct SpriteRenderer {
 		v4f32 dimensions; //x, y -> rect dims, z -> rect depths, w -> padding
 	};
 
-	Pipeline pipeline;
-	MappedBuffer<Instance> instances_buffer;
-	MappedObject<Scene> scene;
+	GLuint pipeline;
 	RenderMesh rect;
+
+	struct {
+		ShaderInput atlas;
+		ShaderInput scene;
+		ShaderInput instances;
+	} inputs;
 
 	static Instance make_instance(const Sprite& sprite, const m4x4f32& matrix) {
 		Instance instance;
@@ -64,34 +68,30 @@ struct SpriteRenderer {
 		const m4x4f32& vp,
 		const TexBuffer& textures
 		) {
-		//! will silently fail to render the latter part of the sprites array if > instance_buffer size
-		u32 content_size = min(sprites.size(), instances_buffer.content.size());
-		memcpy(instances_buffer.content.data(), sprites.data(), content_size * sizeof(Instance));
-		sync(instances_buffer);
-		sync(scene, { vp, textures.dimensions, 0.01f });
-		pipeline(rect, content_size,
-			{
-				bind_to(textures, 0),
-				bind_to(instances_buffer, 0),
-				bind_to(scene, 0),
-			}
-		);
+		GL_GUARD(glUseProgram(pipeline)); defer{ GL_GUARD(glUseProgram(0)); };
+		GL_GUARD(glBindVertexArray(rect.vao.id)); defer{ GL_GUARD(glBindVertexArray(0)); };
+		inputs.atlas.bind_texture(textures.id); defer{ inputs.atlas.unbind(); };
+		inputs.instances.bind_content(sprites); defer{ inputs.instances.unbind(); };
+		inputs.scene.bind_object(Scene{ vp, textures.dimensions, 0.01f }); defer{ inputs.scene.unbind(); };
+		GL_GUARD(glDrawElementsInstanced(rect.vao.draw_mode, rect.vao.element_count, rect.vao.index_type, null, sprites.size()));
 	}
 
 	static SpriteRenderer load(const cstr pipeline_path = "./shaders/sprite.glsl", GLsizeiptr max_draw_batch = 256, const RenderMesh* mesh = null) {
 		SpriteRenderer rd;
 		rd.pipeline = load_pipeline(pipeline_path);
-		rd.instances_buffer = map_buffer<Instance>(max_draw_batch);
-		rd.scene = map_object<SpriteRenderer::Scene>({});
 		rd.rect = mesh ? *mesh : create_rect_mesh(v2f32(1));
+		rd.inputs.atlas = ShaderInput::create_slot(rd.pipeline, ShaderInput::Texture, "atlas");
+		rd.inputs.instances = ShaderInput::create_slot(rd.pipeline, ShaderInput::SSBO, "Entities", sizeof(Instance) * max_draw_batch);
+		rd.inputs.scene = ShaderInput::create_slot(rd.pipeline, ShaderInput::UBO, "Scene", sizeof(Scene));
 		return rd;
 	}
 
 	void release() {
+		inputs.instances.release();
+		inputs.scene.release();
+		inputs.atlas.release();
+		rect.release();
 		destroy_pipeline(pipeline);
-		unmap(instances_buffer);
-		unmap(scene);
-		delete_mesh(rect);
 	}
 };
 

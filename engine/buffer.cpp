@@ -21,6 +21,12 @@ struct GPUBuffer {
 
 	void release() { GL_GUARD(glDeleteBuffers(1, &id)); }
 
+	GPUBuffer& resize(u64 new_size) {
+		GL_GUARD(glNamedBufferStorage(id, new_size, null, flags));
+		size = new_size;
+		return *this;
+	}
+
 	num_range<u64> write(Buffer buff, u64 offset = 0) {
 		GL_GUARD(glNamedBufferSubData(id, offset, buff.size_bytes(), buff.data()));
 		return { offset, offset + buff.size_bytes() };
@@ -41,7 +47,7 @@ struct GPUBuffer {
 		return r;
 	}
 
-	void flush(num_range<u64> range = {}) {
+	void flush(num_range<u64> range = {}) const {
 		if (range.size() == 0)
 			range = { 0, u64(size) };
 		GL_GUARD(glFlushMappedNamedBufferRange(id, range.min, range.size()));

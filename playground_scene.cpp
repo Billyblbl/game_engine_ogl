@@ -26,6 +26,9 @@
 
 #include <tilemap.cpp>
 
+//test 
+#include <text.cpp>
+
 #define MAX_SPRITES MAX_ENTITIES
 
 const struct {
@@ -187,6 +190,10 @@ struct PlaygroundScene {
 	EntityHandle cam;
 	EntityHandle level_entity;
 
+	//test
+	TextRenderer draw_texts;
+	Font font;
+
 	Entity& create_test_body(string name, v2f32 position) {
 		auto& ent = allocate_entity(entities, name, Entity::Draw | Entity::Collider | Entity::Physical);
 		ent.space = { identity_2d, null_transform_2d, null_transform_2d };
@@ -207,6 +214,11 @@ struct PlaygroundScene {
 
 	void release() {
 		PROFILE_SCOPE(__PRETTY_FUNCTION__);
+
+		//test
+		font.release();
+		draw_texts.release();
+
 		level.release();
 		gfx.sprite_atlas.release();
 		resources_arena.vmem_release();
@@ -333,6 +345,11 @@ struct PlaygroundScene {
 			fflush(stdout);
 		}
 
+		//test
+		draw_texts = TextRenderer::load("./shaders/text.glsl");
+		font = Font::load(resources_arena, draw_texts.lib, "test_font.ttf");
+		// font = Font::load(resources_arena, draw_texts.lib, "Arial.ttf", 0, v2u32(32));
+
 		{
 			PROFILE_SCOPE("Waiting for GPU init work");
 			wait_gpu();
@@ -376,6 +393,18 @@ struct PlaygroundScene {
 					mat, gfx.sprite_atlas.texture
 				);
 				gfx.draw_sprites(gather<SpriteRenderer::Instance>(scratch, entities.used()), mat, gfx.sprite_atlas.texture);
+				//test
+				{
+					Text text;
+					text.str = "Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat. Duis aute irure dolor in reprehenderit in voluptate velit esse cillum dolore eu fugiat nulla pariatur. Excepteur sint occaecat cupidatat non proident, sunt in culpa qui officia deserunt mollit anim id est laborum.";
+					text.rect = rtu32{ v2u32(0), v2u32(1500, 1000) };
+					text.color = v4f32(1);
+					text.font = &font;
+					text.scale = 1.f;
+					text.linespace = 1.f;
+					text.orient = Text::H;
+					draw_texts(carray(&text, 1));
+				}
 			}
 		);
 
@@ -430,6 +459,7 @@ struct PlaygroundScene {
 				ImGui::Text("Update index : %llu", update_count);
 				EditorWidget("Clock", clock);
 				EditorWidget("Animations", animations);
+				EditorWidget("Font", font);
 			} end_editor();
 		}
 	}

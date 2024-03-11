@@ -49,8 +49,6 @@ struct VertexArray {
 		GL_GUARD(glBindVertexArray(0));
 		GL_GUARD(glBindBuffer(GL_ARRAY_BUFFER, 0));
 		GL_GUARD(glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, 0));
-		for (GLuint i : u64xrange{ 0, layout.size() })
-			GL_GUARD(glDisableVertexArrayAttrib(id, i));
 		element_count = count;
 	}
 

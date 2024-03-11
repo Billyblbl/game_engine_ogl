@@ -40,12 +40,12 @@ struct Atlas2D {
 		next_line = 0;
 	}
 
-	static Atlas2D create(v2u32 dimensions, GPUFormat format = RGBA32F) {
+	static Atlas2D create(v2u32 dimensions, GPUFormat format = RGBA32F, SamplingConfig default_sampling = { Nearest, Nearest }) {
 		Atlas2D atlas;
 		atlas.texture = create_texture(TX2D, v4u32(dimensions, 1, 1), format);
 		atlas.current = v2u32(0);
 		atlas.next_line = 0;
-		atlas.texture.conf_sampling({ Nearest, Nearest });
+		atlas.texture.conf_sampling(default_sampling);
 		return atlas;
 	}
 
@@ -56,5 +56,15 @@ struct Atlas2D {
 
 };
 
+bool EditorWidget(const cstr label, Atlas2D& atlas) {
+	auto changed = false;
+	if (ImGui::TreeNode(label)) {
+		defer{ ImGui::TreePop(); };
+		changed |= EditorWidget("texture", atlas.texture);
+		changed |= EditorWidget("current", atlas.current);
+		changed |= EditorWidget("next_line", atlas.next_line);
+	}
+	return changed;
+}
 
 #endif

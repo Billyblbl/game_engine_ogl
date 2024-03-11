@@ -14,7 +14,7 @@ CXX=$(GXX_PATH)
 CC=$(GCC_PATH)
 
 CFLAGS += -g3
-CFLAGS += -O2
+# CFLAGS += -O2
 CFLAGS += -std=c++23
 CFLAGS += -fno-exceptions
 # CFLAGS += -finstrument-functions

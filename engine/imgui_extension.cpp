@@ -129,6 +129,11 @@ namespace ImGui {
 	}
 }
 
+bool EditorWidget(const cstr label, auto& unimplemented, bool foldable = false) {
+	ImGui::Text("%s : Unimplemented Widget for type %s", label, typeid(decltype(unimplemented)).name());
+	return false;
+}
+
 bool EditorWidget(const cstr label, f32& data) {
 	return ImGui::DragFloat(label, &data, .01f, .0f, .0f, "%.4f");
 }
@@ -195,14 +200,14 @@ bool EditorWidget(const cstr label, bool& data) {
 	return ImGui::Checkbox(label, &data);
 }
 
-template<typename T> bool EditorWidget(const cstr label, reg_polytope<T>& data, bool embed = true) {
+template<typename T> bool EditorWidget(const cstr label, reg_polytope<T>& data, bool foldable = true) {
 	bool changed = false;
-	if (embed)
+	if (!foldable)
 		ImGui::Text(label);
-	if (embed || ImGui::TreeNode(label)) {
+	if (!foldable || ImGui::TreeNode(label)) {
 		changed |= EditorWidget("Min corner", data.min);
 		changed |= EditorWidget("Max corner", data.max);
-		if (!embed)
+		if (foldable)
 			ImGui::TreePop();
 	}
 	return changed;
@@ -259,11 +264,6 @@ template<typename T> bool EditorWidget(const cstr label, T* data) {
 		change |= EditorWidget("value", *data);
 	}
 	return change;
-}
-
-bool EditorWidget(const cstrp label, auto& unimplemented) {
-	ImGui::Text("Unimplemented Widget for type %s", typeid(decltype(unimplemented)).name());
-	return false;
 }
 
 #endif

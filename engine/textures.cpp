@@ -171,6 +171,18 @@ TexBuffer& unload(TexBuffer& texture) {
 }
 
 bool upload_texture_data(TexBuffer& texture, Array<byte> source, SrcFormat format, Area<3> box) {
+	auto pixel_size = format.channel_count * format.channel_size;
+	if (pixel_size % 2 == 1) {//odd size
+		GL_GUARD(glPixelStorei(GL_PACK_ALIGNMENT, 1));
+		GL_GUARD(glPixelStorei(GL_UNPACK_ALIGNMENT, 1));
+	} else if ((pixel_size / 2) % 2 == 1) {//even * odd size
+		GL_GUARD(glPixelStorei(GL_PACK_ALIGNMENT, 2));
+		GL_GUARD(glPixelStorei(GL_UNPACK_ALIGNMENT, 2));
+	} else {//even * even size (clamped to 8)
+		GL_GUARD(glPixelStorei(GL_PACK_ALIGNMENT, min(pixel_size, 8)));
+		GL_GUARD(glPixelStorei(GL_UNPACK_ALIGNMENT, min(pixel_size, 8)));
+	}
+
 	switch (texture.type) {
 	case TX1D:		GL_GUARD(glTextureSubImage1D(texture.id, 0, box.min.x, width(box), format.channels, format.type, source.data())); break;
 	case TX2D:
@@ -216,12 +228,13 @@ ImVec2 fit_to_area(ImVec2 area, v2f32 dimensions) {
 
 bool EditorWidget(const cstr label, TexBuffer& buffer) {
 	if (ImGui::TreeNode(label)) {
-		defer { ImGui::TreePop(); };
+		defer{ ImGui::TreePop(); };
 		ImGui::Text("id : %u", buffer.id);
 		//TODO edit
 		ImGui::Text("Dimensions : ( %u, %u, %u, %u )", buffer.dimensions.x, buffer.dimensions.y, buffer.dimensions.z, buffer.dimensions.w);
 		ImGui::Text("Type : %s", GLtoString(buffer.type).data());
 		ImGui::Text("Format : %s", GLtoString(buffer.format).data());
+		ImGui::Text("Preview :");
 		//TODO content preview
 		if (buffer.type == TX2D)
 			ImGui::Image((ImTextureID)(u64)buffer.id, fit_to_area(ImGui::GetContentRegionAvail(), buffer.dimensions), ImVec2(0, 1), ImVec2(1, 0));

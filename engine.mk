@@ -6,6 +6,9 @@
 ## OPENAL
 ## GLFW
 ## GLEW
+## DLFCN
+## FREETYPE
+## XML2
 ## BLBLSTD
 ##
 
@@ -36,6 +39,7 @@ BLBLGAME_SRC += engine/system_editor.cpp
 BLBLGAME_SRC += engine/polygon.cpp
 BLBLGAME_SRC += engine/tilemap.cpp
 BLBLGAME_SRC += engine/atlas.cpp
+BLBLGAME_SRC += engine/text.cpp
 
 INC += $(PWD)/engine
 INC += $(IMGUI)
@@ -46,6 +50,7 @@ INC += $(IMGUI)/backends
 INC += $(GLFW)/include
 INC += $(GLEW)/include
 INC += $(DLFCN)/include
+INC += $(FREETYPE)/include/freetype2
 INC += $(XML2)/include/libxml2
 INC += $(BLBLSTD)/src
 
@@ -53,7 +58,7 @@ LIB += $(GLFW)/lib
 LIB += $(GLEW)/lib
 LIB += $(XML2)/lib
 LIB += $(DLFCN)/lib
-
+LIB += $(FREETYPE)/lib
 
 LDFLAGS += -lglfw3
 LDFLAGS += -lglew32
@@ -61,3 +66,4 @@ LDFLAGS += -lopengl32
 LDFLAGS += -lopenal
 LDFLAGS += -lxml2
 LDFLAGS += -ldl
+LDFLAGS += -lfreetype

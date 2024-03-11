@@ -96,10 +96,20 @@ struct ShaderInput {
 		slot.name = name;
 		slot.type = type;
 		switch (type) {
-		case Texture: { slot.id = GL_GUARD(glGetProgramResourceLocation(pipeline, type, name)); } break;
+		case Texture: {
+			auto loc = GL_GUARD(glGetUniformLocation(pipeline, name));
+			GLuint unit = 0;
+			GL_GUARD(glGetnUniformuiv(pipeline, loc, sizeof(GLuint), &unit));
+			slot.id = unit;
+		} break;
 		case UBO: case SSBO: {
-			slot.id = GL_GUARD(glGetProgramResourceIndex(pipeline, type, name));
-			slot.backing_buffer = GPUBuffer::create(backing_size, GL_MAP_WRITE_BIT | GL_MAP_PERSISTENT_BIT | GL_DYNAMIC_STORAGE_BIT);
+			auto index = GL_GUARD(glGetProgramResourceIndex(pipeline, type, name));
+			constexpr GLenum prop[] = { GL_BUFFER_BINDING, GL_BUFFER_DATA_SIZE };
+			constexpr auto prop_count = array_size(prop);
+			GLint value[prop_count];
+			GL_GUARD(glGetProgramResourceiv(pipeline, type, index, prop_count, prop, prop_count, NULL, value));
+			slot.id = value[0];
+			slot.backing_buffer = GPUBuffer::create(max(value[1], backing_size), GL_MAP_WRITE_BIT | GL_MAP_PERSISTENT_BIT | GL_DYNAMIC_STORAGE_BIT);
 			break;
 		}
 		}
@@ -113,8 +123,14 @@ struct ShaderInput {
 		}
 	}
 
-	void bind_texture(GLuint id) { texture = id; bind(); }
-	template<typename T> num_range<u64> bind_content(Array<T> content, u64 offset = 0) { return bind(backing_buffer.write(cast<byte>(content), offset)); }
+	void bind_texture(GLuint tid) { texture = tid; bind(); }
+	template<typename T> num_range<u64> bind_content(Array<T> content, u64 offset = 0) {
+		if (content.size() == 0)
+			return {};
+		if (backing_buffer.size < content.size_bytes() + offset)//TODO old content conservation
+			backing_buffer.resize(content.size_bytes() + offset);
+		return bind(backing_buffer.write(cast<byte>(content), offset));
+	}
 	template<typename T> num_range<u64> bind_object(const T& content, u64 offset = 0) { return bind_content(carray(&content, 1), offset); }
 };
 
@@ -122,6 +138,13 @@ struct ShaderInput {
 //* https://www.khronos.org/opengl/wiki/Vertex_Rendering#Multi-Draw
 // TODO glMultiDrawElementsIndirect
 //*
+
+GLuint get_texture_unit_target(GLuint program, const char* name) {
+	auto loc = GL_GUARD(glGetUniformLocation(program, name));
+	GLuint unit;
+	GL_GUARD(glGetnUniformuiv(program, loc, sizeof(GLuint), &unit));
+	return unit;
+}
 
 GLuint create_render_pipeline(GLuint vertex_shader, GLuint fragment_shader) {
 	if (vertex_shader == 0 || fragment_shader == 0) {
@@ -146,20 +169,45 @@ GLuint create_render_pipeline(GLuint vertex_shader, GLuint fragment_shader) {
 		fprintf(stderr, "Failed to build render pipeline %u, pipeline program log : %s\n", program, log);
 		return { 0 };
 	} else {
-		//* Debug stuff
-		// printf("Pipeline input description:\n");
-		// GLint uniform_count = 0;
-		// GL_GUARD(glGetProgramInterfaceiv(program, GL_UNIFORM, GL_ACTIVE_RESOURCES, &uniform_count));
-		// const GLenum properties[4] = { GL_BLOCK_INDEX, GL_TYPE, GL_NAME_LENGTH, GL_LOCATION };
-		// for (auto unif : u32xrange{ 0, uniform_count }) {
-		// 	GLint values[4];
-		// 	GL_GUARD(glGetProgramResourceiv(program, GL_UNIFORM, unif, 4, properties, 4, NULL, values));
-		// 	char name[values[2]];
-		// 	GL_GUARD(glGetProgramResourceName(program, GL_UNIFORM, unif, values[2], NULL, name));
-		// 	printf("%s [%i] : %i -> %s, loc %i\n", name, values[0], values[1], GLtoString(values[1]).data(), values[3]);
-		// }
 		return { program };
 	}
+}
+
+void describe(GLuint program) {
+	struct {
+		GLenum id;
+		string name;
+		u32 prop_count;
+		GLenum properties[10];
+		string property_names[10];
+	} interfaces[] = {
+		{GL_UNIFORM, "GL_UNIFORM", 6, { GL_TYPE, GL_ARRAY_SIZE, GL_OFFSET, GL_BLOCK_INDEX, GL_ARRAY_STRIDE, GL_LOCATION }, { "GL_TYPE", "GL_ARRAY_SIZE", "GL_OFFSET", "GL_BLOCK_INDEX", "GL_ARRAY_STRIDE", "GL_LOCATION" }},
+		{GL_UNIFORM_BLOCK, "GL_UNIFORM_BLOCK", 4, { GL_BUFFER_BINDING, GL_BUFFER_DATA_SIZE, GL_NUM_ACTIVE_VARIABLES, GL_ACTIVE_VARIABLES }, { "GL_BUFFER_BINDING", "GL_BUFFER_DATA_SIZE", "GL_NUM_ACTIVE_VARIABLES", "GL_ACTIVE_VARIABLES" }},
+		{GL_PROGRAM_INPUT, "GL_PROGRAM_INPUT", 5, { GL_TYPE, GL_ARRAY_SIZE, GL_LOCATION, GL_IS_PER_PATCH, GL_LOCATION_COMPONENT }, { "GL_TYPE", "GL_ARRAY_SIZE", "GL_LOCATION", "GL_IS_PER_PATCH", "GL_LOCATION_COMPONENT" }},
+		{GL_PROGRAM_OUTPUT, "GL_PROGRAM_OUTPUT", 5, { GL_TYPE, GL_ARRAY_SIZE, GL_LOCATION, GL_IS_PER_PATCH, GL_LOCATION_COMPONENT }, { "GL_TYPE", "GL_ARRAY_SIZE", "GL_LOCATION", "GL_IS_PER_PATCH", "GL_LOCATION_COMPONENT" }},
+		{GL_BUFFER_VARIABLE, "GL_BUFFER_VARIABLE", 7, { GL_TYPE, GL_ARRAY_SIZE, GL_OFFSET, GL_BLOCK_INDEX, GL_ARRAY_STRIDE, GL_TOP_LEVEL_ARRAY_SIZE, GL_TOP_LEVEL_ARRAY_STRIDE }, { "GL_TYPE", "GL_ARRAY_SIZE", "GL_OFFSET", "GL_BLOCK_INDEX", "GL_ARRAY_STRIDE", "GL_TOP_LEVEL_ARRAY_SIZE", "GL_TOP_LEVEL_ARRAY_STRIDE" }},
+		{GL_SHADER_STORAGE_BLOCK, "GL_SHADER_STORAGE_BLOCK", 4, {GL_BUFFER_BINDING, GL_BUFFER_DATA_SIZE, GL_NUM_ACTIVE_VARIABLES, GL_ACTIVE_VARIABLES }, {"GL_BUFFER_BINDING", "GL_BUFFER_DATA_SIZE", "GL_NUM_ACTIVE_VARIABLES", "GL_ACTIVE_VARIABLES" }},
+	};
+
+	printf("Program %u :\n", program);
+	for (auto& interface : interfaces) {
+		printf("-- interface %s :\n", interface.name.data());
+		GLint ressource_count = 0;
+		GLint name_buffer_size = 0;
+		GL_GUARD(glGetProgramInterfaceiv(program, interface.id, GL_ACTIVE_RESOURCES, &ressource_count));
+		GL_GUARD(glGetProgramInterfaceiv(program, interface.id, GL_MAX_NAME_LENGTH, &name_buffer_size));
+		GLint values[interface.prop_count];
+		GLchar name[name_buffer_size];
+		for (auto resource : u32xrange{ 0, ressource_count }) {
+			GL_GUARD(glGetProgramResourceName(program, interface.id, resource, name_buffer_size, NULL, name));
+			GL_GUARD(glGetProgramResourceiv(program, interface.id, resource, interface.prop_count, interface.properties, interface.prop_count, NULL, values));
+			printf("Ressource %s : {\n", name);
+			for (auto prop : u32xrange{ 0, interface.prop_count })
+				printf("\t%s : %i\n", interface.property_names[prop].data(), values[prop]);
+			printf("}\n");
+		}
+	}
+	fflush(stdout);
 }
 
 GLuint load_pipeline(const char* path) {
@@ -182,7 +230,6 @@ GLuint load_pipeline(const char* path) {
 		fprintf(stderr, "failed to open file %s\n", path);
 		return { 0 };
 	}
-
 }
 
 void destroy_pipeline(GLuint& pipeline) {

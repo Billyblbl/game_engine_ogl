@@ -36,11 +36,17 @@ struct Image {
 };
 
 template<typename T> inline Image make_image(Array<T> source, v2u32 dimensions, u32 channels) {
-	return { Formats<T>[channels], dimensions, cast<byte>(source), channels * sizeof(T) };
+	Image i;
+	assert(source.size_bytes() >= dimensions.x * dimensions.y * channels * sizeof(T));
+	i.format = Formats<T>[channels];
+	i.dimensions = dimensions;
+	i.data = cast<byte>(source);
+	i.pixel_size = channels * sizeof(T);
+	return i;
 }
 
 template<typename T, i32 D> inline Image make_image(Array<const glm::vec<D, T>> source, v2u32 dimensions) {
-	return { Formats<T>[D], dimensions, cast<byte>(source), D * sizeof(T) };
+	return make_image<T>(cast<T>(source), dimensions, D);
 }
 
 Image load_image(const cstr path) {

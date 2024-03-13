@@ -33,7 +33,7 @@ struct Glyph {
 	} orient[2];
 	u32 atlas_view_index;
 
-	rtf32 bbox(Text::Orientation ori = Text::H) {
+	rtf32 bbox(Text::Orientation ori = Text::H) const {
 		rtf32 rt;
 		rt.min.x = orient[ori].bearing.x;
 		rt.min.y = orient[ori].bearing.y - size.y;
@@ -233,54 +233,101 @@ struct TextRenderer {
 	void operator()(Array<Text> texts, v2f32 canvas = v2f32(1920, 1080)) {
 		if (texts.size() == 0)
 			return;
+
 		Font* font = null;
 		for (i32 batch = 0; batch >= 0; batch = linear_search(texts.subspan(batch), [=](Text& t) { return t.font != font; })) {
 			font = texts[batch].font;
-
-			auto [scratch, scope] = scratch_push_scope(inputs.texts.backing_buffer.size + inputs.characters.backing_buffer.size); defer{ scratch_pop_scope(scratch, scope); };
-
-			List<TextInstance> text_instances = { cast<TextInstance>(scratch.push(inputs.texts.backing_buffer.size)), 0 };
+			auto [scratch, scope] = scratch_push_scope(texts.size_bytes() + inputs.characters.backing_buffer.size); defer{ scratch_pop_scope(scratch, scope); };
+			List<TextInstance> text_instances = { cast<TextInstance>(scratch.push(texts.size() * sizeof(TextInstance))), 0 };
 			List<Instance> instances = { cast<Instance>(scratch.push(inputs.characters.backing_buffer.size)), 0 };
+
+			for (auto& text : texts.subspan(batch)) if (text.font == font) {
+				auto cursor = v2f32(0);
+				cursor[!text.orient] = dim_vec(text.rect)[!text.orient] - text.scale * text.linespace * font->linespace; //* starting point
+
+				auto advance = (
+					[&](v2f32 c, const Glyph& g) -> v2f32 {
+						c[text.orient] += g.orient[text.orient].advance * text.scale;
+						return c;
+					}
+				);
+
+				auto next_line = (
+					[&](v2f32 c) -> v2f32 {
+						c[text.orient] = 0;
+						c[!text.orient] -= text.scale * text.linespace * font->linespace;
+						return c;
+					}
+				);
+
+				auto new_word = (
+					[&](v2f32 c, u32 i) -> v2f32 {
+						auto end_of_word = text.str.find_first_of("- \n\r\t\v\f\0", i);
+						auto word = text.str.substr(i, end_of_word - i);
+						auto acc_advance = [&](v2f32 a, char b) -> v2f32 { a[text.orient] += (*text.font)[b].orient[text.orient].advance * text.scale; return a; };
+						auto word_advance = fold(v2f32(0.f), Array<const char>(word), acc_advance);
+						if (!text.rect.contain(c + word_advance))
+							c = next_line(c);
+						return c;
+					}
+				);
+
+				auto make_character_instance = (
+					[&](v2f32& c, const Glyph& g, u32 text_index) -> Instance {
+						auto bbox = g.bbox(text.orient);
+						bbox.min *= text.scale;
+						bbox.max *= text.scale;
+						Instance instance = {};
+						instance.glyph = g.atlas_view_index;
+						instance.text = text_index;
+						instance.rect = { c + bbox.min, c + bbox.max };
+						return instance;
+					}
+				);
+
+				auto make_text_instance = (
+					[&](Text& t, u32 index) -> TextInstance {
+						TextInstance tinstance;
+						tinstance.color = t.color;
+						tinstance.transform = glm::translate(v3f32(t.rect.min, f32(text_instances.current)));
+						for (auto i : u64xrange{ 0, t.str.size() }) {
+							auto& glyph = (*t.font)[t.str[i]];
+							switch (t.str[i]) {
+							case ' ': {
+								cursor = advance(cursor, glyph);
+								if (!t.rect.contain(cursor))
+									cursor = next_line(cursor);
+								cursor = new_word(cursor, i + 1);
+							} break;
+							case '\n': { cursor = next_line(cursor); } break;
+							case '\r': { cursor = new_word(cursor, i + 1); } break;
+							case '\t': { cursor = new_word(cursor, i + 1); } break;//TODO implement
+							case '\v': { cursor = new_word(cursor, i + 1); } break;//TODO implement
+							case '\f': { cursor = new_word(cursor, i + 1); } break;//TODO implement
+							default: { //* Printable characters
+								auto instance = make_character_instance(cursor, glyph, index);
+								cursor = advance(cursor, glyph);
+								if (!t.rect.contain(cursor)) {
+									cursor = next_line(cursor);
+									instance = make_character_instance(cursor, glyph, index);
+									cursor = advance(cursor, glyph);
+									if (!t.rect.contain(cursor))
+										return tinstance; //* early return if text does not fit
+								}
+								instances.push(instance);
+							} break;
+							}
+						}
+						return tinstance;
+					}
+				);
+
+				text_instances.push(make_text_instance(text, text_instances.current));
+			}
 
 			OrthoCamera camera = {};
 			camera.dimensions = v3f32(canvas, texts.size());
 			camera.center = v3f32(-canvas, texts.size()) / 2.f;
-
-			for (auto& text : texts.subspan(batch)) if (text.font == font) {
-				TextInstance tinstance;
-				tinstance.color = text.color;
-				tinstance.transform = glm::translate(v3f32(text.rect.min, f32(text_instances.current)));
-				text_instances.push(tinstance);
-
-				//TODO better text layout algo
-				//TODO test
-				auto cursor = v2f32(0);
-				cursor[!text.orient] = dim_vec(text.rect)[!text.orient] - text.scale * text.linespace * font->linespace;
-				for (auto ch : text.str) {
-					auto& glyph = (*text.font)[ch];
-					auto bbox = glyph.bbox(text.orient);
-					bbox.min *= text.scale;
-					bbox.max *= text.scale;
-
-					Instance instance = {};
-					instance.glyph = glyph.atlas_view_index;
-					instance.text = text_instances.current - 1;
-					instance.rect = { cursor + bbox.min, cursor + bbox.max };
-
-					cursor[text.orient] += glyph.orient[text.orient].advance * text.scale * text.linespace;
-
-					if (!text.rect.contain(cursor)) {
-						cursor[text.orient] = 0;
-						cursor[!text.orient] -= text.scale * text.linespace * font->linespace;
-						instance.rect = { cursor + bbox.min, cursor + bbox.max };
-						cursor[text.orient] += glyph.orient[text.orient].advance * text.scale * text.linespace;
-						if (!text.rect.contain(cursor))
-							break;
-					}
-
-					instances.push(instance);
-				}
-			}
 
 			GL_GUARD(glUseProgram(pipeline)); defer{ GL_GUARD(glUseProgram(0)); };
 			GL_GUARD(glBindVertexArray(rect.vao.id)); defer{ GL_GUARD(glBindVertexArray(0)); };

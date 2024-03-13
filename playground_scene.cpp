@@ -192,7 +192,9 @@ struct PlaygroundScene {
 
 	//test
 	TextRenderer draw_texts;
+	f32 test_text_scale;
 	Font font;
+
 
 	Entity& create_test_body(string name, v2f32 position) {
 		auto& ent = allocate_entity(entities, name, Entity::Draw | Entity::Collider | Entity::Physical);
@@ -347,8 +349,8 @@ struct PlaygroundScene {
 
 		//test
 		draw_texts = TextRenderer::load("./shaders/text.glsl");
-		font = Font::load(resources_arena, draw_texts.lib, "test_font.ttf");
-		// font = Font::load(resources_arena, draw_texts.lib, "Arial.ttf", 0, v2u32(32));
+		// font = Font::load(resources_arena, draw_texts.lib, "test_font.ttf");
+		font = Font::load(resources_arena, draw_texts.lib, "Arial.ttf", 0, v2u32(32));
 
 		{
 			PROFILE_SCOPE("Waiting for GPU init work");
@@ -400,7 +402,7 @@ struct PlaygroundScene {
 					text.rect = rtu32{ v2u32(0), v2u32(1500, 1000) };
 					text.color = v4f32(1);
 					text.font = &font;
-					text.scale = 1.f;
+					text.scale = test_text_scale;
 					text.linespace = 1.f;
 					text.orient = Text::H;
 					draw_texts(carray(&text, 1));
@@ -460,6 +462,7 @@ struct PlaygroundScene {
 				EditorWidget("Clock", clock);
 				EditorWidget("Animations", animations);
 				EditorWidget("Font", font);
+				EditorWidget("test text scale", test_text_scale);
 			} end_editor();
 		}
 	}

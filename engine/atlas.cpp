@@ -15,19 +15,20 @@ struct Atlas2D {
 	v2u32 current = v2u32(0);
 	u32 next_line = 0;
 
-	rtu32 push(Image img) {
+	rtu32 push(Image img, v2u32 margins = v2u32(0)) {
 		auto available = rtu32{ current, texture.dimensions };
-		auto rect = rtu32{ current, current + v2u32(img.dimensions) };
+		auto rect = rtu32{ current, current + v2u32(img.dimensions) + 2u * margins };
 		if (!contains(available, rect)) {
 			current = v2u32(0, next_line);
 			available = rtu32{ current, texture.dimensions };
 			rect = rtu32{ current, current + v2u32(img.dimensions) };
 			assert(contains(available, rect));
 		}
-		upload_texture_data(texture, img.data, img.format, slice_to_area<2>(rect, 0));
+		auto inner = rtu32{ rect.min + margins, rect.max - margins };
+		upload_texture_data(texture, img.data, img.format, slice_to_area<2>(inner, 0));
 		next_line = max(next_line, current.y + height(rect));
 		current.x += width(rect);
-		return rect;
+		return inner;
 	}
 
 	rtu32 load(const cstr path) {

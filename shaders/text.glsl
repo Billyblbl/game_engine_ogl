@@ -26,7 +26,7 @@ layout(location = 0) smooth pass vec2 uv;
 layout(location = 1) flat pass uvec4 view;
 layout(location = 2) flat pass uint text;
 
-layout(binding = 0) uniform usampler2D font;
+layout(binding = 0) uniform sampler2D font;
 layout(std430, binding = 0) buffer Characters { Character instances[]; };
 layout(std430, binding = 1) buffer Texts { Text texts[]; };
 layout(std430, binding = 2) buffer Glyphs { Glyph glyphs[]; };
@@ -59,7 +59,7 @@ void main() {
 layout(location = 0) out vec4 pixel_color;
 
 void main() {
-	pixel_color = texts[text].color * float(texture(font, atlas_sample(view, uv, vec2(font_atlas_size))).r) / 256.0;
+	pixel_color = texts[text].color * texture(font, atlas_sample(view, uv, vec2(font_atlas_size))).r;
 	if (pixel_color.a < alpha_discard)
 		discard;
 		// pixel_color = vec4(1, 0, 1, 1);

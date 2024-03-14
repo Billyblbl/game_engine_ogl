@@ -45,20 +45,19 @@ struct Glyph {
 
 Image make_bitmap_image(Arena& arena, const FT_Bitmap& bitmap) {
 	//TODO handle other formats
-	if (bitmap.pitch == 0 || bitmap.rows == 0) return make_image<u8>({}, v2u32(0), 1);
+	if (bitmap.pitch == 0 || bitmap.rows == 0) return make_image<f32>({}, v2u32(0), 1);
 	switch (bitmap.pixel_mode) {
 	case FT_PIXEL_MODE_NONE: { panic(); } break;
 	case FT_PIXEL_MODE_MONO: { panic(); } break;
 	case FT_PIXEL_MODE_GRAY: {
 		auto true_pitch = abs(bitmap.pitch);
 		auto bitmap_buffer = cast<u8>(carray(bitmap.buffer, bitmap.rows * true_pitch));
-		auto image = List{ arena.push_array<u8>(bitmap.rows * bitmap.width), 0 };
-		for (auto i : u64xrange{ 0, bitmap.rows }) if (bitmap.pitch < 0) {
-			image.push(bitmap_buffer.subspan(bitmap_buffer.size() - (1 + i) * true_pitch, bitmap.width));
-		} else {
-			image.push(bitmap_buffer.subspan(i * true_pitch, bitmap.width));
-		}
-		return make_image<u8>(image.used(), v2u32(bitmap.width, bitmap.rows), 1);
+		auto image = List{ arena.push_array<f32>(bitmap.rows * bitmap.width), 0 };
+		for (auto i : u64xrange{ 0, bitmap.rows }) if (bitmap.pitch < 0) for (u8 p : bitmap_buffer.subspan(bitmap_buffer.size() - (1 + i) * true_pitch, bitmap.width))
+			image.push(p / 255.0f);
+		else for (u8 p : bitmap_buffer.subspan(i* true_pitch, bitmap.width))
+			image.push(p / 255.0f);
+		return make_image<f32>(image.used(), v2u32(bitmap.width, bitmap.rows), 1);
 	} break;
 	case FT_PIXEL_MODE_GRAY2: { panic(); } break;
 	case FT_PIXEL_MODE_GRAY4: { panic(); } break;
@@ -119,10 +118,10 @@ struct Font {
 		{ //* Allocate ressources
 			f.glyphs = arena.push_array<Glyph>(width(f.glyph_indices), true);
 			f.glyph_views = arena.push_array<rtu32>(width(f.glyph_indices), true);
-			//TODO R32F atlas (requires R8UI to R32F conversion in make_bitmap_image) to allow for linear sampling
-			f.glyph_atlas = Atlas2D::create(atlas_size, R8UI);
+			f.glyph_atlas = Atlas2D::create(atlas_size, R32F);
 			f.glyph_atlas.texture.conf_border_color(v3f32(1.0, 0, 1.0));
 			f.glyph_atlas.texture.conf_wrap({ ClampToBorder, ClampToBorder, ClampToBorder });
+			f.glyph_atlas.texture.conf_sampling({ Linear, Linear });
 		}
 
 		//* load glyphs
@@ -138,9 +137,9 @@ struct Font {
 			glyph.orient[Text::V].advance = f.face->glyph->metrics.vertAdvance / 64.f;
 			glyph.size = v2u32(f.face->glyph->metrics.width / 64.f, f.face->glyph->metrics.height / 64.f);
 			glyph.atlas_view_index = gindex - f.glyph_indices.min.x;
-			byte buffer[f.face->glyph->bitmap.rows * f.face->glyph->bitmap.pitch];
-			auto scratch = Arena::from_buffer(carray(buffer, f.face->glyph->bitmap.rows * f.face->glyph->bitmap.pitch));
-			f.glyph_views[glyph.atlas_view_index] = f.glyph_atlas.push(make_bitmap_image(scratch, f.face->glyph->bitmap));
+			f32 buffer[f.face->glyph->bitmap.rows * f.face->glyph->bitmap.pitch];
+			auto scratch = Arena::from_array(carray(buffer, f.face->glyph->bitmap.rows * f.face->glyph->bitmap.pitch * sizeof(f32)));
+			f.glyph_views[glyph.atlas_view_index] = f.glyph_atlas.push(make_bitmap_image(scratch, f.face->glyph->bitmap), v2u32(1));
 			f.glyphs[glyph.atlas_view_index] = glyph;
 		}
 

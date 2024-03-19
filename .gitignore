@@ -9,7 +9,7 @@
 
 .vscode
 build
-env.sh
+env.mk
 *.spall
 *.cap
 *.url

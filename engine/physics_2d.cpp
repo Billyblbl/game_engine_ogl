@@ -123,6 +123,7 @@ template<support_function F1, support_function F2> v2f32 EPA(const F1& f1, const
 
 	auto best_point_index = 0;
 	for (auto iteration : u64xrange{ 0, max_iteration }) {
+		(void)iteration;
 		struct {
 			f32 distance_to_origin = std::numeric_limits<f32>::max();
 			v2f32 normal = v2f32(0);
@@ -526,6 +527,7 @@ struct Physics2D {
 			apply_gravity(bodies);
 			step_sim(entities);
 			for (auto r : u64xrange{ 0, intersection_iterations }) {
+				(void)r;
 				PROFILE_SCOPE("Intersection iteration");
 				auto col = collisions.push_growing(physics_scratch, detect_collisions(physics_scratch, bodies, penetration_tolerance));
 				resolve_collisions(col);
@@ -536,92 +538,6 @@ struct Physics2D {
 	inline void operator()(Array<RigidBody> bodies, Array<Spacial2D*> entities, u32 iterations) {
 		(*this)(bodies, entities, iterations, [](u64) {});
 	}
-
-	struct Editor : public SystemEditor {
-		ShapeRenderer debug_draw = ShapeRenderer::load();
-		bool debug = false;
-		bool colliders = true;
-		bool wireframe = true;
-		bool collisions = true;
-		bool local_aabbs = true;
-		bool world_aabbs = true;
-		bool radius = true;
-		bool flattened = false;
-		bool manual_update = false;
-		f32 velocities_scale = 1.f;
-
-		void draw_shapes(Array<RigidBody> bodies, const m4x4f32& vp) {
-			PROFILE_SCOPE(__PRETTY_FUNCTION__);
-			debug_draw.vp_matrix.backing_buffer.sync(cast<byte>(carray(&vp, 1)));
-			for (auto bd : bodies) {
-				for (auto& s : bd.shapes) if (flattened) {
-					auto [scratch, scope] = scratch_push_scope(1 << 16); defer{ scratch_pop_scope(scratch, scope); };
-					for (auto& f : flatten(scratch, s))
-						debug_draw(f, bd.spacial->transform, vp, v4f32(1, 1, 0, 1), wireframe, local_aabbs, world_aabbs, radius);
-				} else {
-					debug_draw(s, bd.spacial->transform, vp, v4f32(1, 1, 0, 1), wireframe, local_aabbs, world_aabbs, radius);
-				}
-
-				ShapeRenderer::ShapeRenderInfo info = { v4f32(1, 0, 0, 1) };
-				debug_draw.instance.backing_buffer.sync(cast<byte>(carray(&info, 1)));
-				debug_draw.draw_line(Segment<v2f32> { bd.spacial->transform.translation, (bd.spacial->transform.translation + velocities_scale * bd.spacial->velocity.translation)});
-			}
-		}
-
-		void draw_collisions(Array<Collision2D> collisions, const m4x4f32& vp) {
-			PROFILE_SCOPE(__PRETTY_FUNCTION__);
-			debug_draw.vp_matrix.backing_buffer.sync(cast<byte>(carray(&vp, 1)));
-			for (auto [contacts, entities, physical] : collisions) {
-				Spacial2D* sp[] = { entities[0].spacial, entities[1].spacial };
-
-				ShapeRenderer::ShapeRenderInfo info = { v4f32(1, 0, 1, 1) };
-				debug_draw.instance.backing_buffer.sync(cast<byte>(carray(&info, 1)));
-				debug_draw.draw_line({ sp[0]->transform.translation , sp[1]->transform.translation });
-				if (physical) for (auto& contact : contacts) {
-					info = { v4f32(0, 1, 1, 1) };
-					debug_draw.instance.backing_buffer.sync(cast<byte>(carray(&info, 1)));
-					for (auto i : u64xrange{ 0, 2 })
-						debug_draw.draw_line({ sp[i]->transform.translation, sp[i]->transform.translation + contact.levers[i] });
-				}
-			}
-		}
-
-		void editor_window(Physics2D& system) {
-			EditorWidget("Draw debug", debug);
-			if (debug) {
-				EditorWidget("Wireframe", wireframe);
-				EditorWidget("Colliders", colliders);
-				EditorWidget("Collisions marks", collisions);
-				EditorWidget("Velocities scale", velocities_scale);
-				EditorWidget("local_aabbs", local_aabbs);
-				EditorWidget("world_aabbs", world_aabbs);
-				EditorWidget("radi", radius);
-				EditorWidget("flattened", flattened);
-			}
-			EditorWidget("Gravity", system.gravity);
-			EditorWidget("Penetration Tolerance", system.penetration_tolerance);
-			EditorWidget("Manual update", manual_update);
-			EditorWidget("Delta Time", system.dt);
-			EditorWidget("Intersection iterations", system.intersection_iterations);
-			EditorWidget("Max ticks per update", system.max_ticks);
-			EditorWidget("Physics time", system.time);
-			EditorWidget("Average ticks per update", system.tpu);
-			if (ImGui::TreeNode("Collisions")) {
-				defer{ ImGui::TreePop(); };
-				auto id = 0;
-				for (auto [contacts, entities, physical] : system.collisions.used()) {
-					char buffer[999];
-					snprintf(buffer, sizeof(buffer), "%u:%s:%s", id, entities[0].handle->name.data(), entities[1].handle->name.data());
-					ImGui::PushID(id++);
-					if (ImGui::TreeNode(buffer)) {
-						EditorWidget("Contacts", contacts);
-						ImGui::TreePop();
-					}
-					ImGui::PopID();
-				}
-			}
-		}
-	};
 
 };
 

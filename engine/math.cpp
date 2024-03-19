@@ -236,9 +236,9 @@ using r2u64 = grid_range<v2u64>;
 using r2i32 = grid_range<v2i32>;
 using r2i64 = grid_range<v2i64>;
 
-i64 modidx(i64 index, i64 size) { return ((index % size) + size) % size; }
+inline i64 modidx(i64 index, i64 size) { return ((index % size) + size) % size; }
 
-auto range2(v2u64 dimensions) {
+inline auto range2(v2u64 dimensions) {
 	return r2u64{
 		grid_iterator<v2u64>{ dimensions, v2u64(0) },
 		grid_iterator<v2u64>{ dimensions, dimensions },

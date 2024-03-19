@@ -11,7 +11,7 @@ template<typename T, i32 Row, i32 Col, glm::qualifier Q> bool EditorWidget(const
 		defer{ ImGui::TreePop(); };
 		for (auto c : u64xrange{ 0, Col }) {
 			char buff[10] = "";
-			snprintf(buff, sizeof(buff), "%u", c);
+			snprintf(buff, sizeof(buff), "%llu", c);
 			changed |= EditorWidget(buff, m[c]);
 		}
 	}

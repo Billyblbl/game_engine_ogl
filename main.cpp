@@ -7,26 +7,19 @@
 bool editor_test(App& app, u64 scene_id) {
 	PROFILE_SCOPE(__PRETTY_FUNCTION__);
 	ImGui::init_ogl_glfw(app.window); defer{ ImGui::shutdown_ogl_glfw(); };
-	auto editor = create_editor("Editor", "Alt+X", { Input::KB::K_LEFT_ALT, Input::KB::K_X });
-	auto au = SystemEditor::create("Audio", "Alt+O", { Input::KB::K_LEFT_ALT, Input::KB::K_O });
-	auto ent = SystemEditor::create("Entities", "Alt+E", { Input::KB::K_LEFT_ALT, Input::KB::K_E });
-	auto misc = SystemEditor::create("Misc", "Alt+M", { Input::KB::K_LEFT_ALT, Input::KB::K_M });
-	auto ph = SystemEditor::create<Physics2D::Editor>("Physics2D", "Alt+P", { Input::KB::K_LEFT_ALT, Input::KB::K_P });
-	auto scene = PlaygroundScene(); defer{ scene.release(); };
+	auto editor = SystemEditor::create("Editor", "Alt+X", { Input::KB::K_LEFT_ALT, Input::KB::K_X });
+	auto playground_scene = PlaygroundScene::create(); defer{ playground_scene.release(); };
 
+	profile_scope_begin("Frame");
 	while (update(app, scene_id)) {
-		PROFILE_SCOPE("Frame");
-		scene();
-		system_keybinds({ &editor, &au, &ph, &ent, &misc });
-		if (editor.show_window) {
-			PROFILE_SCOPE("Editor");
-			ImGui::NewFrame_OGL_GLFW(); defer{
-				ImGui::Render();
-				ImGui::Draw();
-			};
+		defer{ profile_scope_restart("Frame"); };
+		auto shown_window = editor.show_window;
+		system_keybinds({ &editor });
+		if (shown_window) {
+			ImGui::NewFrame_OGL_GLFW();
 			if (ImGui::BeginMainMenuBar()) {
 				defer{ ImGui::EndMainMenuBar(); };
-				system_menu("Windows", { &editor, &au, &ph, &ent, &misc });
+				system_menu("Debug", { &editor });
 				if (ImGui::BeginMenu("Actions")) {
 					defer{ ImGui::EndMenu(); };
 					if (ImGui::MenuItem("Break"))
@@ -36,13 +29,17 @@ bool editor_test(App& app, u64 scene_id) {
 				}
 			}
 			ImGui::DockSpaceOverViewport(ImGui::GetWindowViewport(), ImGuiDockNodeFlags_PassthruCentralNode);
-			scene.editor(au, ph, ent, misc);
+		}
+		playground_scene(shown_window);
+		if (shown_window) {
+			ImGui::Render();
+			ImGui::Draw();
 		}
 	}
 	return true;
 }
 
-i32 main(i32 ac, const cstrp av[]) {
+i32 main() {
 	enum SceneID : u64 {
 		EXIT = App::ID_EXIT,
 		PLAYGROUND,

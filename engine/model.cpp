@@ -46,8 +46,8 @@ struct RenderMesh {
 
 template<v2u32 dimensions> constexpr auto create_quad_sheet_UV() {
 	std::array<v2f32, (dimensions.x + 1)* (dimensions.y + 1)> uvs;
-	for (auto y = 0; y < dimensions.y + 1; y++) {
-		for (auto x = 0; x < dimensions.x + 1; x++) {
+	for (u32 y = 0; y < dimensions.y + 1; y++) {
+		for (u32 x = 0; x < dimensions.x + 1; x++) {
 			uvs[y * (dimensions.x + 1) + x] = v2f32(
 				(f32)x / (f32)dimensions.x,
 				(f32)y / (f32)dimensions.y
@@ -149,7 +149,7 @@ auto create_rect_9slice(v2f32 content, v2f32 borders) {
 	auto indices = get_9slice_indices();
 
 	std::array<DefaultVertex2D, points.size()> vertices;
-	for (auto i = 0; i < points.size(); i++)
+	for (u32 i = 0; i < points.size(); i++)
 		vertices[i] = DefaultVertex2D{ points[i], uvs[i] };
 
 	return std::make_pair(

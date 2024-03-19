@@ -20,7 +20,8 @@ ImGuiConfigFlags DefaultImguiFlags = (
 
 namespace ImGui {
 
-	void init_ogl_glfw(GLFWwindow* window, ImGuiConfigFlags flags = DefaultImguiFlags) {
+	void init_ogl_glfw(GLFWwindow* window, ImGuiConfigFlags flags = DefaultImguiFlags);
+	void init_ogl_glfw(GLFWwindow* window, ImGuiConfigFlags flags) {
 		// Setup Dear ImGui context
 		IMGUI_CHECKVERSION();
 		ImGui::CreateContext();
@@ -43,13 +44,14 @@ namespace ImGui {
 		ImGui_ImplOpenGL3_Init("#version 450");
 	}
 
-	void shutdown_ogl_glfw() {
+	inline void shutdown_ogl_glfw() {
 		ImGui_ImplOpenGL3_Shutdown();
 		ImGui_ImplGlfw_Shutdown();
 		ImGui::DestroyContext();
 	}
 
-	void Draw(ImDrawData* data = null) {
+	void Draw(ImDrawData* data = null);
+	void Draw(ImDrawData* data) {
 		ImGui_ImplOpenGL3_RenderDrawData(data == null ? ImGui::GetDrawData() : data);
 		if (ImGui::GetIO().ConfigFlags & ImGuiConfigFlags_ViewportsEnable) {
 			GLFWwindow* backup_current_context = glfwGetCurrentContext();
@@ -59,17 +61,17 @@ namespace ImGui {
 		}
 	}
 
-	void BeginFrame_OGL_GLFW() {
+	inline void BeginFrame_OGL_GLFW() {
 		ImGui_ImplOpenGL3_NewFrame();
 		ImGui_ImplGlfw_NewFrame();
 		ImGui::NewFrame();
 	}
 
-	void EndFrame_OGL_GLFW() {
+	inline void EndFrame_OGL_GLFW() {
 		ImGui::Render();
 	}
 
-	auto GetWindowContentSize() {
+	inline auto GetWindowContentSize() {
 		auto min = ImGui::GetWindowContentRegionMin();
 		auto max = ImGui::GetWindowContentRegionMax();
 		return ImVec2(max.x - min.x, max.y - min.y);
@@ -97,7 +99,7 @@ namespace ImGui {
 		return changed;
 	}
 
-	template<typename T> bool bit_flags(const cstr label, T& flags, LiteralArray<string> bit_names) {
+	template<typename T> inline bool bit_flags(const cstr label, T& flags, LiteralArray<string> bit_names) {
 		return bit_flags(label, flags, larray(bit_names));
 	}
 
@@ -129,78 +131,79 @@ namespace ImGui {
 	}
 }
 
-bool EditorWidget(const cstr label, auto& unimplemented, bool foldable = false) {
+inline bool EditorWidget(const cstr label, auto& unimplemented, bool foldable = false) {
+	(void)foldable;
 	ImGui::Text("%s : Unimplemented Widget for type %s", label, typeid(decltype(unimplemented)).name());
 	return false;
 }
 
-bool EditorWidget(const cstr label, f32& data) {
+inline bool EditorWidget(const cstr label, f32& data) {
 	return ImGui::DragFloat(label, &data, .01f, .0f, .0f, "%.4f");
 }
 
-bool EditorWidget(const cstr label, v2f32& data) {
+inline bool EditorWidget(const cstr label, v2f32& data) {
 	return ImGui::DragFloat2(label, glm::value_ptr(data), .01f, .0f, .0f, "%.4f");
 }
 
-bool EditorWidget(const cstr label, v3f32& data) {
+inline bool EditorWidget(const cstr label, v3f32& data) {
 	return ImGui::DragFloat3(label, glm::value_ptr(data), .01f, .0f, .0f, "%.4f");
 }
 
-bool EditorWidget(const cstr label, v4f32& data) {
+inline bool EditorWidget(const cstr label, v4f32& data) {
 	return ImGui::DragFloat4(label, glm::value_ptr(data), .01f, .0f, .0f, "%.4f");
 }
 
-bool EditorWidget(const cstr label, i32& data) {
+inline bool EditorWidget(const cstr label, i32& data) {
 	return ImGui::DragInt(label, &data);
 }
 
-bool EditorWidget(const cstr label, v2i32& data) {
+inline bool EditorWidget(const cstr label, v2i32& data) {
 	return ImGui::DragInt2(label, glm::value_ptr(data));
 }
 
-bool EditorWidget(const cstr label, v3i32& data) {
+inline bool EditorWidget(const cstr label, v3i32& data) {
 	return ImGui::DragInt3(label, glm::value_ptr(data));
 }
 
-bool EditorWidget(const cstr label, v4i32& data) {
+inline bool EditorWidget(const cstr label, v4i32& data) {
 	return ImGui::DragInt4(label, glm::value_ptr(data));
 }
 
-bool EditorWidget(const cstr label, u32& data) {
+inline bool EditorWidget(const cstr label, u32& data) {
 	return EditorWidget(label, (i32&)data);
 }
 
-bool EditorWidget(const cstr label, u8& data) {
+inline bool EditorWidget(const cstr label, u8& data) {
 	u32 tmp = data;
 	auto changed = EditorWidget(label, tmp);
 	if (changed) data = tmp;
 	return changed;
 }
 
-bool EditorWidget(const cstr label, u64& data) {
+inline bool EditorWidget(const cstr label, u64& data) {
 	u32 tmp = data;
 	auto changed = EditorWidget(label, tmp);
 	if (changed) data = tmp;
 	return changed;
 }
 
-bool EditorWidget(const cstr label, v2u32& data) {
+inline bool EditorWidget(const cstr label, v2u32& data) {
 	return EditorWidget(label, (v2i32&)data);
 }
 
-bool EditorWidget(const cstr label, v3u32& data) {
+inline bool EditorWidget(const cstr label, v3u32& data) {
 	return EditorWidget(label, (v3i32&)data);
 }
 
-bool EditorWidget(const cstr label, v4u32& data) {
+inline bool EditorWidget(const cstr label, v4u32& data) {
 	return EditorWidget(label, (v4i32&)data);
 }
 
-bool EditorWidget(const cstr label, bool& data) {
+inline bool EditorWidget(const cstr label, bool& data) {
 	return ImGui::Checkbox(label, &data);
 }
 
-template<typename T> bool EditorWidget(const cstr label, reg_polytope<T>& data, bool foldable = true) {
+template<typename T> inline bool EditorWidget(const cstr label, reg_polytope<T>& data, bool foldable = true) {
 	bool changed = false;
 	if (!foldable)
 		ImGui::Text(label);
@@ -213,7 +216,7 @@ template<typename T> bool EditorWidget(const cstr label, reg_polytope<T>& data, 
 	return changed;
 }
 
-bool EditorWidget(const cstr label, Segment<v2f32>& data) {
+inline bool EditorWidget(const cstr label, Segment<v2f32>& data) {
 	bool changed = false;
 	ImGui::Text(label);
 	changed |= EditorWidget("A", data.A);
@@ -221,7 +224,7 @@ bool EditorWidget(const cstr label, Segment<v2f32>& data) {
 	return changed;
 }
 
-bool EditorWidget(const cstr label, string data) {
+inline bool EditorWidget(const cstr label, string data) {
 	ImGui::Text(label); ImGui::SameLine(); ImGui::Text(data.data());
 	return false;
 }
@@ -229,7 +232,7 @@ bool EditorWidget(const cstr label, string data) {
 template <typename T, typename U = int> struct has_name : std::false_type {};
 template <typename T> struct has_name<T, decltype((void)T::name, 0)> : std::true_type {};
 
-template<typename T> bool EditorWidget(const cstr label, Array<T> data, bool foldable = true) {
+template<typename T> inline bool EditorWidget(const cstr label, Array<T> data, bool foldable = true) {
 	bool changed = false;
 	if (!foldable || ImGui::TreeNode(label)) {
 		for (u32 i = 0; i < data.size(); i++) {
@@ -252,11 +255,11 @@ template<typename T> bool EditorWidget(const cstr label, Array<T> data, bool fol
 	return changed;
 }
 
-bool EditorWidget(const cstr label, Array<char> data) {
+inline bool EditorWidget(const cstr label, Array<char> data) {
 	return ImGui::InputText(label, data.data(), data.size());
 }
 
-template<typename T> bool EditorWidget(const cstr label, T* data) {
+template<typename T> inline bool EditorWidget(const cstr label, T* data) {
 	auto change = false;
 	if (ImGui::TreeNode(label)) {
 		defer{ ImGui::TreePop(); };

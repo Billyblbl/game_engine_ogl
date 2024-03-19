@@ -190,11 +190,11 @@ struct PlaygroundScene {
 	EntityHandle cam;
 	EntityHandle level_entity;
 
-	//test
-	TextRenderer draw_texts;
-	f32 test_text_scale;
-	Font font;
-
+	struct {
+		TextRenderer draw_texts;
+		Font font;
+		f32 test_text_scale = 1.f;
+	} test;
 
 	Entity& create_test_body(string name, v2f32 position) {
 		auto& ent = allocate_entity(entities, name, Entity::Draw | Entity::Collider | Entity::Physical);
@@ -218,8 +218,8 @@ struct PlaygroundScene {
 		PROFILE_SCOPE(__PRETTY_FUNCTION__);
 
 		//test
-		font.release();
-		draw_texts.release();
+		test.font.release();
+		test.draw_texts.release();
 
 		level.release();
 		gfx.sprite_atlas.release();
@@ -231,60 +231,62 @@ struct PlaygroundScene {
 	}
 
 	static constexpr v4f32 white_pixel[] = { v4f32(1) };
-	PlaygroundScene(u64 resource_capacity = 1ull << 23) {
+
+	static PlaygroundScene create(u64 resource_capacity = 1ull << 23) {
 		PROFILE_SCOPE(__PRETTY_FUNCTION__);
-		resources_arena = Arena::from_vmem(resource_capacity);
+		PlaygroundScene scene;
+		scene.resources_arena = Arena::from_vmem(resource_capacity);
 
 		{
 			PROFILE_SCOPE("Systems init");
-			physics = Physics2D::create();
-			audio = AudioDevice::init();
-			gfx.draw_sprites = SpriteRenderer::load(assets.sprite_pipeline);
-			gfx.draw_tilemap = TilemapRenderer::load(assets.tilemap_pipeline);
+			scene.physics = Physics2D::create();
+			scene.audio = AudioDevice::init();
+			scene.gfx.draw_sprites = SpriteRenderer::load(assets.sprite_pipeline);
+			scene.gfx.draw_tilemap = TilemapRenderer::load(assets.tilemap_pipeline);
 		}
 
 		{
 			PROFILE_SCOPE("Ressources init");
 			auto [scratch, scope] = scratch_push_scope(1ull << 18); defer{ scratch_pop_scope(scratch, scope); };
 
-			gfx.sprite_atlas = Atlas2D::create(v2u32(1920, 1080));
-			gfx.white = gfx.sprite_atlas.push(make_image(larray(white_pixel), v2u32(1)));
+			scene.gfx.sprite_atlas = Atlas2D::create(v2u32(1920, 1080));
+			scene.gfx.white = scene.gfx.sprite_atlas.push(make_image(larray(white_pixel), v2u32(1)));
 
 			auto img = load_image(assets.test_sidescroll_path); defer{ unload(img); };
-			spritesheet = gfx.sprite_atlas.push(img);
+			scene.spritesheet = scene.gfx.sprite_atlas.push(img);
 
 			auto layout = build_layout(scratch, assets.sidescroll_character_animation_recipe_path);
-			animations = build_sidescroll_character_animations(resources_arena, layout, img.dimensions);
+			scene.animations = build_sidescroll_character_animations(scene.resources_arena, layout, img.dimensions);
 		}
 
 		{
 			PROFILE_SCOPE("Scene content init");
-			entities = List{ resources_arena.push_array<Entity>(MAX_ENTITIES), 0 };
-			player = { null, 0 };
-			level = Tilemap::load(resources_arena, gfx.sprite_atlas, assets.level,
+			scene.entities = List{ scene.resources_arena.push_array<Entity>(MAX_ENTITIES), 0 };
+			scene.player = { null, 0 };
+			scene.level = Tilemap::load(scene.resources_arena, scene.gfx.sprite_atlas, assets.level,
 				[&](tmx_object_group* group, v2f32 tile_dimensions) {
 					for (auto& obj : traverse_by<tmx_object, &tmx_object::next>(group->head)) {
 						if (string(obj.type) == string("test_entity_construct")) {
 							u64 flags = 0;
 							for (auto i : u64xrange{ 0, array_size(Entity::Flags) }) if (auto prop = tmx_get_property(obj.properties, Entity::Flags[i].data()); prop && prop->type == PT_BOOL && prop->value.boolean)
 								flags |= 1 << i;
-							auto& ent = allocate_entity(entities, obj.name, flags);
+							auto& ent = allocate_entity(scene.entities, obj.name, flags);
 							ent.enable(obj.visible);
 							ent.space.transform.translation = v2f32(obj.x, -obj.y) / tile_dimensions;
 							ent.space.transform.rotation = glm::radians(obj.rotation);
 						} else if (string(obj.type) == string("test_body")) {
-							auto& ent = create_test_body(obj.name, v2f32(obj.x, -obj.y) / tile_dimensions);
+							auto& ent = scene.create_test_body(obj.name, v2f32(obj.x, -obj.y) / tile_dimensions);
 							ent.space.transform.rotation = glm::radians(obj.rotation);
 							ent.enable(obj.visible);
 						} else if (string(obj.type) == string("player")) {
-							player = (
+							scene.player = (
 								[&]() {
-									auto& ent = create_test_body(obj.name, v2f32(obj.x, -obj.y) / tile_dimensions);
+									auto& ent = scene.create_test_body(obj.name, v2f32(obj.x, -obj.y) / tile_dimensions);
 									ent.space.transform.rotation = glm::radians(obj.rotation);
 									ent.flags |= (Entity::Controllable | Entity::Animated);
-									ent.spritesheet = spritesheet;
-									ent.sprite.view = { v2u32(0), dim_vec(spritesheet) };
-									ent.animations = animations;
+									ent.spritesheet = scene.spritesheet;
+									ent.sprite.view = { v2u32(0), dim_vec(scene.spritesheet) };
+									ent.animations = scene.animations;
 									ent.body.inverse_inertia = 0.f;
 									ent.body.inverse_mass = 1.f;
 									ent.body.restitution = 0.f;
@@ -297,14 +299,14 @@ struct PlaygroundScene {
 				}
 			);
 
-			if (!player.valid()) {
-				player = (
+			if (!scene.player.valid()) {
+				scene.player = (
 					[&]() {
-						auto& ent = create_test_body("player", v2f32(0));
+						auto& ent = scene.create_test_body("player", v2f32(0));
 						ent.flags |= (Entity::Controllable | Entity::Animated);
-						ent.spritesheet = spritesheet;
-						ent.sprite.view = { v2u32(0), dim_vec(spritesheet) };
-						ent.animations = animations;
+						ent.spritesheet = scene.spritesheet;
+						ent.sprite.view = { v2u32(0), dim_vec(scene.spritesheet) };
+						ent.animations = scene.animations;
 						ent.body.inverse_inertia = 0.f;
 						ent.body.inverse_mass = 1.f;
 						ent.body.restitution = 0.f;
@@ -314,24 +316,24 @@ struct PlaygroundScene {
 				());
 			}
 
-			level_entity = (
+			scene.level_entity = (
 				[&]() {
-					auto& ent = allocate_entity(entities, "Level", Entity::Collider | Entity::Physical);
+					auto& ent = allocate_entity(scene.entities, "Level", Entity::Collider | Entity::Physical);
 					ent.body.inverse_inertia = 0;
 					ent.body.inverse_mass = 0;
 					ent.body.restitution = .1f;
 					ent.body.friction = .1f;
 					ent.body.shape_index = 0;
-					ent.tilemap = level;
-					ent.shapes = tilemap_shapes(resources_arena, *level.tree, tile_shapeset(resources_arena, carray(level.tree->tiles, level.tree->tilecount)));
+					ent.tilemap = scene.level;
+					ent.shapes = tilemap_shapes(scene.resources_arena, *scene.level.tree, tile_shapeset(scene.resources_arena, carray(scene.level.tree->tiles, scene.level.tree->tilecount)));
 					ent.enable();
 					return get_entity_genhandle(ent);
 				}
 			());
 
-			cam = (
+			scene.cam = (
 				[&]() {
-					auto& ent = allocate_entity(entities, "Camera", Entity::Camera);
+					auto& ent = allocate_entity(scene.entities, "Camera", Entity::Camera);
 					ent.render_target.fbf = default_framebuffer;
 					ent.render_target.clear_color = v4f32(v3f32(0.3), 1);
 					ent.projection.dimensions = v3f32(16, 9, 1000);
@@ -348,46 +350,61 @@ struct PlaygroundScene {
 		}
 
 		//test
-		draw_texts = TextRenderer::load("./shaders/text.glsl");
-		// font = Font::load(resources_arena, draw_texts.lib, "test_font.ttf");
-		font = Font::load(resources_arena, draw_texts.lib, "Arial.ttf", 0, v2u32(32));
+		scene.test.draw_texts = TextRenderer::load("./shaders/text.glsl");
+		// font = Font::load(resources_arena, test.draw_texts.lib, "test_font.ttf");
+		scene.test.font = Font::load(scene.resources_arena, scene.test.draw_texts.lib, "Arial.ttf", 0, v2u32(128));
 
 		{
 			PROFILE_SCOPE("Waiting for GPU init work");
 			wait_gpu();
 		}
-		clock = Time::start();
+		scene.clock = Time::start();
+		return scene;
 	}
 
 	u64 update_count = 0;
-	bool operator()() {
+	bool operator()(bool debug = false) {
+		{
+			PROFILE_SCOPE(__PRETTY_FUNCTION__".Editor");
+			static auto debug_scratch = Arena::from_vmem(1 << 19);
+			debug_scratch.reset();
+
+			if (debug) {
+				if (ImGui::Begin("Entities")) for (auto ent : gather(debug_scratch, entities.used(), Entity::AllocatedEntity)) {
+					ImGui::PushID(ent); defer{ ImGui::PopID(); };
+					EditorWidget(ent->name.data(), *ent);
+				} ImGui::End();
+
+				if (ImGui::Begin("Misc")) {
+					ImGui::Text("Update index : %llu", update_count);
+					EditorWidget("Clock", clock);
+					EditorWidget("test font", test.font);
+					EditorWidget("test text scale", test.test_text_scale);
+				} ImGui::End();
+			}
+		}
+
 		PROFILE_SCOPE(__PRETTY_FUNCTION__);
 		defer{ update_count++; };
 		update(clock);
-		auto [scratch, scope] = scratch_push_scope(1ull << 18); defer{ scratch_pop_scope(scratch, scope); };
+		auto [scratch, scope] = scratch_push_scope(1ull << 19); defer{ scratch_pop_scope(scratch, scope); };
+
+		if (Input::KB::get(Input::KB::K_ENTER) & Input::Down) for (auto i = 0; i < 10; i++)
+			create_test_body("new test body", player->content<Entity>().space.transform.translation + v2f32(0, 2)).enable();
 
 		if (player.valid())
 			player_input(player->content<Entity>().ctrl);
 
-		if (Input::KB::get(Input::KB::K_ENTER) & Input::Down) for (auto i : u64xrange{ 0, 10 })
-			create_test_body("new test body", player->content<Entity>().space.transform.translation + v2f32(0, 2)).enable();
-
-		update_characters(gather<SidescrollCharacter>(scratch_pop_scope(scratch, scope), entities.used()), physics.collisions.used(), physics.gravity, clock);
-		if (auto it_count = physics.iteration_count(clock.current); it_count > 0) {
-			scratch_pop_scope(scratch, scope);
-			physics(
-				gather<RigidBody>(scratch, entities.used()),
-				gather<Spacial2D*>(scratch, entities.used()),
-				it_count
-			);
-		}
+		update_characters(gather<SidescrollCharacter>(scratch, entities.used()), physics.collisions.used(), physics.gravity, clock);
+		if (auto it_count = physics.iteration_count(clock.current); it_count > 0)
+			physics(gather<RigidBody>(scratch, entities.used()), gather<Spacial2D*>(scratch, entities.used()), it_count);
 
 		if (cam.valid() && player.valid())
 			follow(cam->content<Entity>().space, player->content<Entity>().space);
 
-		update_audio(audio, gather<Sound>(scratch_pop_scope(scratch, scope), entities.used()), cam->content<Entity>().space);
+		update_audio(audio, gather<Sound>(scratch, entities.used()), cam->content<Entity>().space);
 
-		for (auto& cam : gather<Camera>(scratch_pop_scope(scratch, scope), entities.used())) render(cam,
+		for (auto& cam : gather<Camera>(scratch, entities.used())) render(cam,
 			[&](m4x4f32 mat) {
 				if (level_entity.valid() && level_entity->enabled()) gfx.draw_tilemap(
 					level_entity->content<Entity>().tilemap,
@@ -401,70 +418,23 @@ struct PlaygroundScene {
 					text.str = "Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat. Duis aute irure dolor in reprehenderit in voluptate velit esse cillum dolore eu fugiat nulla pariatur. Excepteur sint occaecat cupidatat non proident, sunt in culpa qui officia deserunt mollit anim id est laborum.";
 					text.rect = rtu32{ v2u32(0), v2u32(1500, 1000) };
 					text.color = v4f32(1);
-					text.font = &font;
-					text.scale = test_text_scale;
+					text.font = &test.font;
+					text.scale = test.test_text_scale;
 					text.linespace = 1.f;
 					text.orient = Text::H;
-					draw_texts(carray(&text, 1));
+					test.draw_texts(carray(&text, 1));
 				}
 			}
 		);
 
-		for (auto temp : gather(scratch_pop_scope(scratch, scope), entities.used(), Entity::Usable | Entity::Temporary)) if (temp->lifetime.over(clock.current))
+		for (auto temp : gather(scratch, entities.used(), Entity::Usable | Entity::Temporary)) if (temp->lifetime.over(clock.current))
 			temp->discard();
 
-		{
-			scratch_pop_scope(scratch, scope);
-			auto stale_sources = gather(scratch, entities.used(), Entity::PendingRelease | Entity::Sound);
-			auto ids = map(scratch, stale_sources, [](Entity* ent) -> ALuint { return ent->audio_source.id; });
-			AudioSource::batch_release(ids);
-		}
-
-		for (auto slot : gather(scratch_pop_scope(scratch, scope), entities.used(), Entity::PendingRelease))
+		//Resource cleanup
+		AudioSource::batch_release(map(scratch, gather(scratch, entities.used(), Entity::PendingRelease | Entity::Sound), [](Entity* ent) -> ALuint { return ent->audio_source.id; }));
+		for (auto slot : gather(scratch, entities.used(), Entity::PendingRelease))
 			slot->recycle();
 		return true;
-	}
-
-	void editor(SystemEditor& au, Physics2D::Editor& ph, SystemEditor& ent, SystemEditor& misc) {
-		static auto debug_scratch = Arena::from_vmem(1 << 19);
-		debug_scratch.reset();
-		if (ph.debug) {
-			PROFILE_SCOPE("Physics Debug");
-			if (auto [ok, c] = use_as<Camera>(cam); ok) {
-				auto vp = m4x4f32(c);
-				if (ph.colliders) ph.draw_shapes(gather<RigidBody>(debug_scratch, entities.used()), vp);
-				if (ph.collisions) ph.draw_collisions(physics.collisions.used(), vp);
-			}
-		}
-
-		if (au.show_window) {
-			if (begin_editor(au)) {
-				audio_window(audio);
-			} end_editor();
-		}
-
-		if (ph.show_window) {
-			if (begin_editor(ph)) {
-				ph.editor_window(physics);
-			} end_editor();
-		}
-
-		if (ent.show_window) {
-			if (begin_editor(ent)) for (auto ent : gather(debug_scratch, entities.used(), Entity::AllocatedEntity)) {
-				ImGui::PushID(ent); defer{ ImGui::PopID(); };
-				EditorWidget((const cstrp)ent->name.data(), *ent);
-			} end_editor();
-		}
-
-		if (misc.show_window) {
-			if (begin_editor(misc)) {
-				ImGui::Text("Update index : %llu", update_count);
-				EditorWidget("Clock", clock);
-				EditorWidget("Animations", animations);
-				EditorWidget("Font", font);
-				EditorWidget("test text scale", test_text_scale);
-			} end_editor();
-		}
 	}
 
 };

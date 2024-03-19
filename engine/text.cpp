@@ -334,7 +334,7 @@ struct TextRenderer {
 			inputs.glyphs.bind_content(font->glyph_views); defer{ inputs.glyphs.unbind(); };
 			inputs.texts.bind_content(text_instances.used());defer{ inputs.texts.unbind(); };
 			inputs.characters.bind_content(instances.used());defer{ inputs.characters.unbind(); };
-			inputs.scene.bind_object(Scene{ camera, font->glyph_atlas.texture.dimensions, 0.01f }); defer{ inputs.scene.unbind(); };
+			inputs.scene.bind_object(Scene{ camera, font->glyph_atlas.texture.dimensions, 0.01f, {} }); defer{ inputs.scene.unbind(); };
 			GL_GUARD(glDrawElementsInstanced(rect.vao.draw_mode, rect.vao.element_count, rect.vao.index_type, null, instances.current));
 		}
 	}

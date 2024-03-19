@@ -21,7 +21,7 @@ struct Atlas2D {
 		if (!contains(available, rect)) {
 			current = v2u32(0, next_line);
 			available = rtu32{ current, texture.dimensions };
-			rect = rtu32{ current, current + v2u32(img.dimensions) };
+			rect = rtu32{ current, current + v2u32(img.dimensions) + 2u * margins };
 			assert(contains(available, rect));
 		}
 		auto inner = rtu32{ rect.min + margins, rect.max - margins };

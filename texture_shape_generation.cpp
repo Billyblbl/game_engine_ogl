@@ -75,7 +75,7 @@ u8 neigbhour_mask(bool* markings, v2u64 dimensions, v2i32 cell) {
 	return mask;
 }
 
-u8 piece_mask(bool* markings, v2u64 dimensions, v2i32 cell, u8 nb_mask) {
+u8 piece_mask(bool* markings, v2u64 dimensions, v2i32 cell) {
 	u8 mask = 0;
 	for (auto i : u32xrange{ 0, array_size(grid_neigbhours) }) {
 		auto px = cell + grid_neigbhours[i];

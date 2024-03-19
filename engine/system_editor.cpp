@@ -42,16 +42,6 @@ void system_keybinds(LiteralArray<SystemEditor*> editors) {
 		ed->keybind();
 }
 
-SystemEditor create_editor(string name, string shortcut_str, tuple<Input::KB::Key, Input::KB::Key> shortcut_keys) {
-	SystemEditor ed;
-	ed.name = name;
-	ed.shortcut_str = shortcut_str;
-	auto [s0, s1] = shortcut_keys;
-	ed.shortcut_keys[0] = s0;
-	ed.shortcut_keys[1] = s1;
-	return ed;
-}
-
 bool begin_editor(SystemEditor& ed, ImGuiWindowFlags flags = 0) { return ImGui::Begin(ed.name.data(), &ed.show_window, flags); }
 void end_editor() { ImGui::End(); }
 

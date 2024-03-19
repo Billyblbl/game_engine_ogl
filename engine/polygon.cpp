@@ -73,7 +73,6 @@ inline WindingOrder poly_wo(Polygon poly) {
 
 WindingOrder wo_at(Polygon poly, i64 i) {
 	using namespace glm;
-	i64 n = poly.size();
 	v2f32 verts[] = {
 		poly[modidx(i - 1, poly.size())],
 		poly[modidx(i, poly.size())],
@@ -129,7 +128,7 @@ tuple<Array<Polygon>, Array<v2f32>> ear_clip(Arena& arena, Polygon polygon, bool
 
 	auto wo = poly_wo(polygon);
 	auto remaining = List{ arena.push_array(polygon), polygon.size() };
-	auto polys = List{ arena.push_array<Polygon>(polygon.size() - 2) };
+	auto polys = List{ arena.push_array<Polygon>(polygon.size() - 2), 0 };
 	auto poly_verts = List{ arena.push_array<v2f32>((polygon.size() - 2) * 3), 0 };
 
 	struct Triangle { v2f32 points[3]; };
@@ -145,7 +144,7 @@ tuple<Array<Polygon>, Array<v2f32>> ear_clip(Arena& arena, Polygon polygon, bool
 	);
 
 	auto is_ear = (
-		[&](v2f32 corner, i64 i) -> bool {
+		[&](v2f32, i64 i) -> bool {
 			auto tri = angle_triangle(i);
 			if (!convex_at(remaining.used(), i, wo))
 				return false;

@@ -427,11 +427,11 @@ namespace Input {
 
 
 	void context_key_callback(
-		GLFWwindow* window,
+		GLFWwindow*,
 		KB::Key key,
-		int scancode,
+		int,
 		Action::Type action,
-		int mods
+		int
 	) {
 		if (action != Action::Press && action != Action::Release) return;
 		auto& context = get_context();
@@ -443,10 +443,10 @@ namespace Input {
 	}
 
 	void context_mouse_button_callback(
-		GLFWwindow* window,
+		GLFWwindow*,
 		Mouse::Button button,
 		Action::Type action,
-		int mods
+		int
 	) {
 		if (action != Action::Press && action != Action::Release) return;
 		auto& context = get_context();
@@ -456,14 +456,14 @@ namespace Input {
 			context.mouse_button_states[button] |= ButtonState::Up;
 	}
 
-	void context_mouse_pos_callback(GLFWwindow* window, double x, double y) {
+	void context_mouse_pos_callback(GLFWwindow*, double x, double y) {
 		auto& context = get_context();
 		auto newPos = v2f64(x, y);
 		context.mouse_delta += newPos - context.mouse_pos;
 		context.mouse_pos = newPos;
 	}
 
-	void context_scroll_callback(GLFWwindow* window, double x, double y) {
+	void context_scroll_callback(GLFWwindow*, double x, double y) {
 		get_context().scroll_delta += glm::dvec2(x, y);
 	}
 

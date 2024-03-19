@@ -56,7 +56,7 @@ struct Tilemap {
 			);
 			views.push(tiles);
 			tiles_range.max = views.current;
-			printf("Loaded %lu tiles\n", tiles_range.size());
+			printf("Loaded %llu tiles\n", tiles_range.size());
 		}
 
 		{ //* Load layers
@@ -80,6 +80,7 @@ struct Tilemap {
 							auto layer_data = map(layer_scratch, carray(layer.content.gids, layer_size), [](u32 gid) -> u32 { return gid & TMX_FLIP_BITS_REMOVAL; });
 							views.push(tm.layer_atlas.push(make_image(layer_data, v2u32(source->width, source->height), 1)));
 						} break;
+						default: break;
 						}
 					}
 				}
@@ -246,6 +247,7 @@ Array<Shape2D> object_shape(Arena& arena, tmx_object* obj_head) {
 			transform.scale *= dims / v2f32(max(dims.x, dims.y));
 			objs.push_growing(scratch, make_circle_shape(max(dims.x, dims.y) / 2.f, transform));
 		} break;
+		default: break;;
 		}
 	}
 	return arena.push_array(objs.used());
@@ -275,7 +277,6 @@ Shape2D tilemap_layer_shape(Arena& arena, const tmx_layer& layer, v2u32 dimensio
 		[&](rtu32 tilemap_rect) -> Array<Shape2D> {
 			auto rect_dims = dim_vec(tilemap_rect);
 			auto shapes = List{ arena.push_array<Shape2D>(rect_dims.x * rect_dims.y), 0 };
-			auto start = shapes.current;
 			for (auto y : u64xrange{ tilemap_rect.min.y, tilemap_rect.max.y }) for (auto x : u64xrange{ tilemap_rect.min.x, tilemap_rect.max.x }) {
 				auto gid = cast<u32>(gids[v2f32(x, y)])[0];
 				if (gid == 0) continue;

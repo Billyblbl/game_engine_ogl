@@ -79,6 +79,7 @@ struct ShaderInput {
 		case Texture: { GL_GUARD(glBindTextureUnit(id, texture)); } break;
 		case UBO: { GL_GUARD(glBindBufferRange(GL_UNIFORM_BUFFER, id, backing_buffer.id, range.min, range.size())); } break;
 		case SSBO: { GL_GUARD(glBindBufferRange(GL_SHADER_STORAGE_BUFFER, id, backing_buffer.id, range.min, range.size())); } break;
+		case None: { panic(); } break;
 		}
 		return range;
 	}
@@ -88,6 +89,7 @@ struct ShaderInput {
 		case Texture: { GL_GUARD(glBindTextureUnit(id, 0)); } break;
 		case UBO: { GL_GUARD(glBindBufferRange(GL_UNIFORM_BUFFER, id, 0, 0, 0)); } break;
 		case SSBO: { GL_GUARD(glBindBufferRange(GL_SHADER_STORAGE_BUFFER, id, 0, 0, 0)); } break;
+		case None: { panic(); } break;
 		}
 	}
 
@@ -109,9 +111,10 @@ struct ShaderInput {
 			GLint value[prop_count];
 			GL_GUARD(glGetProgramResourceiv(pipeline, type, index, prop_count, prop, prop_count, NULL, value));
 			slot.id = value[0];
-			slot.backing_buffer = GPUBuffer::create(max(value[1], backing_size), GL_MAP_WRITE_BIT | GL_MAP_PERSISTENT_BIT | GL_DYNAMIC_STORAGE_BIT);
+			slot.backing_buffer = GPUBuffer::create(max(u64(value[1]), backing_size), GL_MAP_WRITE_BIT | GL_MAP_PERSISTENT_BIT | GL_DYNAMIC_STORAGE_BIT);
 			break;
 		}
+		case None: { panic(); } break;
 		}
 		return slot;
 	}
@@ -120,6 +123,7 @@ struct ShaderInput {
 		switch (type) {
 		case UBO:
 		case SSBO: { backing_buffer.release(); }
+		default: break;
 		}
 	}
 

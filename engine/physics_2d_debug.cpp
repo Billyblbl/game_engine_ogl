@@ -37,6 +37,8 @@ struct ShapeRenderer {
 	}
 
 	void draw_polygon(Array<v2f32> polygon, bool wireframe = true) const {
+		(void)polygon;
+		(void)wireframe;
 		// if (polygon.size() == 0) return;
 		// u32 indices[polygon.size()];
 		// for (auto i : u32xrange{ 0, polygon.size() })
@@ -57,6 +59,8 @@ struct ShapeRenderer {
 	}
 
 	void draw_circle(v3f32 circle, bool wireframe = true) const {
+		(void)circle;
+		(void)wireframe;
 		// constexpr auto detail = 8;
 		// u32 indices[detail + 1] = { 0 };
 		// v2f32 vertices[detail + 1] = { v2f32(0) };
@@ -85,6 +89,7 @@ struct ShapeRenderer {
 	}
 
 	void draw_line(Segment<v2f32> line) const {
+		(void)line;
 		// u32 indices[2] = { 0, 1 };
 		// v2f32 vertices[2] = { line.A, line.B };
 		// auto mesh = upload_mesh(get_v2f32_attributes(), larray(vertices), larray(indices), GL_LINE_STRIP); defer{ delete_mesh(mesh); };
@@ -102,6 +107,7 @@ struct ShapeRenderer {
 	}
 
 	void draw_point(v2f32 point) const {
+		(void)point;
 		// u32 idx = 0;
 		// auto mesh = upload_mesh(get_v2f32_attributes(), carray(&point, 1), carray(&idx, 1), GL_POINTS); defer{ delete_mesh(mesh); };
 		// {
@@ -124,6 +130,7 @@ struct ShapeRenderer {
 		bool world_aabbs = true,
 		bool radius = true//TODO
 		) {
+		(void)radius;
 		vp_matrix.backing_buffer.sync(cast<byte>(carray(&vp, 1)));
 
 		auto [scratch, scope] = scratch_push_scope(1 << 16); defer{ scratch_pop_scope(scratch, scope); };

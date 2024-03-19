@@ -57,7 +57,7 @@ struct FrameBuffer {
 	v2u32 dimensions;
 };
 
-static FrameBuffer default_framebuffer = { 0 };
+static FrameBuffer default_framebuffer = { 0, 0, v2u32(0) };
 
 FrameBuffer create_framebuffer(Array<const AttachementBinding> attachements, bool must_complete = true) {
 	GLuint id;

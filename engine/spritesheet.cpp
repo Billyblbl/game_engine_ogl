@@ -216,7 +216,7 @@ SpritesheetLayout::Entry parse_sequence(Arena& arena, xmlNode* node) {
 
 SpritesheetLayout build_layout(Arena& arena, const cstr recipe_path) {
 	SpritesheetLayout layout;
-	auto doc = xmlParseFile(recipe_path); assert(("TODO implement parse failure handling", doc)); defer{ xmlFreeDoc(doc); };
+	auto doc = xmlParseFile(recipe_path); assert(doc); defer{ xmlFreeDoc(doc); };
 	auto root = xmlDocGetRootElement(doc); assert(string((char*)root->name) == "spritesheet");
 
 	for (auto& attr : traverse_by<xmlAttr, &xmlAttr::next>(root->properties))
@@ -273,7 +273,6 @@ i32 get_entry(const SpritesheetLayout& layout, string id) {
 }
 
 Array<SpriteAnimation> build_animations(Arena& arena, const SpritesheetLayout& layout, v2u32 texture_dimensions, Array<const string> animations) {
-	using Entry = SpritesheetLayout::Entry;
 	auto [scratch, scope] = scratch_push_scope(layout.dimensions.x * layout.dimensions.y * sizeof(rtu32) * 2); defer { scratch_pop_scope(scratch, scope); };
 	auto sheet = slice_spritesheet(scratch, texture_dimensions, layout.dimensions);
 	return map(arena, animations, (

@@ -147,7 +147,7 @@ struct TexBuffer {
 
 };
 
-constexpr TexBuffer null_tex = { 0, v4u32(0), NoType };
+constexpr TexBuffer null_tex = { 0, v4u32(0), NoType, {} };
 
 TexBuffer create_texture(TexType type, v4u32 dimensions, GPUFormat format = RGBA32F) {
 	GLuint id;
@@ -179,8 +179,8 @@ bool upload_texture_data(TexBuffer& texture, Array<byte> source, SrcFormat forma
 		GL_GUARD(glPixelStorei(GL_PACK_ALIGNMENT, 2));
 		GL_GUARD(glPixelStorei(GL_UNPACK_ALIGNMENT, 2));
 	} else {//even * even size (clamped to 8)
-		GL_GUARD(glPixelStorei(GL_PACK_ALIGNMENT, min(pixel_size, 8)));
-		GL_GUARD(glPixelStorei(GL_UNPACK_ALIGNMENT, min(pixel_size, 8)));
+		GL_GUARD(glPixelStorei(GL_PACK_ALIGNMENT, min(pixel_size, 8u)));
+		GL_GUARD(glPixelStorei(GL_UNPACK_ALIGNMENT, min(pixel_size, 8u)));
 	}
 
 	switch (texture.type) {
@@ -223,7 +223,7 @@ template<typename T> TexBuffer create_texture(Array<T> source, TexType type, v4u
 //TODO Maybe? move this in a  more imgui specific place
 ImVec2 fit_to_area(ImVec2 area, v2f32 dimensions) {
 	auto ratios = ImGui::to_glm(area) / dimensions;
-	return ImGui::from_glm(dimensions * min(ratios.x, ratios.y));
+	return ImGui::from_glm(dimensions * max(ratios.x, ratios.y));
 }
 
 bool EditorWidget(const cstr label, TexBuffer& buffer) {
@@ -237,7 +237,7 @@ bool EditorWidget(const cstr label, TexBuffer& buffer) {
 		ImGui::Text("Preview :");
 		//TODO content preview
 		if (buffer.type == TX2D)
-			ImGui::Image((ImTextureID)(u64)buffer.id, fit_to_area(ImGui::GetContentRegionAvail(), buffer.dimensions), ImVec2(0, 1), ImVec2(1, 0));
+			ImGui::Image((ImTextureID)(u64)buffer.id, fit_to_area(ImGui::GetContentRegionAvail(), buffer.dimensions), ImVec2(0, 0), ImVec2(1, 1));
 		else
 			ImGui::Text("Unimplemented preview for texture type : %s", GLtoString(buffer.type).data());
 	}

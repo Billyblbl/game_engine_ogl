@@ -19,13 +19,13 @@ const static GLenum OGLLogSeverity[] = {
 	// GL_DEBUG_SEVERITY_NOTIFICATION
 };
 
-static void ogl_debug_callback(GLenum source,
+static void ogl_debug_callback(GLenum,
 	GLenum type,
 	GLuint id,
 	GLenum severity,
-	GLsizei length,
+	GLsizei,
 	const GLchar* message,
-	const void* user_param
+	const void*
 ) {
 	for (auto&& i : OGLLogSeverity) if (i == severity)
 		fprintf(stderr, "[%s] OpenGL Debug %u, %s on %u: %s\n", GLtoString(i).data(), type, GLtoString(type).data(), id, message);

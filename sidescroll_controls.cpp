@@ -109,7 +109,7 @@ void player_input(SidescrollControl& ctrl, const SidescrollControl::PlayerBindin
 	ctrl.actions.all = poll(bindings.device, bindings.actions.all);
 }
 
-v2f32 control(SidescrollControl& ctrl, v2f32& velocity, v2f32& scale, v2f32 gravity, f32 dt) {
+v2f32 control(SidescrollControl& ctrl, v2f32& velocity, v2f32& scale, f32 dt) {
 	using namespace glm;
 	using namespace Input;
 	f32 target_vel = ctrl.movement.x * ctrl.speed;
@@ -164,7 +164,7 @@ rtu32 animate_sidescroll_character(Animator& animator, Array<SpriteAnimation> an
 	case JUMP: return animate(animations[state], v1f32(animator.state_time(time)));
 	case FALL: return animate(animations[state], v1f32(animator.state_time(time)));
 	case IDLE: return animate(animations[state], v1f32(animator.state_time(time)));
-	default: return (assert(("Unimplemented state type", false)), rtu32{});
+	default: return (panic(), rtu32{});
 	}
 }
 
@@ -189,7 +189,7 @@ void ground_characters(Array<SidescrollCharacter> characters, Array<Collision2D>
 				return dot(lever, gravity_dir) > 0 && angle(normal, gravity_dir) < ch.ctrl->max_slope;
 			}
 		);
-		if (ch.ctrl->grounded = (linear_search(col.contacts, grounding_contact) >= 0))
+		if ((ch.ctrl->grounded = (linear_search(col.contacts, grounding_contact) >= 0)))
 			ch.ctrl->falling = false;
 	}
 }
@@ -198,7 +198,7 @@ void update_characters(Array<SidescrollCharacter> characters, Array<Collision2D>
 	PROFILE_SCOPE("Characters updates");
 	ground_characters(characters, collisions, normalize(gravity));
 	for (auto& ch : characters) {
-		ch.space->velocity.translation = control(*ch.ctrl, ch.space->velocity.translation, ch.space->transform.scale, gravity, clock.dt);
+		ch.space->velocity.translation = control(*ch.ctrl, ch.space->velocity.translation, ch.space->transform.scale, clock.dt);
 		auto frame = animate_sidescroll_character(*ch.anim, ch.animations, *ch.ctrl, clock.current);
 		ch.sprite->view = {
 			ch.spritesheet.min + frame.min,

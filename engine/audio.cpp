@@ -190,27 +190,4 @@ void update_audio(AudioDevice& device, Array<Sound> sounds, const Spacial2D& poh
 	ALListener::set<VELOCITY>(v3f32(poh.velocity.translation, 0));
 }
 
-#include <system_editor.cpp>
-
-void audio_window(AudioDevice& device) {
-	ImGui::Text("Device : %p:%s", device.handle, device.name.data());
-	ImGui::Text("ALC_DEVICES_SPECIFIER : %s\n", alcGetString(device.handle, ALC_DEVICE_SPECIFIER));
-	ImGui::Text("ALC_DEFAULT_DEVICE_SPECIFIER : %s\n", alcGetString(device.handle, ALC_DEFAULT_DEVICE_SPECIFIER));
-	ImGui::Text("ALC_ALL_DEVICES_SPECIFIER : %s\n", alcGetString(device.handle, ALC_ALL_DEVICES_SPECIFIER));
-	ImGui::Text("ALC_DEFAULT_ALL_DEVICES_SPECIFIER : %s\n", alcGetString(device.handle, ALC_DEFAULT_ALL_DEVICES_SPECIFIER));
-
-	if (device.extensions.size() > 0) {
-		ImGui::Text("%u", device.extensions.size());
-		ImGui::SameLine();
-		if (ImGui::TreeNode("Extensions")) {
-			for (auto ext : device.extensions)
-				ImGui::Text("%s\n", ext.data());
-			ImGui::TreePop();
-		}
-	} else {
-		ImGui::Text("No extensions");
-	}
-	ALListener::EditorWidget("Listener");
-};
-
 #endif

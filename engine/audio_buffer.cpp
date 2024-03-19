@@ -42,7 +42,7 @@ Array<AudioBuffer> allocate_audio_buffers(Arena& arena, usize count) {
 	return buffers;
 }
 
-void deallocate(Arena& arena, Array<AudioBuffer> buffers) {
+void deallocate(Array<AudioBuffer> buffers) {
 	AL_GUARD(alDeleteBuffers(buffers.size(), &buffers[0].id));
 }
 

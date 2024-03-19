@@ -26,20 +26,20 @@
 
 #include <tilemap.cpp>
 
-//test 
+//test
 #include <text.cpp>
 
 #define MAX_SPRITES MAX_ENTITIES
 
 const struct {
-	cstrp test_character_spritesheet_path = "test_character.png";
-	cstrp test_character_anim_path = "test_character.anim";
+	cstrp test_character_spritesheet_path = "test_stuff/test_character.png";
+	cstrp test_character_anim_path = "test_stuff/test_character.anim";
 	cstrp sprite_pipeline = "./shaders/sprite.glsl";
-	cstrp test_sound = "./audio/file_example_OOG_1MG.ogg";
-	cstrp test_sidescroll_path = "12_Animated_Character_Template.png";
-	cstrp sidescroll_character_animation_recipe_path = "test_sidescroll_character.xml";
+	cstrp test_sound = "test_stuff/file_example_OOG_1MG.ogg";
+	cstrp test_sidescroll_path = "test_stuff/12_Animated_Character_Template.png";
+	cstrp sidescroll_character_animation_recipe_path = "test_stuff/test_sidescroll_character.xml";
 	cstrp tilemap_pipeline = "./shaders/tilemap.glsl";
-	cstrp level = "./test.tmx";
+	cstrp level = "test_stuff/test.tmx";
 } assets;
 
 struct Entity : public EntitySlot {
@@ -352,7 +352,7 @@ struct PlaygroundScene {
 		//test
 		scene.test.draw_texts = TextRenderer::load("./shaders/text.glsl");
 		// font = Font::load(resources_arena, test.draw_texts.lib, "test_font.ttf");
-		scene.test.font = Font::load(scene.resources_arena, scene.test.draw_texts.lib, "Arial.ttf", 0, v2u32(128));
+		scene.test.font = Font::load(scene.resources_arena, scene.test.draw_texts.lib, "test_stuff/Arial.ttf", 0, v2u32(128));
 
 		{
 			PROFILE_SCOPE("Waiting for GPU init work");

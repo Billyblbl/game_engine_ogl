@@ -172,7 +172,8 @@ TexBuffer& unload(TexBuffer& texture) {
 
 bool upload_texture_data(TexBuffer& texture, Array<byte> source, SrcFormat format, Area<3> box) {
 	auto pixel_size = format.channel_count * format.channel_size;
-	if (pixel_size % 2 == 1) {//odd size
+	if (pixel_size == 0 || source.size_bytes() == 0) return false;
+	else if (pixel_size % 2 == 1) {//odd size
 		GL_GUARD(glPixelStorei(GL_PACK_ALIGNMENT, 1));
 		GL_GUARD(glPixelStorei(GL_UNPACK_ALIGNMENT, 1));
 	} else if ((pixel_size / 2) % 2 == 1) {//even * odd size

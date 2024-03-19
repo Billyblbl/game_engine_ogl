@@ -262,14 +262,16 @@ $(TMX_MODULE): $(BUILD_DIR) $(TMX_SRC)
 
 #* app module
 
-APP_ROOT = main.cpp
+APP_ROOT = game/main.cpp
 
 APP_SRC = $(APP_ROOT)
 APP_SRC += $(BLBLGAME_SRC)
-APP_SRC += playground_scene.cpp
-APP_SRC += top_down_controls.cpp
-APP_SRC += sidescroll_controls.cpp
-APP_SRC += texture_shape_generation.cpp
+APP_SRC += game/playground_scene.cpp
+APP_SRC += game/top_down_controls.cpp
+APP_SRC += game/sidescroll_controls.cpp
+APP_SRC += game/texture_shape_generation.cpp
+
+INC += game
 
 APP_NAME=test_app
 APP=$(BUILD_DIR)/$(APP_NAME)

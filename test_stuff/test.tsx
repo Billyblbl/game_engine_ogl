@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <tileset version="1.10" tiledversion="1.10.2" name="test" tilewidth="32" tileheight="32" tilecount="16" columns="4">
  <grid orientation="orthogonal" width="1" height="1"/>
- <image source="test_character.png" width="128" height="128"/>
+ <image source="test_stuff/test_character.png" width="128" height="128"/>
  <tile id="0">
   <objectgroup draworder="index" id="4">
    <object id="28" name="AABB" x="7" y="6" width="17" height="24"/>

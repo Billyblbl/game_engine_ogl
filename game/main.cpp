@@ -3,6 +3,7 @@
 #include <application.cpp>
 #include <playground_scene.cpp>
 #include <spall/profiling.cpp>
+#include <system_editor.cpp>
 
 bool editor_test(App& app, u64 scene_id) {
 	PROFILE_SCOPE(__PRETTY_FUNCTION__);

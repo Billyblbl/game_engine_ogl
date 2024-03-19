@@ -47,7 +47,7 @@ extern "C" {
 #if defined(PLATFORM_WINDOWS)
 #include <Windows.h>
 f64 get_time_in_micros(void) {
-	static f64 invfreq;
+	static f64 invfreq = 0;
 	if (!invfreq) {
 		LARGE_INTEGER frequency;
 		QueryPerformanceFrequency(&frequency);

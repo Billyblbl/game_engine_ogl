@@ -49,7 +49,10 @@ INC += $(IMGUI)/backends
 
 IMGUI_MODULE=$(BUILD_DIR)/imgui.o
 
-imgui: $(IMGUI_MODULE)
+imgui:
+	@echo -e "Rebuilding $(COLOR)imgui$(NOCOLOR)"
+	@rm -f $(IMGUI_MODULE)
+	@$(MAKE) $(IMGUI_MODULE)
 
 $(IMGUI_MODULE): $(BUILD_DIR) $(IMGUI_SRC)
 	@echo -e "Building $(COLOR)imgui$(NOCOLOR)"
@@ -78,7 +81,11 @@ INC += $(STB)
 
 CORE_MODULE=$(BUILD_DIR)/core.o
 
-core: $(CORE_MODULE)
+core:
+	@echo -e "Rebuilding $(COLOR)core$(NOCOLOR)"
+	@rm -f $(CORE_MODULE)
+	@$(MAKE) $(CORE_MODULE)
+
 
 $(CORE_MODULE): $(BUILD_DIR) $(CORE_SRC)
 	@echo -e "Building $(COLOR)core$(NOCOLOR)"
@@ -113,7 +120,11 @@ LDFLAGS += -lopengl32
 
 GFX_MODULE=$(BUILD_DIR)/gfx.o
 
-gfx: $(GFX_MODULE)
+gfx:
+	@echo -e "Rebuilding $(COLOR)gfx$(NOCOLOR)"
+	@rm -f $(GFX_MODULE)
+	@$(MAKE) $(GFX_MODULE)
+
 
 $(GFX_MODULE): $(BUILD_DIR) $(GFX_SRC)
 	@echo -e "Building $(COLOR)gfx$(NOCOLOR)"
@@ -137,7 +148,10 @@ LDFLAGS += -lopenal
 
 AUDIO_MODULE=$(BUILD_DIR)/audio.o
 
-audio: $(AUDIO_MODULE)
+audio:
+	@echo -e "Rebuilding $(COLOR)audio$(NOCOLOR)"
+	@rm -f $(AUDIO_MODULE)
+	@$(MAKE) $(AUDIO_MODULE)
 
 $(AUDIO_MODULE): $(BUILD_DIR) $(AUDIO_SRC)
 	@echo -e "Building $(COLOR)audio$(NOCOLOR)"
@@ -158,7 +172,11 @@ BLBLGAME_SRC += $(PHYSICS_SRC)
 
 PHYSICS_MODULE=$(BUILD_DIR)/physics.o
 
-physics: $(PHYSICS_MODULE)
+physics:
+	@echo -e "Rebuilding $(COLOR)physics$(NOCOLOR)"
+	@rm -f $(PHYSICS_MODULE)
+	@$(MAKE) $(PHYSICS_MODULE)
+
 
 $(PHYSICS_MODULE): $(BUILD_DIR) $(PHYSICS_SRC)
 	@echo -e "Building $(COLOR)physics$(NOCOLOR)"
@@ -185,7 +203,11 @@ LDFLAGS += -lfreetype
 
 MISC_MODULE=$(BUILD_DIR)/misc.o
 
-misc: $(MISC_MODULE)
+misc:
+	@echo -e "Rebuilding $(COLOR)misc$(NOCOLOR)"
+	@rm -f $(MISC_MODULE)
+	@$(MAKE) $(MISC_MODULE)
+
 
 $(MISC_MODULE): $(BUILD_DIR) $(BLBLGAME_SRC)
 	@echo -e "Building $(COLOR)misc$(NOCOLOR)"
@@ -204,7 +226,11 @@ VORBIS_SRC=$(STB)/stb_vorbis.c
 
 VORBIS_MODULE=$(BUILD_DIR)/vorbis.o
 
-vorbis: $(VORBIS_MODULE)
+vorbis:
+	@echo -e "Rebuilding $(COLOR)vorbis$(NOCOLOR)"
+	@rm -f $(VORBIS_MODULE)
+	@$(MAKE) $(VORBIS_MODULE)
+
 
 $(VORBIS_MODULE): $(BUILD_DIR) $(VORBIS_SRC)
 	@echo -e "Building $(COLOR)vorbis$(NOCOLOR)"
@@ -225,7 +251,11 @@ LDFLAGS += -ldl
 
 PROFILING_MODULE=$(BUILD_DIR)/profiling.o
 
-profiling: $(PROFILING_MODULE)
+profiling:
+	@echo -e "Rebuilding $(COLOR)profiling$(NOCOLOR)"
+	@rm -f $(PROFILING_MODULE)
+	@$(MAKE) $(PROFILING_MODULE)
+
 
 $(PROFILING_MODULE): $(BUILD_DIR) $(PROFILING_SRC)
 	@echo -e "Building $(COLOR)profiler$(NOCOLOR)"
@@ -252,7 +282,11 @@ LDFLAGS += -lxml2
 
 TMX_MODULE=$(BUILD_DIR)/tmx.o
 
-tmx: $(TMX_MODULE)
+tmx:
+	@echo -e "Rebuilding $(COLOR)tmx$(NOCOLOR)"
+	@rm -f $(TMX_MODULE)
+	@$(MAKE) $(TMX_MODULE)
+
 
 $(TMX_MODULE): $(BUILD_DIR) $(TMX_SRC)
 	@echo -e "Building $(COLOR)tmx$(NOCOLOR)"
@@ -277,7 +311,10 @@ APP_NAME=test_app
 APP=$(BUILD_DIR)/$(APP_NAME)
 APP_MODULE=$(APP:%=%.o)
 
-app_module: $(APP_MODULE)
+app_module:
+	@echo -e "Rebuilding $(COLOR)app_module$(NOCOLOR)"
+	@rm -f $(APP_MODULE)
+	@$(MAKE) $(APP_MODULE)
 
 #* /app module
 
@@ -302,7 +339,10 @@ $(BUILD_DIR):
 $(BLBLSTD_MODULE): $(BUILD_DIR)
 	@cd blblstd && $(MAKE)
 
-blblstd: $(BLBLSTD_MODULE)
+blblstd:
+	@echo -e "Rebuilding $(COLOR)blblstd$(NOCOLOR)"
+	@rm -f $(BLBLSTD_MODULE)
+	@$(MAKE) $(BLBLSTD_MODULE)
 
 clean:
 	rm -rf $(BUILD_DIR)

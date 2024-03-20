@@ -192,7 +192,7 @@ struct PlaygroundScene {
 
 	struct {
 		TextRenderer draw_texts;
-		Font font;
+		Font font[2];
 		f32 test_text_scale = 1.f;
 	} test;
 
@@ -218,7 +218,8 @@ struct PlaygroundScene {
 		PROFILE_SCOPE(__PRETTY_FUNCTION__);
 
 		//test
-		test.font.release();
+		test.font[1].release();
+		test.font[0].release();
 		test.draw_texts.release();
 
 		level.release();
@@ -352,7 +353,20 @@ struct PlaygroundScene {
 		//test
 		scene.test.draw_texts = TextRenderer::load("./shaders/text.glsl");
 		// font = Font::load(resources_arena, test.draw_texts.lib, "test_font.ttf");
-		scene.test.font = Font::load(scene.resources_arena, scene.test.draw_texts.lib, "test_stuff/Arial.ttf", 0, v2u32(128));
+		scene.test.font[0] = Font::load(
+			scene.resources_arena,
+			scene.test.draw_texts.lib,
+			"test_stuff/Arial.ttf",
+			0,
+			v2u32(128)
+		);
+
+		scene.test.font[1] = Font::load_sdf(
+			scene.resources_arena,
+			scene.test.draw_texts.lib,
+			"test_stuff/Arial.ttf",
+			0
+		);
 
 		{
 			PROFILE_SCOPE("Waiting for GPU init work");
@@ -378,7 +392,7 @@ struct PlaygroundScene {
 				if (ImGui::Begin("Misc")) {
 					ImGui::Text("Update index : %llu", update_count);
 					EditorWidget("Clock", clock);
-					EditorWidget("test font", test.font);
+					EditorWidget("test fonts", larray(test.font));
 					EditorWidget("test text scale", test.test_text_scale);
 				} ImGui::End();
 			}
@@ -418,7 +432,13 @@ struct PlaygroundScene {
 					text.str = "Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat. Duis aute irure dolor in reprehenderit in voluptate velit esse cillum dolore eu fugiat nulla pariatur. Excepteur sint occaecat cupidatat non proident, sunt in culpa qui officia deserunt mollit anim id est laborum.";
 					text.rect = rtu32{ v2u32(0), v2u32(1500, 1000) };
 					text.color = v4f32(1);
-					text.font = &test.font;
+
+					static u32 select_font = 0;
+					if (ImGui::Begin("Font atlas mode")) {
+						if (ImGui::RadioButton("Alpha", select_font == 0)) select_font = 0;
+						if (ImGui::RadioButton("SDF", select_font == 1)) select_font = 1;
+					} ImGui::End();
+					text.font = &test.font[select_font];
 					text.scale = test.test_text_scale;
 					text.linespace = 1.f;
 					text.orient = Text::H;

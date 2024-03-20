@@ -145,6 +145,11 @@ struct TexBuffer {
 		return *this;
 	}
 
+	TexBuffer& generate_mipmaps() {
+		GL_GUARD(glGenerateTextureMipmap(id));
+		return *this;
+	}
+
 };
 
 constexpr TexBuffer null_tex = { 0, v4u32(0), NoType, {} };
@@ -170,7 +175,7 @@ TexBuffer& unload(TexBuffer& texture) {
 	return texture;
 }
 
-bool upload_texture_data(TexBuffer& texture, Array<byte> source, SrcFormat format, Area<3> box) {
+bool upload_texture_data(TexBuffer& texture, Array<byte> source, SrcFormat format, Area<3> box, GLint mipmap = 0) {
 	auto pixel_size = format.channel_count * format.channel_size;
 	if (pixel_size == 0 || source.size_bytes() == 0) return false;
 	else if (pixel_size % 2 == 1) {//odd size
@@ -185,11 +190,11 @@ bool upload_texture_data(TexBuffer& texture, Array<byte> source, SrcFormat forma
 	}
 
 	switch (texture.type) {
-	case TX1D:		GL_GUARD(glTextureSubImage1D(texture.id, 0, box.min.x, width(box), format.channels, format.type, source.data())); break;
+	case TX1D:		GL_GUARD(glTextureSubImage1D(texture.id, mipmap, box.min.x, width(box), format.channels, format.type, source.data())); break;
 	case TX2D:
-	case TX1DARR:	GL_GUARD(glTextureSubImage2D(texture.id, 0, box.min.x, box.min.y, width(box), height(box), format.channels, format.type, source.data())); break;
+	case TX1DARR:	GL_GUARD(glTextureSubImage2D(texture.id, mipmap, box.min.x, box.min.y, width(box), height(box), format.channels, format.type, source.data())); break;
 	case TX3D:
-	case TX2DARR:	GL_GUARD(glTextureSubImage3D(texture.id, 0, box.min.x, box.min.y, box.min.z, width(box), height(box), depth(box), format.channels, format.type, source.data())); break;
+	case TX2DARR:	GL_GUARD(glTextureSubImage3D(texture.id, mipmap, box.min.x, box.min.y, box.min.z, width(box), height(box), depth(box), format.channels, format.type, source.data())); break;
 	default: return fail_ret(GLtoString(texture.type).data(), false);
 	}
 	return true;

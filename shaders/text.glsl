@@ -37,6 +37,10 @@ layout(std140, binding = 0) uniform Scene {
 	float alpha_discard;
 };
 
+layout(std140, binding = 1) uniform Debug {
+	uint frag_mode;
+};
+
 #ifdef VERTEX_SHADER
 
 layout(location = 0) in vec2 position;
@@ -58,11 +62,34 @@ void main() {
 
 layout(location = 0) out vec4 pixel_color;
 
+
+const uint frag_mode_alpha_blend = 0;
+const uint frag_mode_alpha_threshold = 1;
+const uint frag_mode_sdf_threshold = 2;
+
 void main() {
-	pixel_color = texts[text].color * texture(font, atlas_sample(view, uv, vec2(font_atlas_size))).r;
+
+	switch (frag_mode) {
+		case frag_mode_alpha_blend: {
+			pixel_color = texts[text].color * texture(font, atlas_sample(view, uv, vec2(font_atlas_size))).r;
+		} break;
+		case frag_mode_alpha_threshold: {
+			if (texture(font, atlas_sample(view, uv, vec2(font_atlas_size))).r > 0.5)
+				pixel_color = texts[text].color;
+			else
+				discard;
+		} break;
+		case frag_mode_sdf_threshold: {
+			if (texture(font, atlas_sample(view, uv, vec2(font_atlas_size))).r >= 0)
+				pixel_color = texts[text].color;
+			if (pixel_color.a < alpha_discard)
+				discard;
+		} break;
+	}
+
 	if (pixel_color.a < alpha_discard)
 		discard;
-		// pixel_color = vec4(1, 0, 1, 1);
+	// pixel_color = vec4(1, 0, 1, 1);
 }
 
 #endif

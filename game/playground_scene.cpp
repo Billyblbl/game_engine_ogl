@@ -192,8 +192,7 @@ struct PlaygroundScene {
 
 	struct {
 		TextRenderer draw_texts;
-		Font font[2];
-		f32 test_text_scale = 1.f;
+		Font font;
 	} test;
 
 	Entity& create_test_body(string name, v2f32 position) {
@@ -218,8 +217,7 @@ struct PlaygroundScene {
 		PROFILE_SCOPE(__PRETTY_FUNCTION__);
 
 		//test
-		test.font[1].release();
-		test.font[0].release();
+		test.font.release();
 		test.draw_texts.release();
 
 		level.release();
@@ -353,20 +351,7 @@ struct PlaygroundScene {
 		//test
 		scene.test.draw_texts = TextRenderer::load("./shaders/text.glsl");
 		// font = Font::load(resources_arena, test.draw_texts.lib, "test_font.ttf");
-		scene.test.font[0] = Font::load(
-			scene.resources_arena,
-			scene.test.draw_texts.lib,
-			"test_stuff/Arial.ttf",
-			0,
-			v2u32(128)
-		);
-
-		scene.test.font[1] = Font::load_sdf(
-			scene.resources_arena,
-			scene.test.draw_texts.lib,
-			"test_stuff/Arial.ttf",
-			0
-		);
+		scene.test.font = Font::load(scene.resources_arena, scene.test.draw_texts.lib, "test_stuff/Arial.ttf");
 
 		{
 			PROFILE_SCOPE("Waiting for GPU init work");
@@ -390,16 +375,13 @@ struct PlaygroundScene {
 				} ImGui::End();
 
 				if (ImGui::Begin("Misc")) {
-					ImGui::Text("Update index : %llu", update_count);
+					ImGui::Text("Update index : %llu", update_count++);
 					EditorWidget("Clock", clock);
-					EditorWidget("test fonts", larray(test.font));
-					EditorWidget("test text scale", test.test_text_scale);
 				} ImGui::End();
 			}
 		}
 
 		PROFILE_SCOPE(__PRETTY_FUNCTION__);
-		defer{ update_count++; };
 		update(clock);
 		auto [scratch, scope] = scratch_push_scope(1ull << 19); defer{ scratch_pop_scope(scratch, scope); };
 
@@ -428,21 +410,24 @@ struct PlaygroundScene {
 				gfx.draw_sprites(gather<SpriteRenderer::Instance>(scratch, entities.used()), mat, gfx.sprite_atlas.texture);
 				//test
 				{
-					Text text;
-					text.str = "Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat. Duis aute irure dolor in reprehenderit in voluptate velit esse cillum dolore eu fugiat nulla pariatur. Excepteur sint occaecat cupidatat non proident, sunt in culpa qui officia deserunt mollit anim id est laborum.";
-					text.rect = rtu32{ v2u32(0), v2u32(1500, 1000) };
-					text.color = v4f32(1);
-
-					static u32 select_font = 0;
-					if (ImGui::Begin("Font atlas mode")) {
-						if (ImGui::RadioButton("Alpha", select_font == 0)) select_font = 0;
-						if (ImGui::RadioButton("SDF", select_font == 1)) select_font = 1;
+					static char text_buffer[4096];
+					static f32 test_text_scale = 1;
+					memset(text_buffer, 0, sizeof(text_buffer));
+					if (ImGui::Begin("Test Text")) {
+						EditorWidget("Test font", test.font);
+						ImGui::InputTextMultiline("Text", text_buffer, array_size(text_buffer));
+						ImGui::InputFloat("Scale", &test_text_scale);
 					} ImGui::End();
-					text.font = &test.font[select_font];
-					text.scale = test.test_text_scale;
+
+					Text text;
+					text.str = text_buffer;
+					text.rect = rtu32{ v2u32(0), cam.target->fbf.dimensions };
+					text.color = v4f32(1);
+					text.font = &test.font;
+					text.scale = test_text_scale;
 					text.linespace = 1.f;
 					text.orient = Text::H;
-					test.draw_texts(carray(&text, 1));
+					test.draw_texts(carray(&text, 1), cam.target->fbf.dimensions);
 				}
 			}
 		);

@@ -145,6 +145,11 @@ struct TexBuffer {
 		return *this;
 	}
 
+	TexBuffer& conf_max_sample_count(f32 max) {
+		GL_GUARD(glTextureParameterf(id, GL_TEXTURE_MAX_ANISOTROPY, max));
+		return *this;
+	}
+
 	TexBuffer& generate_mipmaps() {
 		GL_GUARD(glGenerateTextureMipmap(id));
 		return *this;

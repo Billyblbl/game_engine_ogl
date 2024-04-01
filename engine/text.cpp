@@ -107,7 +107,7 @@ struct Font {
 	axu32 glyph_indices;
 	Array<Glyph> glyphs;
 	Array<rtu32> glyph_views;
-	f32 linespace;
+	f32 linespace[2];
 
 	static Font load(
 		Arena& arena,
@@ -118,6 +118,8 @@ struct Font {
 		v2u32 atlas_size = v2u32(1024),
 		num_range<u32> character_codes = num_range<u32>{ 32, 127 }//* default printable
 	) {
+		//TODO replace constants with import parameters
+		//TODO fix SDF bitmap mapping (bitmap rect in atlas is different from what metrics indicate)
 		Font f;
 		printf("Loading Font %s:%u\n", path, index);
 		if (auto err = FT_New_Face(lib, path, index, &f.face))
@@ -125,13 +127,11 @@ struct Font {
 
 		if (auto err = FT_Set_Pixel_Sizes(f.face, font_size.x, font_size.y))
 			pfterror(__FILE__, __LINE__, err);
+		f.linespace[Text::H] = f.face->size->metrics.height / 64.f;
+		f.linespace[Text::V] = f.face->size->metrics.max_advance / 64.f;
 
-		//TODO vertical
-		// f.linespace = f.face. f.face->available_sizes->height;
-		f.linespace = f.face->size->metrics.height / 64.f;
-
-		struct { FT_ULong code; FT_UInt gindex; } available_glyphs_buffer[character_codes.size()+1];
-		memset(available_glyphs_buffer, 0, sizeof(available_glyphs_buffer[0]) * (character_codes.size()+1));
+		struct { FT_ULong code; FT_UInt gindex; } available_glyphs_buffer[character_codes.size() + 1];
+		memset(available_glyphs_buffer, 0, sizeof(available_glyphs_buffer[0]) * (character_codes.size() + 1));
 		auto available_glyphs = List{ carray(available_glyphs_buffer, character_codes.size()), 0 };
 
 		{ //* fetch available glyphs
@@ -146,19 +146,21 @@ struct Font {
 		auto mipmaps = 4;
 
 		{ //* Allocate ressources
-			f.glyphs = arena.push_array<Glyph>(width(f.glyph_indices)+1, true);
-			f.glyph_views = arena.push_array<rtu32>(width(f.glyph_indices)+1, true);
+			f.glyphs = arena.push_array<Glyph>(width(f.glyph_indices) + 1, true);
+			f.glyph_views = arena.push_array<rtu32>(width(f.glyph_indices) + 1, true);
 			f.glyph_atlas = Atlas2D::create(atlas_size, R32F, mipmaps);
-			f.glyph_atlas.texture.conf_border_color(v3f32(1.0, 0, 1.0));
-			f.glyph_atlas.texture.conf_wrap({ ClampToBorder, ClampToBorder, ClampToBorder });
-			f.glyph_atlas.texture.conf_sampling({ LinearMipmapLinear, Linear });
+			f.glyph_atlas.texture
+				.conf_border_color(v3f32(1.0, 0, 1.0))
+				.conf_wrap({ ClampToBorder, ClampToBorder, ClampToBorder })
+				.conf_sampling({ LinearMipmapLinear, Linear })
+				.conf_max_sample_count(8);
 		}
 
 		//* load glyphs
 		for (auto [c, gindex] : available_glyphs.used()) if (u32 err = 0;
 			(err = FT_Load_Glyph(f.face, gindex, 0)) ||
-			(err = FT_Render_Glyph(f.face->glyph, FT_RENDER_MODE_NORMAL))//* alpha
-			// (err = FT_Render_Glyph(f.face->glyph, FT_RENDER_MODE_SDF))//* sdf
+			(err = FT_Render_Glyph(f.face->glyph, FT_RENDER_MODE_NORMAL))
+			// (err = FT_Render_Glyph(f.face->glyph, FT_RENDER_MODE_SDF))
 			) {
 			pfterror(__FILE__, __LINE__, err);
 		} else {
@@ -173,107 +175,41 @@ struct Font {
 			glyph.size = v2u32(f.face->glyph->metrics.width / 64.f, f.face->glyph->metrics.height / 64.f);
 			f32 buffer[f.face->glyph->bitmap.rows * f.face->glyph->bitmap.pitch];
 			auto scratch = Arena::from_array(carray(buffer, f.face->glyph->bitmap.rows * f.face->glyph->bitmap.pitch));
-			f.glyph_views[glyph.atlas_view_index] = f.glyph_atlas.push(make_bitmap_image_alpha(scratch, f.face->glyph->bitmap), v2u32(mipmaps * 2));
-			// f.glyph_views[glyph.atlas_view_index] = f.glyph_atlas.push(make_bitmap_image_sdf(scratch, f.face->glyph->bitmap), v2u32(1));
+			f.glyph_views[glyph.atlas_view_index] = f.glyph_atlas.push(
+				make_bitmap_image_alpha(scratch, f.face->glyph->bitmap),
+				// make_bitmap_image_sdf(scratch, f.face->glyph->bitmap),
+				v2u32(mipmaps * 2)
+			);
 			f.glyphs[glyph.atlas_view_index] = glyph;
 		}
 
-		{//* generate lower res glyphs in mipmaps
-			u32 div = 1;
-			for (auto i : u64xrange{ 1, mipmaps }) {
-				div *= 2;
-				if (auto err = FT_Set_Pixel_Sizes(f.face, font_size.x / div, font_size.y / div)) {
-					pfterror(__FILE__, __LINE__, err);
-					break;
-				}
-				for (auto [c, gindex] : available_glyphs.used()) if (u32 err = 0;
-					(err = FT_Load_Glyph(f.face, gindex, 0)) ||
-					(err = FT_Render_Glyph(f.face->glyph, FT_RENDER_MODE_NORMAL))
-					) {
-					pfterror(__FILE__, __LINE__, err);
-				} else {
-					auto atlas_view_index = gindex - f.glyph_indices.min.x;
-					auto base_rect = f.glyph_views[atlas_view_index];
-					f32 buffer[f.face->glyph->bitmap.rows * f.face->glyph->bitmap.pitch];
-					auto scratch = Arena::from_array(carray(buffer, f.face->glyph->bitmap.rows * f.face->glyph->bitmap.pitch));
-					auto img = make_bitmap_image_alpha(scratch, f.face->glyph->bitmap);
-					auto rect = rtu32{ base_rect.min / div, base_rect.min / div + img.dimensions };
-					upload_texture_data(f.glyph_atlas.texture, img.data, img.format, slice_to_area<2>(rect, 0), i);
-				}
-			}
-		}
 
-		return f;
-	}
-
-
-	static Font load_sdf(
-		Arena& arena,
-		FT_Library lib,
-		const cstr path,
-		u32 index = 0,
-		v2u32 font_size = v2u32(64),
-		v2u32 atlas_size = v2u32(1024),
-		num_range<u32> character_codes = num_range<u32>{ 32, 127 }//* default printable
-	) {
-		Font f;
-		printf("Loading Font %s:%u\n", path, index);
-		if (auto err = FT_New_Face(lib, path, index, &f.face))
-			return (pfterror(__FILE__, __LINE__, err), Font{});
-
-		if (auto err = FT_Set_Pixel_Sizes(f.face, font_size.x, font_size.y))
-			pfterror(__FILE__, __LINE__, err);
-
-		//TODO vertical
-		// f.linespace = f.face. f.face->available_sizes->height;
-		f.linespace = f.face->size->metrics.height / 64.f;
-
-		struct { FT_ULong code; FT_UInt gindex; } available_glyphs_buffer[character_codes.size()];
-		auto available_glyphs = List{ carray(available_glyphs_buffer, character_codes.size()), 0 };
-
-		{ //* fetch available glyphs
-			f.glyph_indices = axu32{ v1u32(-(1lu)), v1u32(0) };
-			FT_UInt gindex;
-			for (auto c = FT_Get_First_Char(f.face, &gindex); gindex != 0; c = FT_Get_Next_Char(f.face, c, &gindex)) if (character_codes.contains_inc(c)) {
-				available_glyphs.push({ c, gindex });
-				f.glyph_indices = combined_aabb(f.glyph_indices, axu32{ v1u32(gindex), v1u32(gindex) });
-			}
-		}
-
-		{ //* Allocate ressources
-			f.glyphs = arena.push_array<Glyph>(width(f.glyph_indices), true);
-			f.glyph_views = arena.push_array<rtu32>(width(f.glyph_indices), true);
-			f.glyph_atlas = Atlas2D::create(atlas_size, R32F);
-			f.glyph_atlas.texture.conf_border_color(v3f32(1.0, 0, 1.0));
-			f.glyph_atlas.texture.conf_wrap({ ClampToBorder, ClampToBorder, ClampToBorder });
-			f.glyph_atlas.texture.conf_sampling({ LinearMipmapLinear, Linear });
-		}
-
-		//* load glyphs
-		for (auto [c, gindex] : available_glyphs.used()) if (u32 err = 0;
-			(err = FT_Load_Glyph(f.face, gindex, 0)) ||
-			// (err = FT_Render_Glyph(f.face->glyph, FT_RENDER_MODE_NORMAL))//* alpha
-			(err = FT_Render_Glyph(f.face->glyph, FT_RENDER_MODE_SDF))//* sdf
-			) {
-			pfterror(__FILE__, __LINE__, err);
-		} else {
-			Glyph glyph;
-			glyph.code = c;
-			glyph.index = gindex;
-			glyph.orient[Text::H].bearing = v2f32(f.face->glyph->metrics.horiBearingX, f.face->glyph->metrics.horiBearingY) / 64.f;
-			glyph.orient[Text::H].advance = f.face->glyph->metrics.horiAdvance / 64.f;
-			glyph.orient[Text::V].bearing = v2f32(f.face->glyph->metrics.vertBearingX, f.face->glyph->metrics.vertBearingY) / 64.f;
-			glyph.orient[Text::V].advance = f.face->glyph->metrics.vertAdvance / 64.f;
-			glyph.size = v2u32(f.face->glyph->metrics.width / 64.f, f.face->glyph->metrics.height / 64.f);
-			glyph.atlas_view_index = gindex - f.glyph_indices.min.x;
-			f32 buffer[f.face->glyph->bitmap.rows * f.face->glyph->bitmap.pitch];
-			auto scratch = Arena::from_array(carray(buffer, f.face->glyph->bitmap.rows * f.face->glyph->bitmap.pitch * sizeof(f32)));
-			// f.glyph_views[glyph.atlas_view_index] = f.glyph_atlas.push(make_bitmap_image_alpha(scratch, f.face->glyph->bitmap), v2u32(1));
-			f.glyph_views[glyph.atlas_view_index] = f.glyph_atlas.push(make_bitmap_image_sdf(scratch, f.face->glyph->bitmap), v2u32(1));
-			f.glyphs[glyph.atlas_view_index] = glyph;
-		}
-
-		f.glyph_atlas.texture.generate_mipmaps();
+		f.glyph_atlas.texture.generate_mipmaps(); //* auto generation since the manual lower res font is broken (cf below)
+		//TODO fix this so that it can be usable (offset problem with bitmap of the same glyph being different)
+		// {//* generate lower res glyphs in mipmaps
+		// 	u32 div = 1;
+		// 	for (auto i : u64xrange{ 1, mipmaps }) {
+		// 		div *= 2;
+		// 		if (auto err = FT_Set_Pixel_Sizes(f.face, font_size.x / div, font_size.y / div)) {
+		// 			pfterror(__FILE__, __LINE__, err);
+		// 			continue;
+		// 		}
+		// 		for (auto [c, gindex] : available_glyphs.used()) if (u32 err = 0;
+		// 			(err = FT_Load_Glyph(f.face, gindex, 0)) ||
+		// 			(err = FT_Render_Glyph(f.face->glyph, FT_RENDER_MODE_NORMAL))
+		// 			) {
+		// 			pfterror(__FILE__, __LINE__, err);
+		// 		} else {
+		// 			auto atlas_view_index = gindex - f.glyph_indices.min.x;
+		// 			auto base_rect = f.glyph_views[atlas_view_index];
+		// 			f32 buffer[f.face->glyph->bitmap.rows * f.face->glyph->bitmap.pitch];
+		// 			auto scratch = Arena::from_array(carray(buffer, f.face->glyph->bitmap.rows * f.face->glyph->bitmap.pitch));
+		// 			auto img = make_bitmap_image_alpha(scratch, f.face->glyph->bitmap);
+		// 			auto rect = rtu32{ base_rect.min / div, base_rect.min / div + img.dimensions };
+		// 			upload_texture_data(f.glyph_atlas.texture, img.data, img.format, slice_to_area<2>(rect, 0), i);
+		// 		}
+		// 	}
+		// }
 
 		return f;
 	}
@@ -283,7 +219,14 @@ struct Font {
 		FT_Done_Face(face);
 	}
 
-	u32 glyph_index_of(u64 character_code) const { return FT_Get_Char_Index(face, character_code) - glyph_indices.min.x; }
+	u32 glyph_index_of(u64 character_code) const {
+		auto index_in_face = FT_Get_Char_Index(face, character_code);
+		if (index_in_face == 0 || glyph_indices.min.x > index_in_face || glyph_indices.max.x < index_in_face) {
+			return 0;
+		}
+		return index_in_face - glyph_indices.min.x;
+	}
+
 	Glyph& operator[](u64 character_code) { return glyphs[glyph_index_of(character_code)]; }
 	const Glyph& operator[](u64 character_code) const { return glyphs[glyph_index_of(character_code)]; }
 };
@@ -312,7 +255,6 @@ struct TextRenderer {
 		ShaderInput texts;
 		ShaderInput glyphs;
 		ShaderInput scene;
-		ShaderInput debug;
 	} inputs;
 
 	struct TextInstance {
@@ -347,7 +289,6 @@ struct TextRenderer {
 			rd.inputs.texts = ShaderInput::create_slot(rd.pipeline, ShaderInput::SSBO, "Texts", sizeof(TextInstance) * max_texts);
 			rd.inputs.glyphs = ShaderInput::create_slot(rd.pipeline, ShaderInput::SSBO, "Glyphs", sizeof(v4u32) * max_glyphs);
 			rd.inputs.scene = ShaderInput::create_slot(rd.pipeline, ShaderInput::UBO, "Scene", sizeof(Scene));
-			rd.inputs.debug = ShaderInput::create_slot(rd.pipeline, ShaderInput::UBO, "Debug", sizeof(u32));
 		}
 		return rd;
 	}
@@ -376,7 +317,7 @@ struct TextRenderer {
 
 			for (auto& text : texts.subspan(batch)) if (text.font == font) {
 				auto cursor = v2f32(0);
-				cursor[!text.orient] = dim_vec(text.rect)[!text.orient] - text.scale * text.linespace * font->linespace; //* starting point
+				cursor[!text.orient] = dim_vec(text.rect)[!text.orient] - text.scale * text.linespace * font->linespace[text.orient]; //* starting point
 
 				auto advance = (
 					[&](v2f32 c, const Glyph& g) -> v2f32 {
@@ -388,7 +329,7 @@ struct TextRenderer {
 				auto next_line = (
 					[&](v2f32 c) -> v2f32 {
 						c[text.orient] = 0;
-						c[!text.orient] -= text.scale * text.linespace * font->linespace;
+						c[!text.orient] -= text.scale * text.linespace * font->linespace[text.orient];
 						return c;
 					}
 				);
@@ -468,19 +409,7 @@ struct TextRenderer {
 			inputs.glyphs.bind_content(font->glyph_views); defer{ inputs.glyphs.unbind(); };
 			inputs.texts.bind_content(text_instances.used());defer{ inputs.texts.unbind(); };
 			inputs.characters.bind_content(instances.used());defer{ inputs.characters.unbind(); };
-			inputs.scene.bind_object(Scene{ camera, font->glyph_atlas.texture.dimensions, 0.01f, {} }); defer{ inputs.scene.unbind(); };
-
-			enum FragMode : u32 { alpha_blend = 0, alpha_threshold = 1, sdf_threshold = 2 };
-			static FragMode fragmode = alpha_blend;
-
-			if (ImGui::Begin("FragMode")) {
-				if (ImGui::RadioButton("Alpha Blend", fragmode == alpha_blend)) fragmode = alpha_blend;
-				if (ImGui::RadioButton("Alpha Threshold", fragmode == alpha_threshold)) fragmode = alpha_threshold;
-				if (ImGui::RadioButton("SDF Threshold", fragmode == sdf_threshold)) fragmode = sdf_threshold;
-			} ImGui::End();
-
-			inputs.debug.bind_object(fragmode); defer{ inputs.debug.unbind(); };
-
+			inputs.scene.bind_object(Scene{ camera, font->glyph_atlas.texture.dimensions, 0.05f, {} }); defer{ inputs.scene.unbind(); };
 			GL_GUARD(glDrawElementsInstanced(rect.vao.draw_mode, rect.vao.element_count, rect.vao.index_type, null, instances.current));
 		}
 	}

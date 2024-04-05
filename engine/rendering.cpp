@@ -55,7 +55,8 @@ GLuint load_shader(const char* path, GLenum type) {
 	fflush(stdout);
 	if (std::ifstream file{ path, std::ios::binary | std::ios::ate }) {
 		usize size = file.tellg();
-		char buffer[size + 1] = { 0 };
+		char buffer[size + 1];
+		memset(buffer, 0, size + 1);
 		file.seekg(0);
 		file.read(buffer, size);
 		file.close();
@@ -153,7 +154,7 @@ GLuint get_texture_unit_target(GLuint program, const char* name) {
 GLuint create_render_pipeline(GLuint vertex_shader, GLuint fragment_shader) {
 	if (vertex_shader == 0 || fragment_shader == 0) {
 		fprintf(stderr, "Failed to build render pipeline, invalid shader\n");
-		return { 0 };
+		return 0;
 	}
 
 	auto program = GL_GUARD(glCreateProgram());
@@ -171,9 +172,9 @@ GLuint create_render_pipeline(GLuint vertex_shader, GLuint fragment_shader) {
 		log[logLength] = '\0';
 		GL_GUARD(glGetProgramInfoLog(program, logLength, nullptr, log));
 		fprintf(stderr, "Failed to build render pipeline %u, pipeline program log : %s\n", program, log);
-		return { 0 };
+		return 0;
 	} else {
-		return { program };
+		return program;
 	}
 }
 
@@ -220,7 +221,8 @@ GLuint load_pipeline(const char* path) {
 	//TODO discard all this fstream garbage
 	if (std::ifstream file{ path, std::ios::binary | std::ios::ate }) {
 		usize size = file.tellg();
-		char buffer[size + 1] = { 0 };
+		char buffer[size + 1];
+		memset(buffer, 0, size + 1);
 		file.seekg(0);
 		file.read(buffer, size);
 		file.close();
@@ -232,7 +234,7 @@ GLuint load_pipeline(const char* path) {
 		return pipeline;
 	} else {
 		fprintf(stderr, "failed to open file %s\n", path);
-		return { 0 };
+		return 0;
 	}
 }
 

@@ -3,15 +3,23 @@ include env.mk
 CXX=$(CXX_PATH)
 CC=$(CC_PATH)
 
+export CFLAGS
+export CXXFLAGS
 
 CFLAGS += -g3
 # CFLAGS += -O2
+
 CFLAGS += -Wall
 CFLAGS += -Wextra
 CFLAGS += -Werror
+
+CFLAGS += -Wno-misleading-indentation
+CFLAGS += -Wno-unused-command-line-argument
+CFLAGS += -Wno-vla-cxx-extension
+
 # CFLAGS += -finstrument-functions
-# CFLAGS += -fsanitize=address
-# CFLAGS += -fsanitize=undefined
+CFLAGS += -fsanitize=address
+CFLAGS += -fsanitize=undefined
 # CFLAGS += -fsanitize=leak
 # CFLAGS += -fsanitize=memory
 # CFLAGS += -fsanitize=thread
@@ -21,8 +29,9 @@ CXXFLAGS += -std=c++23
 CXXFLAGS += -fno-exceptions
 #TODO check libFuzzer https://vimeo.com/855891054 -> automatic test coverage exploration
 
-INC = $(PWD)
-LIB = $(PWD)
+INC = $(CURDIR) $(CXX_HEADERS)
+
+LIB = $(CURDIR)
 
 BLBLSTD_MODULE = $(BUILD_DIR)/blblstd.o
 
@@ -215,7 +224,7 @@ $(MISC_MODULE): $(BUILD_DIR) $(BLBLGAME_SRC)
 
 #* /misc
 
-INC += $(PWD)/engine
+INC += $(CURDIR)/engine
 INC += $(BLBLSTD)/src
 #*/ engine
 
@@ -234,7 +243,7 @@ vorbis:
 
 $(VORBIS_MODULE): $(BUILD_DIR) $(VORBIS_SRC)
 	@echo -e "Building $(COLOR)vorbis$(NOCOLOR)"
-	@$(CXX) $(CXXFLAGS) -c $(VORBIS_SRC) $(INC:%=-I%) -o $@
+	@$(CC) $(CFLAGS) -c $(VORBIS_SRC) $(INC:%=-I%) -o $@
 
 #*/ vorbis
 
@@ -316,19 +325,19 @@ app_module:
 	@rm -f $(APP_MODULE)
 	@$(MAKE) $(APP_MODULE)
 
+$(APP_MODULE): $(BUILD_DIR) $(APP_SRC)
+	@echo -e "Building $(COLOR)app module$(NOCOLOR)"
+	@$(CXX) $(CXXFLAGS) -c $(APP_ROOT) $(INC:%=-I%) -o $@
+
 #* /app module
 
 #* app
 
 app: $(APP)
 
-$(APP_MODULE): $(BUILD_DIR) $(APP_SRC)
-	@echo -e "Building $(COLOR)app module$(NOCOLOR)"
-	@$(CXX) $(CXXFLAGS) -c $(APP_ROOT) $(INC:%=-I%) -o $@
-
 $(APP): $(APP_MODULE) $(VORBIS_MODULE) $(IMGUI_MODULE) $(BLBLSTD_MODULE) $(PROFILING_MODULE) $(TMX_MODULE)
 	@echo -e "Linking $(COLOR)app executable$(NOCOLOR)"
-	@$(CXX) $(CXXFLAGS) $^ $(LIB:%=-L%) $(LDFLAGS) -o $@
+	$(CXX) $(CXXFLAGS) $^ $(LIB:%=-L%) $(LDFLAGS) -o $@
 
 #*/ app
 
@@ -349,4 +358,19 @@ clean:
 
 re: clean default
 
-.PHONY: app clean re default tmx imgui vorbis profiling app_module blblstd core gfx misc audio physics $(BLBLSTD_MODULE)
+#* dependencies, should this be in there if we want to let the user use their own installations ?
+DEP := mingw-w64-clang-x86_64-clang
+DEP += mingw-w64-clang-x86_64-glfw
+DEP += mingw-w64-clang-x86_64-glew
+DEP += mingw-w64-clang-x86_64-openal
+DEP += mingw-w64-clang-x86_64-libxml2
+DEP += mingw-w64-clang-x86_64-dlfcn
+DEP += mingw-w64-clang-x86_64-freetype
+DEP += mingw-w64-clang-x86_64-compiler-rt
+DEP += mingw-w64-clang-x86_64-gdb
+#* gcc needed because clang msys2 package doesn't come with c++ headers for some reason
+DEP += mingw-w64-clang-x86_64-gcc
+dep:
+	pacman --noconfirm -Sy $(DEP)
+
+.PHONY: app clean re default tmx imgui vorbis profiling app_module blblstd core gfx misc audio physics $(BLBLSTD_MODULE) dep

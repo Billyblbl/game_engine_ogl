@@ -454,7 +454,7 @@ template<typename T> constexpr SrcFormat Formats[] = {
 	Format<glm::vec<4, T>>
 };
 
-template<typename T> constexpr SrcFormat image_format_of(Array<T> source) {
+template<typename T> constexpr SrcFormat image_format_of(Array<T>) {
 	return Format<std::remove_const_t<T>>;
 }
 

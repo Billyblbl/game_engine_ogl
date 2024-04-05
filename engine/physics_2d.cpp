@@ -118,7 +118,11 @@ template<support_function F1, support_function F2> v2f32 EPA(const F1& f1, const
 	PROFILE_SCOPE(__PRETTY_FUNCTION__);
 
 	auto [A, B, C] = triangle;
-	v2f32 points_buffer[max_iteration + 3] = { A, B, C };
+	v2f32 points_buffer[max_iteration + 3];
+	points_buffer[0] = A;
+	points_buffer[1] = B;
+	points_buffer[2] = C;
+
 	auto points = List{ carray(points_buffer, max_iteration + 3), 3 };
 
 	auto best_point_index = 0;

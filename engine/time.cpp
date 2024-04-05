@@ -58,7 +58,7 @@ bool EditorWidget(const cstr label, Time::Clock& clock, bool foldable = true) {
 	bool changed = false;
 	if (!foldable || ImGui::TreeNode(label)) {
 		if (!foldable)
-			ImGui::Text(label);
+			ImGui::Text("%s", label);
 		changed |= EditorWidget("Current", clock.current);
 		changed |= EditorWidget("Delta time", clock.dt);
 		if (foldable)
@@ -71,7 +71,7 @@ bool EditorWidget(const cstr label, Time::Timer& timer, bool foldable = true) {
 	bool changed = false;
 	if (!foldable || ImGui::TreeNode(label)) {
 		if (!foldable)
-			ImGui::Text(label);
+			ImGui::Text("%s", label);
 		changed |= EditorWidget("Duration", timer.duration);
 		changed |= EditorWidget("Start", timer.start);
 		if (foldable)

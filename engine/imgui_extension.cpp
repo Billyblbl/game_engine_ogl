@@ -11,6 +11,7 @@
 
 #include <math.cpp>
 #include <blblstd.hpp>
+#include <typeinfo>
 
 ImGuiConfigFlags DefaultImguiFlags = (
 	ImGuiConfigFlags_NavEnableKeyboard |
@@ -80,7 +81,7 @@ namespace ImGui {
 	template<typename T> bool bit_flags(const cstr label, T& flags, Array<const string> bit_names, bool same_line = true) {
 		bool changed = false;
 		if (same_line) {
-			ImGui::Text(label);
+			ImGui::Text("%s", label);
 			ImGui::SameLine();
 		}
 		if (same_line || ImGui::TreeNode(label)) {
@@ -206,7 +207,7 @@ inline bool EditorWidget(const cstr label, bool& data) {
 template<typename T> inline bool EditorWidget(const cstr label, reg_polytope<T>& data, bool foldable = true) {
 	bool changed = false;
 	if (!foldable)
-		ImGui::Text(label);
+		ImGui::Text("%s", label);
 	if (!foldable || ImGui::TreeNode(label)) {
 		changed |= EditorWidget("Min corner", data.min);
 		changed |= EditorWidget("Max corner", data.max);
@@ -218,14 +219,14 @@ template<typename T> inline bool EditorWidget(const cstr label, reg_polytope<T>&
 
 inline bool EditorWidget(const cstr label, Segment<v2f32>& data) {
 	bool changed = false;
-	ImGui::Text(label);
+	ImGui::Text("%s", label);
 	changed |= EditorWidget("A", data.A);
 	changed |= EditorWidget("B", data.B);
 	return changed;
 }
 
 inline bool EditorWidget(const cstr label, string data) {
-	ImGui::Text(label); ImGui::SameLine(); ImGui::Text(data.data());
+	ImGui::Text("%s", label); ImGui::SameLine(); ImGui::Text("%s", data.data());
 	return false;
 }
 

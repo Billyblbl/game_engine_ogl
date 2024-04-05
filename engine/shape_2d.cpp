@@ -52,6 +52,11 @@ struct Shape2D;
 rtf32 aabb_shape_group(Array<const Shape2D> shapes, const m3x3f32& parent = m3x3f32(1));
 
 struct Shape2D {
+	//* contructors needed otherwise clang whines about pointer arithmetics due to children using Array (std::span under the hood) (even tho g++ deals with it just fine)
+	//TODO replace all the std stuff in blblstd with custom structs, this is getting seriously annoying
+	Shape2D() = default;
+	Shape2D(const Shape2D&) = default;
+	Shape2D& operator=(const Shape2D&) = default;
 	m3x3f32 transform;
 	Array<v2f32> points;
 	Array<Shape2D> children;

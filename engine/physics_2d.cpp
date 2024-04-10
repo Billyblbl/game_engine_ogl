@@ -19,23 +19,26 @@ struct Body {
 
 Segment<v2f32> support_fat_point_cloud(Array<v2f32> vertices, const m3x3f32& matrix, f32 radius, v2f32 direction) {
 	using namespace glm;
+
 	auto [scratch, scope] = scratch_push_scope(sizeof(f32) * vertices.size() * 3); defer{ scratch_pop_scope(scratch, scope); };
 	auto dir = normalize(direction);
 	auto world_verts = map(scratch, vertices, [&](v2f32 v) -> v2f32 { return matrix * v3f32(v + dir * radius, 1); });
 	auto dots = map(scratch, world_verts, [=](v2f32 v) { return dot(v, dir); });
-	auto iA = best_fit_search(dots, fit_highest<f32>);
+	//iA is best support, iB is either 2nd best support or iA
+	i64 iA = best_fit_search(dots, fit_highest<f32>);
+	if (iA < 0)
+		return { v2f32(0), v2f32(0) };
 
-	auto iBa = best_fit_search(dots.subspan(0, iA), fit_highest<f32>);
-	auto iBboffset = best_fit_search(dots.subspan(iA + 1), fit_highest<f32>);
-	auto iBb = iA + 1 + iBboffset;
-	auto iB = -1;
+	i64 iBa = best_fit_search(dots.subspan(0, iA), fit_highest<f32>);
+	i64 iBboffset = best_fit_search(dots.subspan(iA + 1), fit_highest<f32>);
+	i64 iBb = iA + 1 + iBboffset;
+	i64 iB = -1;
 
 	if (iBa < 0 && iBboffset < 0) iB = iA;
 	else if (iBa < 0 && iBboffset >= 0) iB = iBb;
 	else if (iBboffset < 0 && iBa >= 0) iB = iBa;
 	else if (dots[iBa] > dots[iBb]) iB = iBa;
 	else iB = iBb;
-
 	return { world_verts[iA], world_verts[iB] };
 }
 
@@ -250,7 +253,7 @@ tuple<Transform2D, Transform2D> lever_impulsion(v2f32 impulse, Array<const v2f32
 			delta_v.rotation = degrees(cross(v3f32(lever, 0), v3f32(attenuated_impulse, 0)).z * inverse_inertia);
 			return delta_v;
 		}
-	);
+		);
 
 	return {
 		push_at_lever(-attenuated, lever[0], inverse_masses[0], inverse_inertias[0]),
@@ -395,7 +398,7 @@ Array<Collision2D> detect_collisions(Arena& arena, Array<RigidBody> entities, f3
 				tree_nodes = flatten(scratch, entities[entity_index].shapes[tree_index], false, false);
 			return tree_nodes;
 		}
-	);
+		);
 
 	auto collisions = List{ scratch.push_array<Collision2D>(entities.size() * entities.size()), 0 };//! this can theoretically break when entities have multiple top level shapes
 	for (auto ie : u64xrange{ 0, entities.size() - 1 }) for (auto je : u64xrange{ ie + 1, entities.size() }) { //* entities
@@ -431,6 +434,7 @@ Array<Collision2D> detect_collisions(Arena& arena, Array<RigidBody> entities, f3
 				collisions.push_growing(scratch, make_collision(contacts.shrink_to_content(arena), ents, shape_indices));
 		}
 	}
+
 
 	return arena.push_array(collisions.used());//? thats an array copy, not having that means we may waste space on the physics scratch, is it worth it ?
 }

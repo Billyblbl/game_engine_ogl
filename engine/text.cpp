@@ -173,7 +173,7 @@ struct Font {
 			glyph.orient[Text::V].bearing = v2f32(f.face->glyph->metrics.vertBearingX, f.face->glyph->metrics.vertBearingY) / 64.f;
 			glyph.orient[Text::V].advance = f.face->glyph->metrics.vertAdvance / 64.f;
 			glyph.size = v2u32(f.face->glyph->metrics.width / 64.f, f.face->glyph->metrics.height / 64.f);
-			f32 buffer[f.face->glyph->bitmap.rows * f.face->glyph->bitmap.pitch];
+			f32 buffer[f.face->glyph->bitmap.rows * f.face->glyph->bitmap.pitch + 1];
 			auto scratch = Arena::from_array(carray(buffer, f.face->glyph->bitmap.rows * f.face->glyph->bitmap.pitch));
 			f.glyph_views[glyph.atlas_view_index] = f.glyph_atlas.push(
 				make_bitmap_image_alpha(scratch, f.face->glyph->bitmap),
@@ -312,8 +312,8 @@ struct TextRenderer {
 		for (i32 batch = 0; batch >= 0; batch = linear_search(texts.subspan(batch), [=](Text& t) { return t.font != font; })) {
 			font = texts[batch].font;
 			auto [scratch, scope] = scratch_push_scope(texts.size_bytes() + inputs.characters.backing_buffer.size); defer{ scratch_pop_scope(scratch, scope); };
-			List<TextInstance> text_instances = { cast<TextInstance>(scratch.push(texts.size() * sizeof(TextInstance))), 0 };
-			List<Instance> instances = { cast<Instance>(scratch.push(inputs.characters.backing_buffer.size)), 0 };
+			List<TextInstance> text_instances = { scratch.push_array<TextInstance>(texts.size()), 0 };
+			List<Instance> instances = { cast<Instance>(scratch.push_bytes(inputs.characters.backing_buffer.size, alignof(Instance))), 0 };
 
 			for (auto& text : texts.subspan(batch)) if (text.font == font) {
 				auto cursor = v2f32(0);

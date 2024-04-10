@@ -31,7 +31,7 @@ struct Tilemap {
 		tm.tree = source;
 
 		auto [scratch, scope] = scratch_push_scope(1lu << 17, &arena); defer{ scratch_pop_scope(scratch, scope); };
-		List<rtu32> views = { cast<rtu32>(scratch.push(scratch.bytes.size_bytes() / 2)), 0 };
+		List<rtu32> views = { cast<rtu32>(scratch.push_bytes(scratch.bytes.size_bytes() / 2, alignof(rtu32))), 0 };
 
 		{ //* load tilesets
 			PROFILE_SCOPE("tilesets images");

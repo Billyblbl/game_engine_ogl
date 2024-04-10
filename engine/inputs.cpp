@@ -15,7 +15,7 @@ namespace Input {
 	}
 
 	namespace KB {
-		enum Key : i32 {
+		enum Key : int {
 			K_UNKNOWN = GLFW_KEY_UNKNOWN,
 			K_SPACE = GLFW_KEY_SPACE,
 			K_FIRST = K_SPACE,
@@ -269,7 +269,7 @@ namespace Input {
 	}
 
 	namespace Mouse {
-		enum Button : u32 {
+		enum Button : int {
 			LAST = GLFW_MOUSE_BUTTON_LAST,
 			LEFT = GLFW_MOUSE_BUTTON_LEFT,
 			RIGHT = GLFW_MOUSE_BUTTON_RIGHT,
@@ -428,24 +428,24 @@ namespace Input {
 
 	void context_key_callback(
 		GLFWwindow*,
-		KB::Key key,
+		int key,
 		int,
-		Action::Type action,
+		int action,
 		int
 	) {
 		if (action != Action::Press && action != Action::Release) return;
 		auto& context = get_context();
 		if (action == Action::Press) {
-			context.key_states[KB::index_of(key)] |= ButtonState::Down;
+			context.key_states[KB::index_of(KB::Key(key))] |= ButtonState::Down;
 		} else if (action == Action::Release) {
-			context.key_states[KB::index_of(key)] |= ButtonState::Up;
+			context.key_states[KB::index_of(KB::Key(key))] |= ButtonState::Up;
 		}
 	}
 
 	void context_mouse_button_callback(
 		GLFWwindow*,
-		Mouse::Button button,
-		Action::Type action,
+		int button,
+		int action,
 		int
 	) {
 		if (action != Action::Press && action != Action::Release) return;

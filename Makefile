@@ -7,6 +7,7 @@ export CFLAGS
 export CXXFLAGS
 
 CFLAGS += -g3
+CFLAGS += -gcodeview
 # CFLAGS += -O2
 
 CFLAGS += -Wall
@@ -17,13 +18,20 @@ CFLAGS += -Wno-misleading-indentation
 CFLAGS += -Wno-unused-command-line-argument
 CFLAGS += -Wno-vla-cxx-extension
 
+SAN_FLAGS += -fsanitize=address
+SAN_FLAGS += -fsanitize=undefined
+# SAN_FLAGS += -fsanitize-undefined-trap-on-error
+
 # CFLAGS += -finstrument-functions
-CFLAGS += -fsanitize=address
-CFLAGS += -fsanitize=undefined
 # CFLAGS += -fsanitize=leak
 # CFLAGS += -fsanitize=memory
 # CFLAGS += -fsanitize=thread
 # CFLAGS += -fsanitize=fuzzer
+
+ifdef SANITIZE
+	CFLAGS += $(SAN_FLAGS)
+endif
+
 CXXFLAGS = $(CFLAGS)
 CXXFLAGS += -std=c++23
 CXXFLAGS += -fno-exceptions
@@ -337,7 +345,7 @@ app: $(APP)
 
 $(APP): $(APP_MODULE) $(VORBIS_MODULE) $(IMGUI_MODULE) $(BLBLSTD_MODULE) $(PROFILING_MODULE) $(TMX_MODULE)
 	@echo -e "Linking $(COLOR)app executable$(NOCOLOR)"
-	$(CXX) $(CXXFLAGS) $^ $(LIB:%=-L%) $(LDFLAGS) -o $@
+	@$(CXX) $(CXXFLAGS) $^ $(LIB:%=-L%) $(LDFLAGS) -o $@
 
 #*/ app
 
@@ -356,7 +364,8 @@ blblstd:
 clean:
 	rm -rf $(BUILD_DIR)
 
-re: clean default
+re: clean
+	$(MAKE) default
 
 #* dependencies, should this be in there if we want to let the user use their own installations ?
 DEP := mingw-w64-clang-x86_64-clang

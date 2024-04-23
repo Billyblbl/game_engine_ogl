@@ -7,7 +7,7 @@ export CFLAGS
 export CXXFLAGS
 
 CFLAGS += -g3
-CFLAGS += -gcodeview
+# CFLAGS += -gcodeview
 # CFLAGS += -O2
 
 CFLAGS += -Wall
@@ -46,7 +46,8 @@ BLBLSTD_MODULE = $(BUILD_DIR)/blblstd.o
 COLOR=\033[0;34m
 NOCOLOR=\033[0m
 
-default: app
+default:
+	@$(MAKE) -j8 app
 
 #* imgui
 

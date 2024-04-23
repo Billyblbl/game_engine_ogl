@@ -31,7 +31,7 @@ struct Tilemap {
 		tm.tree = source;
 
 		auto [scratch, scope] = scratch_push_scope(1lu << 17, &arena); defer{ scratch_pop_scope(scratch, scope); };
-		List<rtu32> views = { cast<rtu32>(scratch.push_bytes(scratch.bytes.size_bytes() / 2, alignof(rtu32))), 0 };
+		List<rtu32> views = { cast<rtu32>(scratch.push_bytes(1lu << 16, alignof(rtu32))), 0 };
 
 		{ //* load tilesets
 			PROFILE_SCOPE("tilesets images");
@@ -76,7 +76,7 @@ struct Tilemap {
 							printf("Loading Layer %s\n", layer.name);
 							//* Currently ignores all tmx flip bits configs;
 							auto layer_size = source->width * source->height;
-							auto [layer_scratch, layer_scope] = scratch_push_scope(layer_size * sizeof(u32), &arena); defer{ scratch_pop_scope(layer_scratch, layer_scope); };
+							auto [layer_scratch, layer_scope] = scratch_push_scope(layer_size * sizeof(u32), { &arena, &scratch }); defer{ scratch_pop_scope(layer_scratch, layer_scope); };
 							auto layer_data = map(layer_scratch, carray(layer.content.gids, layer_size), [](u32 gid) -> u32 { return gid & TMX_FLIP_BITS_REMOVAL; });
 							views.push(tm.layer_atlas.push(make_image(layer_data, v2u32(source->width, source->height), 1)));
 						} break;

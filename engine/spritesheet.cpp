@@ -134,7 +134,7 @@ bool try_parse_attr_f32_coord(xmlDoc* doc, const xmlAttr& attr, v4f32& out) {
 
 template<typename T> bool try_parse_attr_enum(string name, xmlDoc* doc, const xmlAttr& attr, T& out, LiteralArray<tuple<string, T>> mappings) {
 	byte buffer[256];
-	auto arena = Arena::from_buffer(larray(buffer));
+	auto arena = Arena::from_array(buffer);
 	string s;
 	if (!try_parse_attr_string(arena, name, doc, attr, s)) return false;
 	for (auto& [name, value] : mappings) if (name == s) {

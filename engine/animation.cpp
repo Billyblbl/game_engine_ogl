@@ -126,9 +126,10 @@ template<typename Keyframe, i32 D> Keyframe& get_keyframe(AnimationGrid<Keyframe
 }
 
 template<typename Keyframe> const Keyframe& animate(AnimationGrid<Keyframe> anim, Array<const f32> coord) {
-	u64 size = coord.size() * sizeof(f32) + coord.size() * sizeof(u32) + coord.size() * sizeof(f32);
-	byte buffer[size];
-	Arena arena = Arena::from_buffer(carray(buffer, size));
+	assert(sizeof(u32 == sizeof(f32)));
+	u64 size = coord.size() + coord.size() + coord.size();
+	u32 buffer[size];
+	Arena arena = Arena::from_array(carray(buffer, size));
 	auto wrapped_coord = wrap_one(arena, coord, anim.config);
 	//TODO replace with a "map" call that takes index into account for wrapped_coord[i] access
 	auto frame_coord = arena.push_array<u32>(coord.size());

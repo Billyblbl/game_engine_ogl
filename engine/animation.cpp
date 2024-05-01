@@ -78,7 +78,7 @@ u32 coord_to_index(Array<u32> dimensions, Array<u32> coord) {
 template<i32 D> u32 coord_to_index(glm::vec<D, u32> dimensions, glm::vec<D, u32> coord) {
 	auto sum = 0;
 	auto prod = 1;
-	for (auto i : u64xrange{ 0, D }) {
+	constexpr for (auto i : u64xrange{ 0, D }) {
 		sum += coord[i] * prod;
 		prod *= dimensions[i];
 	}
@@ -126,16 +126,10 @@ template<typename Keyframe, i32 D> Keyframe& get_keyframe(AnimationGrid<Keyframe
 }
 
 template<typename Keyframe> const Keyframe& animate(AnimationGrid<Keyframe> anim, Array<const f32> coord) {
-	assert(sizeof(u32 == sizeof(f32)));
-	u64 size = coord.size() + coord.size() + coord.size();
-	u32 buffer[size];
-	Arena arena = Arena::from_array(carray(buffer, size));
-	auto wrapped_coord = wrap_one(arena, coord, anim.config);
-	//TODO replace with a "map" call that takes index into account for wrapped_coord[i] access
-	auto frame_coord = arena.push_array<u32>(coord.size());
-	for (auto i : u64xrange{ 0, min(anim.dimensions.size(), coord.size()) })
-		frame_coord[i] = wrapped_coord[i] * anim.dimensions[i];
-	return get_keyframe(anim, frame_coord);
+	f32 coord_indices[coord.size()];
+	for (u64 i = u64xrange{0, coord.size()})
+		coord_indices[i] = u32(wrap_one(coord[i], anim.config[i]) * anim.dimensions[i]);
+	return get_keyframe(anim, carray(coord_indices, coord.size()));
 }
 
 template<typename Keyframe, i32 D> Keyframe animate(AnimationGrid<Keyframe> anim, LiteralArray<f32> coord) { return animate(anim, larray(coord)); }

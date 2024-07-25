@@ -31,8 +31,8 @@ struct ShapeRenderer {
 		destroy_pipeline(pipeline);
 	}
 
-	static Array<const VertexAttributeSpecs> get_v2f32_attributes() {
-		static const auto v2f32Attribute = make_vertex_attribute_spec<v2f32>(0, sizeof(v2f32));
+	static Array<const VertexAttributeLayout> get_v2f32_attributes() {
+		static const auto v2f32Attribute = make_vertex_attribute_layout<v2f32>(0, sizeof(v2f32));
 		return carray(&v2f32Attribute, 1);
 	}
 

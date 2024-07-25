@@ -9,7 +9,7 @@ struct GPUBuffer {
 	u64 size;
 	GLbitfield flags;
 
-	static GPUBuffer create(u64 size, GLbitfield flags = 0, Buffer initial_data = {}) {
+	static GPUBuffer create(u64 size, GLbitfield flags = 0, ROBuffer initial_data = {}) {
 		GPUBuffer buff;
 		buff.size = size;
 		buff.flags = flags;
@@ -27,7 +27,7 @@ struct GPUBuffer {
 		return *this;
 	}
 
-	num_range<u64> write(Buffer buff, u64 offset = 0) {
+	num_range<u64> write(ROBuffer buff, u64 offset = 0) {
 		GL_GUARD(glNamedBufferSubData(id, offset, buff.size_bytes(), buff.data()));
 		return { offset, offset + buff.size_bytes() };
 	}
@@ -41,7 +41,7 @@ struct GPUBuffer {
 
 	void unmap() { GL_GUARD(glUnmapNamedBuffer(id)); }
 
-	num_range<u64> sync(Buffer buff, u64 offset = 0) {
+	num_range<u64> sync(ROBuffer buff, u64 offset = 0) {
 		auto r = write(buff, offset);
 		flush(r);
 		return r;

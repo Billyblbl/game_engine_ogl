@@ -247,7 +247,7 @@ bool EditorWidget(const cstr label, Font& font) {
 struct TextRenderer {
 	FT_Library lib;
 	GLuint pipeline;
-	RenderMesh rect;
+	GPUGeometry rect;
 
 	struct {
 		ShaderInput font_atlas;

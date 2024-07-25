@@ -47,7 +47,7 @@ struct SpriteRenderer {
 	};
 
 	GLuint pipeline;
-	RenderMesh rect;
+	GPUGeometry rect;
 
 	struct {
 		ShaderInput atlas;
@@ -76,7 +76,7 @@ struct SpriteRenderer {
 		GL_GUARD(glDrawElementsInstanced(rect.vao.draw_mode, rect.vao.element_count, rect.vao.index_type, null, sprites.size()));
 	}
 
-	static SpriteRenderer load(const cstr pipeline_path = "./shaders/sprite.glsl", u32 max_draw_batch = 256, const RenderMesh* mesh = null) {
+	static SpriteRenderer load(const cstr pipeline_path = "./shaders/sprite.glsl", u32 max_draw_batch = 256, const GPUGeometry* mesh = null) {
 		SpriteRenderer rd;
 		rd.pipeline = load_pipeline(pipeline_path);
 		rd.rect = mesh ? *mesh : create_rect_mesh(v2f32(1));

@@ -7,21 +7,34 @@
 #include <glutils.cpp>
 #include <buffer.cpp>
 
-struct RenderMesh {
+struct GPUGeometry {
 	GPUBuffer vbo;
 	GPUBuffer ibo;
 	VertexArray vao;
 
-	template<typename Vertex = DefaultVertex2D> static RenderMesh upload(
+	template<typename Vertex = DefaultVertex2D> static GPUGeometry upload(
 		Array<const Vertex> vertex_data,
 		Array<const u32> indices,
 		GLuint draw_mode = GL_TRIANGLES
 	) {
-		RenderMesh rm;
-		rm.vbo = GPUBuffer::create(vertex_data.size_bytes(), 0, cast<byte>(vertex_data));
-		rm.ibo = GPUBuffer::create(indices.size_bytes(), 0, cast<byte>(indices));
-		rm.vao = VertexArray::create(vertexAttributesOf<Vertex>, draw_mode);
-		rm.vao.bind_vertex_data(rm.vbo.id, rm.ibo.id, indices.size());
+		GPUGeometry rm;
+		rm.vbo = GPUBuffer::create(vertex_data.size_bytes(), 0, cast<const byte>(vertex_data));
+		rm.ibo = GPUBuffer::create(indices.size_bytes(), 0, cast<const byte>(indices));
+		rm.vao = VertexArray::create(draw_mode).associate(rm.vbo.id, rm.ibo.id, vertexAttributesOf<Vertex>);
+		rm.vao.element_count = indices.size();
+		return rm;
+	}
+
+	static GPUGeometry allocate(
+		GeometryLayout geo_specs,
+		u64 initial_v = (u64(1) << 16),
+		u64 initial_i = (u64(1) << 16) * 6 / 4,//* index to vertices ratio
+		GLuint draw_mode = GL_TRIANGLES
+	) {
+		GPUGeometry rm;
+		rm.vbo = GPUBuffer::create(initial_v, 0);
+		rm.ibo = GPUBuffer::create(initial_i, 0);
+		rm.vao = VertexArray::create(draw_mode).associate(rm.vbo.id, rm.ibo.id, geo_specs);
 		return rm;
 	}
 
@@ -30,6 +43,7 @@ struct RenderMesh {
 		vbo.release();
 		ibo.release();
 	}
+
 };
 
 //
@@ -158,19 +172,13 @@ auto create_rect_9slice(v2f32 content, v2f32 borders) {
 	);
 }
 
-RenderMesh create_rect_mesh(v2f32 dimensions) {
+GPUGeometry create_rect_mesh(v2f32 dimensions) {
 	auto [vertices, indices] = create_rect(dimensions);
-	return RenderMesh::upload(Array<const DefaultVertex2D>(vertices.data(), vertices.size()), indices);
+	return GPUGeometry::upload(Array<const DefaultVertex2D>(vertices.data(), vertices.size()), indices);
 }
 
-RenderMesh create_rect_mesh(v2u32 source_dimensions, f32 ppu) {
+GPUGeometry create_rect_mesh(v2u32 source_dimensions, f32 ppu) {
 	return create_rect_mesh(v2f32(source_dimensions) / ppu);
-}
-
-RenderMesh get_unit_rect_mesh() {
-	//TODO when do we delete this ???
-	static auto mesh = create_rect_mesh(v2f32(1));
-	return mesh;
 }
 
 #endif

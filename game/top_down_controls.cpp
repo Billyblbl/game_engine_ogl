@@ -5,6 +5,7 @@
 #include <physics_2d.cpp>
 #include <animation.cpp>
 #include <imgui_extension.cpp>
+#include <sprite.cpp>
 
 namespace controls {
 	using namespace Input;

@@ -247,24 +247,10 @@ void wait_gpu() {
 	GL_GUARD(glFinish());
 }
 
-#include <sprite.cpp>
-#include <system_editor.cpp>
-#include <atlas.cpp>
-
 struct RenderTarget {
 	FrameBuffer fbf = default_framebuffer;
 	v4f32 clear_color = v4f32(v3f32(0.3), 1);
 };
-
-bool EditorWidget(const cstr label, RenderTarget& target) {
-	bool changed = false;
-	if (ImGui::TreeNode(label)) {
-		defer{ ImGui::TreePop(); };
-		changed |= EditorWidget(label, target.fbf);
-		changed |= ImGui::ColorPicker4("Clear Color", glm::value_ptr(target.clear_color));
-	}
-	return changed;
-}
 
 struct Camera {
 	Spacial2D* pov = null;
@@ -279,6 +265,17 @@ inline void render(const Camera& camera, auto commands) {
 	begin_render(camera.target->fbf);
 	clear(camera.target->fbf, camera.target->clear_color);
 	commands(camera);
+}
+
+#include <system_editor.cpp>
+bool EditorWidget(const cstr label, RenderTarget& target) {
+	bool changed = false;
+	if (ImGui::TreeNode(label)) {
+		defer{ ImGui::TreePop(); };
+		changed |= EditorWidget(label, target.fbf);
+		changed |= ImGui::ColorPicker4("Clear Color", glm::value_ptr(target.clear_color));
+	}
+	return changed;
 }
 
 #endif

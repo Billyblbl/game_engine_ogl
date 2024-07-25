@@ -75,10 +75,10 @@ u32 coord_to_index(Array<u32> dimensions, Array<u32> coord) {
 	return sum;
 }
 
-template<i32 D> u32 coord_to_index(glm::vec<D, u32> dimensions, glm::vec<D, u32> coord) {
+template<i32 D> inline u32 coord_to_index(glm::vec<D, u32> dimensions, glm::vec<D, u32> coord) {
 	auto sum = 0;
 	auto prod = 1;
-	constexpr for (auto i : u64xrange{ 0, D }) {
+	for (auto i : u64xrange{ 0, D }) {
 		sum += coord[i] * prod;
 		prod *= dimensions[i];
 	}
@@ -126,8 +126,8 @@ template<typename Keyframe, i32 D> Keyframe& get_keyframe(AnimationGrid<Keyframe
 }
 
 template<typename Keyframe> const Keyframe& animate(AnimationGrid<Keyframe> anim, Array<const f32> coord) {
-	f32 coord_indices[coord.size()];
-	for (u64 i = u64xrange{0, coord.size()})
+	u32 coord_indices[coord.size()];
+	for (u64 i : u64xrange{0, coord.size()})
 		coord_indices[i] = u32(wrap_one(coord[i], anim.config[i]) * anim.dimensions[i]);
 	return get_keyframe(anim, carray(coord_indices, coord.size()));
 }

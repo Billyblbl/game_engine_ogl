@@ -7,6 +7,7 @@
 #include <physics_2d.cpp>
 #include <imgui_extension.cpp>
 #include <spritesheet.cpp>
+#include <sprite.cpp>
 #include <time.cpp>
 #include <spall/profiling.cpp>
 
@@ -179,6 +180,7 @@ struct SidescrollCharacter {
 
 template<> tuple<bool, SidescrollCharacter> use_as<SidescrollCharacter>(EntityHandle handle);
 
+//TODO this is an ass way to ground characters
 void ground_characters(Array<SidescrollCharacter> characters, Array<Collision2D> collisions, v2f32 gravity_dir) {
 	for (auto& ch : characters) ch.ctrl->grounded = false;
 	for (auto& col : collisions) for (auto i : u64xrange{ 0, 2 }) if (auto [is_ctrl, ch] = use_as<SidescrollCharacter>(col.entities[i].handle); is_ctrl) {

@@ -137,7 +137,7 @@ struct TilemapRenderer {
 	} inputs;
 
 	GLuint pipeline;
-	RenderMesh rect;
+	GPUGeometry rect;
 
 	void operator()(const Tilemap& tilemap, const m4x4f32& tm_transform, const m4x4f32& vp, const TexBuffer& texture_atlas) {
 		//* https://libtmx.readthedocs.io/en/latest/renderer-from-scratch.html
@@ -186,7 +186,7 @@ struct TilemapRenderer {
 		GL_GUARD(glDrawElementsInstanced(rect.vao.draw_mode, rect.vao.element_count, rect.vao.index_type, null, instance_count));
 	}
 
-	static TilemapRenderer load(const cstr pipeline_path, u64 max_draw_batch = 256, u64 max_tiles = 1000, const RenderMesh* mesh = null) {
+	static TilemapRenderer load(const cstr pipeline_path, u64 max_draw_batch = 256, u64 max_tiles = 1000, const GPUGeometry* mesh = null) {
 		TilemapRenderer rd;
 		rd.pipeline = load_pipeline(pipeline_path);
 		rd.rect = mesh ? *mesh : create_rect_mesh(v2f32(1));

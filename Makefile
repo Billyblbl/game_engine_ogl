@@ -49,6 +49,12 @@ NOCOLOR=\033[0m
 default:
 	@$(MAKE) -j8 app
 
+configure:
+	@echo -e "fetching $(COLOR)submodules$(NOCOLOR) dependencies"
+	@git submodule update --init --recursive
+	@echo -e "fetching $(COLOR)packages$(NOCOLOR) dependencies"
+	@$(call install_dependencies)
+
 #* imgui
 
 IMGUI_ROOT=imgui_module.cpp
@@ -367,20 +373,5 @@ clean:
 
 re: clean
 	$(MAKE) default
-
-#* dependencies, should this be in there if we want to let the user use their own installations ?
-DEP := mingw-w64-clang-x86_64-clang
-DEP += mingw-w64-clang-x86_64-glfw
-DEP += mingw-w64-clang-x86_64-glew
-DEP += mingw-w64-clang-x86_64-openal
-DEP += mingw-w64-clang-x86_64-libxml2
-DEP += mingw-w64-clang-x86_64-dlfcn
-DEP += mingw-w64-clang-x86_64-freetype
-DEP += mingw-w64-clang-x86_64-compiler-rt
-DEP += mingw-w64-clang-x86_64-gdb
-#* gcc needed because clang msys2 package doesn't come with c++ headers for some reason
-DEP += mingw-w64-clang-x86_64-gcc
-dep:
-	pacman --noconfirm -Sy $(DEP)
 
 .PHONY: app clean re default tmx imgui vorbis profiling app_module blblstd core gfx misc audio physics $(BLBLSTD_MODULE) dep

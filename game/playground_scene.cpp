@@ -191,7 +191,7 @@ struct PlaygroundScene {
 	EntityHandle level_entity;
 
 	struct {
-		TextRenderer draw_texts;
+		UIRenderer draw_texts;
 		Font font;
 	} test;
 
@@ -349,9 +349,9 @@ struct PlaygroundScene {
 		}
 
 		//test
-		scene.test.draw_texts = TextRenderer::load("./shaders/text.glsl");
-		// font = Font::load(resources_arena, test.draw_texts.lib, "test_font.ttf");
-		scene.test.font = Font::load(scene.resources_arena, scene.test.draw_texts.lib, "test_stuff/Arial.ttf");
+		scene.test.draw_texts = UIRenderer::load("./shaders/ui.glsl");
+		// font = Font::load(resources_arena, FT_Global(), "test_font.ttf");
+		scene.test.font = Font::load(scene.resources_arena, FT_Global(), "test_stuff/Arial.ttf");
 
 		{
 			PROFILE_SCOPE("Waiting for GPU init work");
@@ -410,13 +410,12 @@ struct PlaygroundScene {
 				gfx.draw_sprites(gather<SpriteRenderer::Instance>(scratch, entities.used()), mat, gfx.sprite_atlas.texture);
 				//test
 				{
-					static char text_buffer[4096];
+					static char text_buffer[4096] = "";
 					static f32 test_text_scale = 1;
-					memset(text_buffer, 0, sizeof(text_buffer));
 					if (ImGui::Begin("Test Text")) {
 						EditorWidget("Test font", test.font);
 						ImGui::InputTextMultiline("Text", text_buffer, array_size(text_buffer));
-						ImGui::InputFloat("Scale", &test_text_scale);
+						ImGui::DragFloat("Scale", &test_text_scale, max(0.0001f, test_text_scale * 0.01f));
 					} ImGui::End();
 
 					Text text;

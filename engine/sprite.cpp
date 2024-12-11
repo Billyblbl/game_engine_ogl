@@ -73,7 +73,7 @@ struct SpriteRenderer {
 		inputs.atlas.bind_texture(textures.id); defer{ inputs.atlas.unbind(); };
 		inputs.instances.bind_content(sprites); defer{ inputs.instances.unbind(); };
 		inputs.scene.bind_object(Scene{ vp, textures.dimensions, 0.01f }); defer{ inputs.scene.unbind(); };
-		GL_GUARD(glDrawElementsInstanced(rect.vao.draw_mode, rect.vao.element_count, rect.vao.index_type, null, sprites.size()));
+		GL_GUARD(glDrawElementsInstanced(rect.vao.draw_mode, rect.element_count, rect.vao.index_type, null, sprites.size()));
 	}
 
 	static SpriteRenderer load(const cstr pipeline_path = "./shaders/sprite.glsl", u32 max_draw_batch = 256, const GPUGeometry* mesh = null) {

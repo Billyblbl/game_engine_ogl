@@ -532,7 +532,7 @@ namespace Input {
 
 	GP::State& get_gamepad(u8 device) {
 		if (i32 index = linear_search(get_context().gamepads.indices, device); index < 0)
-			return fail_ret("Invalid input device", get_context().gamepads.states[0]);
+			return get_context().gamepads.states[0];
 		else
 			return get_context().gamepads.states[index];
 	}

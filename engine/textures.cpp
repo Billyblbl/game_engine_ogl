@@ -102,12 +102,12 @@ struct TexBuffer {
 		return *this;
 	}
 
-	TexBuffer& conf_border_color(v3f32 color) {
+	TexBuffer& conf_border_color(v4f32 color) {
 		GL_GUARD(glTextureParameterfv(id, GL_TEXTURE_BORDER_COLOR, glm::value_ptr(color)));
 		return *this;
 	}
 
-	TexBuffer& conf_border_color(v3i32 color) {
+	TexBuffer& conf_border_color(v4i32 color) {
 		GL_GUARD(glTextureParameteriv(id, GL_TEXTURE_BORDER_COLOR, glm::value_ptr(color)));
 		return *this;
 	}
@@ -155,9 +155,19 @@ struct TexBuffer {
 		return *this;
 	}
 
+	GLuint bind_unit(GLuint unit) const {
+		GL_GUARD(glBindTextureUnit(unit, id));
+		return id;
+	}
+
 };
 
-constexpr TexBuffer null_tex = { 0, v4u32(0), NoType, {} };
+constexpr TexBuffer null_tex = {
+	.id = 0,
+	.dimensions = v4u32(0),
+	.type = NoType,
+	.format = {}
+};
 
 TexBuffer create_texture(TexType type, v4u32 dimensions, GPUFormat format = RGBA32F) {
 	GLuint id;
@@ -171,7 +181,12 @@ TexBuffer create_texture(TexType type, v4u32 dimensions, GPUFormat format = RGBA
 	case TX2DARR:	GL_GUARD(glTextureStorage3D(id, dimensions.w, format, dimensions.x, dimensions.y, dimensions.z)); break;
 	default: return fail_ret(GLtoString(type).data(), null_tex);
 	}
-	return { id, dimensions, type, format };
+	return TexBuffer{
+	 .id = id,
+	 .dimensions = dimensions,
+	 .type = type,
+	 .format = format
+	};
 }
 
 TexBuffer& unload(TexBuffer& texture) {

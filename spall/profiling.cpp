@@ -67,7 +67,7 @@ f64 get_time_in_micros(void) {
 #endif
 
 static SpallProfile spall_ctx;
-static thread_local SpallBuffer  spall_buffer;
+static thread_local SpallBuffer spall_buffer;
 
 void profile_process_begin(const cstr trace_file) { spall_ctx = spall_init_file(trace_file, 1); }
 void profile_process_end() { spall_quit(&spall_ctx); }

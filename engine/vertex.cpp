@@ -28,6 +28,7 @@ template<> constexpr auto make_vertex_attribute_layout<glm::ivec3>(usize offset,
 template<> constexpr auto make_vertex_attribute_layout<glm::ivec4>(usize offset, GLsizei stride) { return VertexAttributeLayout{ 4, GL_INT, offset, stride }; };
 
 #define SpecsOf(vertex, attribute) make_vertex_attribute_layout<decltype(vertex::attribute)>(offsetof(vertex, attribute), sizeof(vertex))
+#define UniqueAttr(vertex) make_vertex_attribute_layout<vertex>(0, sizeof(vertex))
 
 using GeometryLayout = Array<const VertexAttributeLayout>;
 template<typename T> const GeometryLayout vertexAttributesOf;
@@ -47,7 +48,6 @@ void assemble_vao(GLuint vao, GLuint vbo, GLuint ibo, GeometryLayout layout, u64
 
 struct VertexArray {
 	GLuint id;
-	u32 element_count;
 	GLenum index_type;
 	GLenum draw_mode;
 
@@ -57,7 +57,6 @@ struct VertexArray {
 		VertexArray va;
 		va.draw_mode = draw_mode;
 		va.index_type = index_type;
-		va.element_count = 0;
 		GL_GUARD(glCreateVertexArrays(1, &va.id));
 		return va;
 	}
@@ -77,6 +76,9 @@ const VertexAttributeLayout defaultVertex2DAttributes[] = {
 	SpecsOf(DefaultVertex2D, uv)
 };
 
+const VertexAttributeLayout v2f32Attributes[] = { UniqueAttr(v2f32) };
+
+template<> const GeometryLayout vertexAttributesOf<v2f32> = larray(v2f32Attributes);
 template<> const GeometryLayout vertexAttributesOf<DefaultVertex2D> = larray(defaultVertex2DAttributes);
 
 # pragma endregion defaults

@@ -101,6 +101,16 @@ void pfterror(string file_name, u32 line_number, FT_Error err) {
 	fprintf(stderr, "%s:%u, Freetype error %u: %s\n", file_name.data(), line_number, err, FT_Error_String(err));
 }
 
+FT_Library FT_Global() {
+	static FT_Library lib;
+	static auto err = FT_Init_FreeType(&lib);
+	if (err) {
+		pfterror(__FILE__, __LINE__, err);
+		abort();
+	}
+	return lib;
+}
+
 struct Font {
 	FT_Face face;
 	Atlas2D glyph_atlas;
@@ -150,7 +160,7 @@ struct Font {
 			f.glyph_views = arena.push_array<rtu32>(width(f.glyph_indices) + 1, true);
 			f.glyph_atlas = Atlas2D::create(atlas_size, R32F, mipmaps);
 			f.glyph_atlas.texture
-				.conf_border_color(v3f32(1.0, 0, 1.0))
+				.conf_border_color(v4f32(1.0, 0, 1.0, 1.0))
 				.conf_wrap({ ClampToBorder, ClampToBorder, ClampToBorder })
 				.conf_sampling({ LinearMipmapLinear, Linear })
 				.conf_max_sample_count(8);
@@ -244,17 +254,19 @@ bool EditorWidget(const cstr label, Font& font) {
 	return changed;
 }
 
-struct TextRenderer {
-	FT_Library lib;
+struct UIRenderer {
+
 	GLuint pipeline;
-	GPUGeometry rect;
+	GPUGeometry rect_buffer;
 
 	struct {
-		ShaderInput font_atlas;
-		ShaderInput characters;
-		ShaderInput texts;
-		ShaderInput glyphs;
-		ShaderInput scene;
+		GLint textures;
+		BufferBinding fonts;
+		BufferBinding characters;
+		BufferBinding	texts;
+		BufferBinding	glyphs;
+		BufferBinding	scene;
+		GPUBuffer commands;
 	} inputs;
 
 	struct TextInstance {
@@ -262,158 +274,243 @@ struct TextRenderer {
 		v4f32 color;
 	};
 
-	struct Instance {
-		rtf32 rect;
-		u32 glyph;
-		u32 text;
-		u32 padding[2];
+	struct CharacterInstance {
+		u32 glyph_index;
+		u32 text_index;
+	};
+
+	struct AtlasInstance {
+		v2u32 size;
+		v2u32 glyph_range;
+		u32 texture_index;
 	};
 
 	struct Scene {
 		m4x4f32 project;
-		v2u32 font_atlas_size;
 		f32 alpha_discard;
-		u32 padding;
 	};
 
-	static TextRenderer load(const cstr path, u32 max_texts = 256, u32 max_characters = (1 << 16), u32 max_glyphs = 512) {
-		TextRenderer rd;
-		if (auto err = FT_Init_FreeType(&rd.lib))
-			pfterror(__FILE__, __LINE__, err);
-		else {
-			rd.pipeline = load_pipeline(path);
-			// describe(rd.pipeline);
-			rd.rect = create_rect_mesh(v2f32(1));
-			rd.inputs.font_atlas = ShaderInput::create_slot(rd.pipeline, ShaderInput::Texture, "font");
-			rd.inputs.characters = ShaderInput::create_slot(rd.pipeline, ShaderInput::SSBO, "Characters", sizeof(Instance) * max_characters);
-			rd.inputs.texts = ShaderInput::create_slot(rd.pipeline, ShaderInput::SSBO, "Texts", sizeof(TextInstance) * max_texts);
-			rd.inputs.glyphs = ShaderInput::create_slot(rd.pipeline, ShaderInput::SSBO, "Glyphs", sizeof(v4u32) * max_glyphs);
-			rd.inputs.scene = ShaderInput::create_slot(rd.pipeline, ShaderInput::UBO, "Scene", sizeof(Scene));
-		}
+	static UIRenderer load(const cstr path, u32 max_texts = 256, u32 max_characters = (1 << 16), u32 max_glyphs = 512) {
+		UIRenderer rd;
+		rd.pipeline = load_pipeline(path);
+		// describe(rd.pipeline);
+
+		rd.rect_buffer = GPUGeometry::allocate(vertexAttributesOf<v2f32>);
+
+		rd.inputs.textures = init_binding_texture(rd.pipeline, "textures");
+
+		BufferBinding::Sequencer bindings = { rd.pipeline };
+
+		rd.inputs.fonts = bindings.next(BufferBinding::SSBO, "Fonts", sizeof(AtlasInstance) * 16);
+		rd.inputs.characters = bindings.next(BufferBinding::SSBO, "Characters", sizeof(CharacterInstance) * max_characters);
+		rd.inputs.texts = bindings.next(BufferBinding::SSBO, "Texts", sizeof(TextInstance) * max_texts);
+		rd.inputs.glyphs = bindings.next(BufferBinding::SSBO, "Glyphs", sizeof(v4u32) * max_glyphs);
+		rd.inputs.scene = bindings.next(BufferBinding::UBO, "Scene", sizeof(Scene));
+		rd.inputs.commands = GPUBuffer::create(sizeof(DrawCommandElement) * 128, GL_DYNAMIC_STORAGE_BIT | GL_MAP_WRITE_BIT | GL_MAP_PERSISTENT_BIT);
+
+		printf(
+			"UIRenderer:\n"
+			"\ttextures : = %i\n"
+			"\tFonts : %s = %i,%llu\n"
+			"\tCharacters : %s = %i,%llu\n"
+			"\tTexts : %s = %i,%llu\n"
+			"\tGlyphs : %s = %i,%llu\n"
+			"\tScene : %s = %i,%llu\n",
+			rd.inputs.textures,
+			GLtoString(rd.inputs.fonts.target).data(), rd.inputs.fonts.index, rd.inputs.fonts.buffer.size,
+			GLtoString(rd.inputs.characters.target).data(), rd.inputs.characters.index, rd.inputs.characters.buffer.size,
+			GLtoString(rd.inputs.texts.target).data(), rd.inputs.texts.index, rd.inputs.texts.buffer.size,
+			GLtoString(rd.inputs.glyphs.target).data(), rd.inputs.glyphs.index, rd.inputs.glyphs.buffer.size,
+			GLtoString(rd.inputs.scene.target).data(), rd.inputs.scene.index, rd.inputs.scene.buffer.size
+		);
 		return rd;
 	}
 
 	void release() {
-		inputs.font_atlas.release();
-		inputs.texts.release();
-		inputs.characters.release();
-		inputs.scene.release();
-		inputs.glyphs.release();
-		rect.release();
+		inputs.fonts.buffer.release();
+		inputs.texts.buffer.release();
+		inputs.characters.buffer.release();
+		inputs.scene.buffer.release();
+		inputs.glyphs.buffer.release();
+		rect_buffer.release();
 		destroy_pipeline(pipeline);
-		FT_Done_FreeType(lib);
 	}
 
 	void operator()(Array<Text> texts, v2f32 canvas = v2f32(1920, 1080)) {
 		if (texts.size() == 0)
 			return;
 
-		Font* font = null;
-		for (i32 batch = 0; batch >= 0; batch = linear_search(texts.subspan(batch), [=](Text& t) { return t.font != font; })) {
-			font = texts[batch].font;
-			auto [scratch, scope] = scratch_push_scope(texts.size_bytes() + inputs.characters.backing_buffer.size); defer{ scratch_pop_scope(scratch, scope); };
-			List<TextInstance> text_instances = { scratch.push_array<TextInstance>(texts.size()), 0 };
-			List<Instance> instances = { cast<Instance>(scratch.push_bytes(inputs.characters.backing_buffer.size, alignof(Instance))), 0 };
+		auto [scratch, scope] = scratch_push_scope(sizeof(void*) * get_max_textures_frag()); defer{ scratch_pop_scope(scratch, scope); };
 
-			for (auto& text : texts.subspan(batch)) if (text.font == font) {
-				auto cursor = v2f32(0);
-				cursor[!text.orient] = dim_vec(text.rect)[!text.orient] - text.scale * text.linespace * font->linespace[text.orient]; //* starting point
+		auto textures = List { scratch.push_array<TexBuffer*>(get_max_textures_frag()), 0 };
+		auto fonts = List { cast<AtlasInstance>(inputs.fonts.buffer.map()), 0 };
+		auto characters = List { cast<CharacterInstance>(inputs.characters.buffer.map()), 0 };
+		auto texts_instances = List { cast<TextInstance>(inputs.texts.buffer.map()), 0 };
+		auto glyphs = List { cast<rtu32>(inputs.glyphs.buffer.map()), 0 };
+		auto vertices = List { cast<v2f32>(rect_buffer.vbo.map()), 0 };
+		auto indices = List { cast<u32>(rect_buffer.ibo.map()), 0 };
+		auto commands = List { cast<DrawCommandElement>(inputs.commands.map()), 0 };
+		{
+			defer {
+				inputs.commands.unmap({0, commands.current});
+				rect_buffer.ibo.unmap({0, indices.current});
+				rect_buffer.vbo.unmap({0, vertices.current});
+				inputs.glyphs.buffer.unmap({0, glyphs.current});
+				inputs.texts.buffer.unmap({0, texts_instances.current});
+				inputs.characters.buffer.unmap({0, characters.current});
+				inputs.fonts.buffer.unmap({0, fonts.current});
+			};
+			Font* font = null;
+			for (i32 batch = 0; batch >= 0; batch = linear_search(texts.subspan(batch), [=](Text& t) { return t.str.size() > 0 && t.font != font; })) {
+				auto mesh_start_vertex = vertices.current;
+				auto mesh_start_index = indices.current;
+				font = texts[batch].font;
 
-				auto advance = (
-					[&](v2f32 c, const Glyph& g) -> v2f32 {
-						c[text.orient] += g.orient[text.orient].advance * text.scale;
-						return c;
-					}
-				);
+				v2u32 glyph_range = { glyphs.current, font->glyphs.size() };
+				glyphs.push(font->glyph_views);
+				fonts.push(AtlasInstance{
+					.size = font->glyph_atlas.texture.dimensions,
+					.glyph_range = glyph_range,
+					.texture_index = u32(textures.current)
+				});
+				textures.push(&font->glyph_atlas.texture);
 
-				auto next_line = (
-					[&](v2f32 c) -> v2f32 {
-						c[text.orient] = 0;
-						c[!text.orient] -= text.scale * text.linespace * font->linespace[text.orient];
-						return c;
-					}
-				);
+				for (auto& text : texts.subspan(batch)) if (text.font == font && text.str.size() > 0) {
+					auto text_index = u32(texts_instances.current);
+					texts_instances.push({
+						.transform = glm::translate(v3f32(text.rect.min, f32(text_index))),
+						.color = text.color
+					});
 
-				auto new_word = (
-					[&](v2f32 c, u32 i) -> v2f32 {
-						auto end_of_word = text.str.find_first_of("- \n\r\t\v\f\0", i);
-						auto word = text.str.substr(i, end_of_word - i);
-						auto acc_advance = [&](v2f32 a, char b) -> v2f32 { a[text.orient] += (*text.font)[b].orient[text.orient].advance * text.scale; return a; };
-						auto word_advance = fold(v2f32(0.f), Array<const char>(word), acc_advance);
-						if (!text.rect.contain(c + word_advance))
-							c = next_line(c);
-						return c;
-					}
-				);
+					auto cursor = v2f32(0);
+					cursor[!text.orient] = dim_vec(text.rect)[!text.orient] - text.scale * text.linespace * font->linespace[text.orient]; //* starting point
 
-				auto make_character_instance = (
-					[&](v2f32& c, const Glyph& g, u32 text_index) -> Instance {
-						auto bbox = g.bbox(text.orient);
-						bbox.min *= text.scale;
-						bbox.max *= text.scale;
-						Instance instance = {};
-						instance.glyph = g.atlas_view_index;
-						instance.text = text_index;
-						instance.rect = { c + bbox.min, c + bbox.max };
-						return instance;
-					}
-				);
-
-				auto make_text_instance = (
-					[&](Text& t, u32 index) -> TextInstance {
-						TextInstance tinstance;
-						tinstance.color = t.color;
-						tinstance.transform = glm::translate(v3f32(t.rect.min, f32(text_instances.current)));
-						for (auto i : u64xrange{ 0, t.str.size() }) {
-							auto& glyph = (*t.font)[t.str[i]];
-							switch (t.str[i]) {
-							case ' ': {
-								cursor = advance(cursor, glyph);
-								if (!t.rect.contain(cursor))
-									cursor = next_line(cursor);
-								cursor = new_word(cursor, i + 1);
-							} break;
-							case '\n': { cursor = next_line(cursor); } break;
-							case '\r': { cursor = new_word(cursor, i + 1); } break;
-							case '\t': { cursor = new_word(cursor, i + 1); } break;//TODO implement
-							case '\v': { cursor = new_word(cursor, i + 1); } break;//TODO implement
-							case '\f': { cursor = new_word(cursor, i + 1); } break;//TODO implement
-							default: { //* Printable characters
-								auto instance = make_character_instance(cursor, glyph, index);
-								cursor = advance(cursor, glyph);
-								if (!t.rect.contain(cursor)) {
-									cursor = next_line(cursor);
-									instance = make_character_instance(cursor, glyph, index);
-									cursor = advance(cursor, glyph);
-									if (!t.rect.contain(cursor))
-										return tinstance; //* early return if text does not fit
-								}
-								instances.push(instance);
-							} break;
-							}
+					auto advance = (
+						[&](v2f32 c, const Glyph& g) -> v2f32 {
+							c[text.orient] += g.orient[text.orient].advance * text.scale;
+							return c;
 						}
-						return tinstance;
+					);
+
+					auto next_line = (
+						[&](v2f32 c) -> v2f32 {
+							c[text.orient] = 0;
+							c[!text.orient] -= text.scale * text.linespace * font->linespace[text.orient];
+							return c;
+						}
+					);
+
+					auto new_word = (
+						[&](v2f32 c, u32 i) -> v2f32 {
+							auto end_of_word = text.str.find_first_of("- \n\r\t\v\f\0", i);
+							auto word = text.str.substr(i, end_of_word - i);
+							auto acc_advance = [&](v2f32 a, char b) -> v2f32 { a[text.orient] += (*text.font)[b].orient[text.orient].advance * text.scale; return a; };
+							auto word_advance = fold(v2f32(0.f), Array<const char>(word), acc_advance);
+							if (!text.rect.contain(c + word_advance))
+								c = next_line(c);
+							return c;
+						}
+					);
+
+					struct CharacterData {
+						CharacterInstance instance;
+						v2f32 vertices[4];
+						u32 indices[6];
+					};
+
+					auto make_character_data = (
+						[&](v2f32& c, const Glyph& g) -> CharacterData {
+							auto bbox = g.bbox(text.orient);
+							bbox.min *= text.scale;
+							bbox.max *= text.scale;
+							auto quad_start_in_mesh = vertices.current - mesh_start_vertex;//* might be wrong but i managed to confused myself about why
+							return {
+								.instance = {
+									.glyph_index = g.atlas_view_index,
+									.text_index = text_index
+								},
+								.vertices = {
+									c + bbox.min,
+									c + v2f32(bbox.max.x, bbox.min.y),
+									c + v2f32(bbox.min.x, bbox.max.y),
+									c + bbox.max
+								},
+								.indices = {
+									u32(quad_start_in_mesh + 0),
+									u32(quad_start_in_mesh + 1),
+									u32(quad_start_in_mesh + 2),
+									u32(quad_start_in_mesh + 2),
+									u32(quad_start_in_mesh + 1),
+									u32(quad_start_in_mesh + 3)
+								}
+							};
+						}
+					);
+
+					for (auto i : u64xrange{ 0, text.str.size() }) {
+						auto& glyph = (*text.font)[text.str[i]];
+						switch (text.str[i]) {
+						case ' ': {
+							cursor = advance(cursor, glyph);
+							if (!text.rect.contain(cursor))
+								cursor = next_line(cursor);
+							cursor = new_word(cursor, i + 1);
+						} break;
+						case '\n': { cursor = next_line(cursor); } break;
+						case '\r': { cursor = new_word(cursor, i + 1); } break;
+						case '\t': { cursor = new_word(cursor, i + 1); } break;//TODO implement
+						case '\v': { cursor = new_word(cursor, i + 1); } break;//TODO implement
+						case '\f': { cursor = new_word(cursor, i + 1); } break;//TODO implement
+						default: { //* Printable characters
+							auto data = make_character_data(cursor, glyph);
+							cursor = advance(cursor, glyph);
+							if (!text.rect.contain(cursor)) {
+								cursor = next_line(cursor);
+								data = make_character_data(cursor, glyph);
+								cursor = advance(cursor, glyph);
+								if (!text.rect.contain(cursor))
+									//TODO make this break out of the loop and not just the switch
+									break;//* early break if text does not fit
+							}
+							vertices.push(data.vertices);
+							indices.push(data.indices);
+							characters.push(data.instance);
+						} break;
+						}
 					}
-				);
-
-				text_instances.push(make_text_instance(text, text_instances.current));
+				}
+				commands.push(DrawCommandElement{
+					.count = u32(indices.current - mesh_start_index),
+					.instance_count = 1,
+					.first_index = u32(mesh_start_index),
+					.base_vertex = i32(mesh_start_vertex),
+					.base_instance = 0
+				});
 			}
-
-			OrthoCamera camera = {};
-			camera.dimensions = v3f32(canvas, texts.size());
-			camera.center = v3f32(-canvas, texts.size()) / 2.f;
-
-			GL_GUARD(glUseProgram(pipeline)); defer{ GL_GUARD(glUseProgram(0)); };
-			GL_GUARD(glBindVertexArray(rect.vao.id)); defer{ GL_GUARD(glBindVertexArray(0)); };
-			inputs.font_atlas.bind_texture(font->glyph_atlas.texture.id); defer{ inputs.font_atlas.unbind(); };
-			inputs.glyphs.bind_content(font->glyph_views); defer{ inputs.glyphs.unbind(); };
-			inputs.texts.bind_content(text_instances.used());defer{ inputs.texts.unbind(); };
-			inputs.characters.bind_content(instances.used());defer{ inputs.characters.unbind(); };
-			inputs.scene.bind_object(Scene{ camera, font->glyph_atlas.texture.dimensions, 0.05f, {} }); defer{ inputs.scene.unbind(); };
-			GL_GUARD(glDrawElementsInstanced(rect.vao.draw_mode, rect.vao.element_count, rect.vao.index_type, null, instances.current));
 		}
+		if (commands.current == 0 || texts_instances.current == 0 || characters.current == 0)
+			return;
+		// printf("Drawing %llu commands, %llu texts, %llu characters\n", commands.current, texts_instances.current, characters.current);
+		OrthoCamera camera = {
+			.dimensions = v3f32(canvas, texts.size()),
+			.center = v3f32(-canvas, texts.size()) / 2.f
+		};
+
+		//* submitting
+		//? whats the overhead difference between writing to mappings and writing directly to the buffers ?
+		GL_GUARD(glUseProgram(pipeline)); defer{ GL_GUARD(glUseProgram(0)); };
+		GL_GUARD(glBindVertexArray(rect_buffer.vao.id)); defer{ GL_GUARD(glBindVertexArray(0)); };
+
+		push_texture_array(inputs.textures, 0, textures.used());
+		inputs.fonts.bind({0, fonts.used().size_bytes()}); defer{ inputs.fonts.unbind(); };
+		inputs.texts.bind({0, texts_instances.used().size_bytes()}); defer{ inputs.texts.unbind(); };
+		inputs.characters.bind({0, characters.used().size_bytes()}); defer{ inputs.characters.unbind(); };
+		inputs.glyphs.bind({0, glyphs.used().size_bytes()}); defer{ inputs.glyphs.unbind(); };
+		inputs.scene.push(Scene{ .project = m4x4f32(camera), .alpha_discard = 0.05f }); defer{ inputs.scene.unbind(); };
+
+		inputs.commands.bind(GL_DRAW_INDIRECT_BUFFER); defer{ inputs.commands.unbind(GL_DRAW_INDIRECT_BUFFER); };
+		GL_GUARD(glMultiDrawElementsIndirect(rect_buffer.vao.draw_mode, rect_buffer.vao.index_type, 0, commands.current, 0));
 	}
 
 };
-
 #endif

@@ -183,7 +183,7 @@ struct TilemapRenderer {
 		inputs.tilemap.bind_texture(tilemap.layer_atlas.texture.id); defer{ inputs.tilemap.unbind(); };
 		inputs.atlas.bind_texture(texture_atlas.id); defer{ inputs.atlas.unbind(); };
 
-		GL_GUARD(glDrawElementsInstanced(rect.vao.draw_mode, rect.vao.element_count, rect.vao.index_type, null, instance_count));
+		GL_GUARD(glDrawElementsInstanced(rect.vao.draw_mode, rect.element_count, rect.vao.index_type, null, instance_count));
 	}
 
 	static TilemapRenderer load(const cstr pipeline_path, u64 max_draw_batch = 256, u64 max_tiles = 1000, const GPUGeometry* mesh = null) {

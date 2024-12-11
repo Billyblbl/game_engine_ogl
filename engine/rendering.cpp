@@ -2,6 +2,7 @@
 # define GRENDERING
 
 #include <GL/glew.h>
+#include <GL/glext.h>
 #include <glutils.cpp>
 #include <fstream>
 #include <buffer.cpp>
@@ -16,19 +17,31 @@
 
 //TODO remove fstream dependency
 
-GLuint create_shader(string source, GLenum type) {
-	auto shader = GL_GUARD(glCreateShader(type));
+i32 get_max_textures_frag() {
+	static i32 max_textures = 0;
+	if (max_textures == 0) {
+		GL_GUARD(glGetIntegerv(GL_MAX_TEXTURE_IMAGE_UNITS, &max_textures));
+	}
+	assert(max_textures >= 16);
+	return max_textures;
+}
 
+GLuint create_shader(string source, GLenum type) {
+	assert(*source.end() == '\0' && "Shader source must be null terminated");
+	auto shader = GL_GUARD(glCreateShader(type));
+	char max_texture_text[16];
+	sprintf(max_texture_text, "%d", get_max_textures_frag());
 	const cstrp content[] = {
-		"#version 450 core\n"
-		"#define ", GLtoString(type).substr(3).data(),"\n\n", //* shader type macro
-		"#ifdef VERTEX_SHADER\n"
-		"#define pass out\n"
-		"#endif\n"
-		"#ifdef FRAGMENT_SHADER\n"
-		"#define pass in\n"
-		"#endif\n",
-		source.data()//! expects source to be null terminated
+		"#version 460 core\n"//0
+		"#define ", GLtoString(type).substr(3).data(),"\n\n", //* shader type | line 1,2
+		"#ifdef VERTEX_SHADER\n"//3
+		"#define pass out\n"//4
+		"#endif\n"//5
+		"#ifdef FRAGMENT_SHADER\n"//6
+		"#define pass in\n"//7
+		"#endif\n",//8
+		"#define MAX_TEXTURE_IMAGE_UNITS ", max_texture_text, "\n",//9
+		source.data(), "\n"//n
 	};
 	const auto size = array_size(content);
 
@@ -43,7 +56,7 @@ GLuint create_shader(string source, GLenum type) {
 		char log[log_length + 1];
 		memset(log, 0, log_length + 1);
 		GL_GUARD(glGetShaderInfoLog(shader, log_length, nullptr, log));
-		fprintf(stderr, "Failed to build %s shader - Shader log : %s\n", GLtoString(type).data(), log);
+		fprintf(stderr, "Failed to build %s shader - Shader log : \n%s\n", GLtoString(type).data(), log);
 		return 0;
 	} else {
 		return shader;
@@ -66,6 +79,83 @@ GLuint load_shader(const char* path, GLenum type) {
 	}
 }
 
+GLint init_binding_texture(GLuint pipeline, const cstr name) {
+	return GL_GUARD(glGetUniformLocation(pipeline, name));
+}
+
+GLint init_binding_ubo(GLuint pipeline, const cstr name, GLint binding) {
+	auto index = GL_GUARD(glGetProgramResourceIndex(pipeline, GL_UNIFORM_BLOCK, name));
+	GL_GUARD(glUniformBlockBinding(pipeline, index, binding));
+	return binding;
+}
+
+GLint init_binding_ssbo(GLuint pipeline, const cstr name, GLint binding) {
+	auto index = GL_GUARD(glGetProgramResourceIndex(pipeline, GL_SHADER_STORAGE_BLOCK, name));
+	GL_GUARD(glShaderStorageBlockBinding(pipeline, index, binding));
+	return binding;
+}
+
+GLuint push_texture(GLint location, GLuint unit, TexBuffer texture) {
+	texture.bind_unit(unit);
+	GL_GUARD(glUniform1i(location, unit));
+	return unit + 1;
+}
+
+GLuint push_texture_array(GLint location, GLuint unit, Array<TexBuffer*> textures) {
+	GLint units_buffer[textures.size()];
+	auto units = List { carray(units_buffer, textures.size()), 0 };
+	for (auto& t : textures)
+		t->bind_unit(units.push(GLint(unit++)));
+	GL_GUARD(glUniform1iv(location, textures.size(), units_buffer));
+	return unit;
+}
+
+struct BufferBinding {
+	enum BufferTarget : GLenum {
+		None = 0,
+		UBO = GL_UNIFORM_BUFFER,
+		SSBO = GL_SHADER_STORAGE_BUFFER,
+		ACO = GL_ATOMIC_COUNTER_BUFFER,
+		TBO = GL_TRANSFORM_FEEDBACK_BUFFER
+	} target;
+	GLint index;
+	GPUBuffer buffer;
+	static BufferBinding create(BufferTarget target, GLint index, u64 size, GLbitfield flags = GL_MAP_WRITE_BIT | GL_MAP_READ_BIT| GL_DYNAMIC_STORAGE_BIT) {
+		return {
+			.target = target,
+			.index = index,
+			.buffer = GPUBuffer::create(size, flags)
+		 };
+	}
+
+	void bind(num_range<u64> range = {}) const { buffer.bind(target, index, range); }
+	void unbind() const { buffer.unbind(target, index); }
+
+	template<typename T> void push_array(Array<const T> data) { bind(buffer.write(cast<byte>(data))); }
+	template<typename T> void push(const T& data) { push_array(carray(&data, 1)); }
+
+	struct Sequencer {
+		GLuint pipeline;
+		GLint next_ssbo = 0;
+		GLint next_ubo = 0;
+		GLint next_aco = 0;
+		GLint next_tbo = 0;
+
+		BufferBinding next(BufferTarget target, const cstr name, u64 size, GLbitfield flags = GL_MAP_WRITE_BIT | GL_MAP_READ_BIT| GL_DYNAMIC_STORAGE_BIT) {
+			switch (target) {
+				case UBO: return BufferBinding::create(target, init_binding_ubo(pipeline, name, next_ubo++), size, flags);
+				case SSBO: return BufferBinding::create(target, init_binding_ssbo(pipeline, name, next_ssbo++), size, flags);
+				case ACO: return BufferBinding::create(target, next_aco++, size, flags);//TODO implement binding if applicable
+				case TBO: return BufferBinding::create(target, next_tbo++, size, flags);//TODO implement binding if applicable
+				case None: { panic(); }
+			}
+			return {};
+		}
+	};
+
+};
+
+//TODO remove deprecated
 struct ShaderInput {
 	enum Type : GLenum { None = 0, Texture = GL_UNIFORM, UBO = GL_UNIFORM_BLOCK, SSBO = GL_SHADER_STORAGE_BLOCK } type;
 	string name;
@@ -111,8 +201,10 @@ struct ShaderInput {
 			constexpr auto prop_count = array_size(prop);
 			GLint value[prop_count];
 			GL_GUARD(glGetProgramResourceiv(pipeline, type, index, prop_count, prop, prop_count, NULL, value));
-			slot.id = value[0];
-			slot.backing_buffer = GPUBuffer::create(max(u64(value[1]), backing_size), GL_MAP_WRITE_BIT | GL_MAP_PERSISTENT_BIT | GL_DYNAMIC_STORAGE_BIT);
+			auto buffer_binding = value[0];
+			auto buffer_size = value[1];
+			slot.id = buffer_binding;
+			slot.backing_buffer = GPUBuffer::create(max(u64(buffer_size), backing_size), GL_MAP_WRITE_BIT | GL_MAP_PERSISTENT_BIT | GL_DYNAMIC_STORAGE_BIT);
 			break;
 		}
 		case None: { panic(); } break;
@@ -144,13 +236,6 @@ struct ShaderInput {
 // TODO glMultiDrawElementsIndirect
 //*
 
-GLuint get_texture_unit_target(GLuint program, const char* name) {
-	auto loc = GL_GUARD(glGetUniformLocation(program, name));
-	GLuint unit;
-	GL_GUARD(glGetnUniformuiv(program, loc, sizeof(GLuint), &unit));
-	return unit;
-}
-
 GLuint create_render_pipeline(GLuint vertex_shader, GLuint fragment_shader) {
 	if (vertex_shader == 0 || fragment_shader == 0) {
 		fprintf(stderr, "Failed to build render pipeline, invalid shader\n");
@@ -177,6 +262,21 @@ GLuint create_render_pipeline(GLuint vertex_shader, GLuint fragment_shader) {
 		return program;
 	}
 }
+
+struct DrawCommandElement {
+	GLuint count;
+	GLuint instance_count;
+	GLuint first_index;
+	GLint base_vertex;
+	GLuint base_instance;
+};
+
+struct DrawCommandVertex {
+	GLuint count;
+	GLuint instance_count;
+	GLuint first_vertex;
+	GLuint base_instance;
+};
 
 void describe(GLuint program) {
 	struct {

@@ -17,6 +17,7 @@ CFLAGS += -Werror
 CFLAGS += -Wno-misleading-indentation
 CFLAGS += -Wno-unused-command-line-argument
 CFLAGS += -Wno-vla-cxx-extension
+CFLAGS += -Wno-error=deprecated-declarations
 
 SAN_FLAGS += -fsanitize=address
 SAN_FLAGS += -fsanitize=undefined

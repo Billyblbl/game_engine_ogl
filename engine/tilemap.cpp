@@ -187,6 +187,7 @@ struct TilemapRenderer {
 	}
 
 	static TilemapRenderer load(const cstr pipeline_path, u64 max_draw_batch = 256, u64 max_tiles = 1000, const GPUGeometry* mesh = null) {
+		PROFILE_SCOPE(__PRETTY_FUNCTION__);
 		TilemapRenderer rd;
 		rd.pipeline = load_pipeline(pipeline_path);
 		rd.rect = mesh ? *mesh : create_rect_mesh(v2f32(1));

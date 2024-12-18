@@ -42,6 +42,7 @@ struct Atlas2D {
 	}
 
 	static Atlas2D create(v2u32 dimensions, GPUFormat format = RGBA32F, u32 mipmaps = 1, SamplingConfig default_sampling = { Nearest, Nearest }) {
+		PROFILE_SCOPE(__PRETTY_FUNCTION__);
 		Atlas2D atlas;
 		atlas.texture = create_texture(TX2D, v4u32(dimensions, 1, mipmaps), format);
 		atlas.current = v2u32(0);

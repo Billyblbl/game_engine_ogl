@@ -291,6 +291,8 @@ struct UIRenderer {
 	};
 
 	static UIRenderer load(const cstr path, u32 max_texts = 256, u32 max_characters = (1 << 16), u32 max_glyphs = 512) {
+		PROFILE_SCOPE(__PRETTY_FUNCTION__);
+
 		UIRenderer rd;
 		rd.pipeline = load_pipeline(path);
 		// describe(rd.pipeline);
@@ -337,6 +339,7 @@ struct UIRenderer {
 	}
 
 	void operator()(Array<Text> texts, v2f32 canvas = v2f32(1920, 1080)) {
+		PROFILE_SCOPE(__PRETTY_FUNCTION__);
 		if (texts.size() == 0)
 			return;
 

@@ -77,6 +77,7 @@ struct SpriteRenderer {
 	}
 
 	static SpriteRenderer load(const cstr pipeline_path = "./shaders/sprite.glsl", u32 max_draw_batch = 256, const GPUGeometry* mesh = null) {
+		PROFILE_SCOPE(__PRETTY_FUNCTION__);
 		SpriteRenderer rd;
 		rd.pipeline = load_pipeline(pipeline_path);
 		rd.rect = mesh ? *mesh : create_rect_mesh(v2f32(1));

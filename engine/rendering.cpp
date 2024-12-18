@@ -145,8 +145,8 @@ struct BufferBinding {
 			switch (target) {
 				case UBO: return BufferBinding::create(target, init_binding_ubo(pipeline, name, next_ubo++), size, flags);
 				case SSBO: return BufferBinding::create(target, init_binding_ssbo(pipeline, name, next_ssbo++), size, flags);
-				case ACO: return BufferBinding::create(target, next_aco++, size, flags);//TODO implement binding if applicable
-				case TBO: return BufferBinding::create(target, next_tbo++, size, flags);//TODO implement binding if applicable
+				case ACO: return BufferBinding::create(target, next_aco++, size, flags);//TODO implement init binding if applicable (meaning TODO check if applicable)
+				case TBO: return BufferBinding::create(target, next_tbo++, size, flags);//TODO implement init binding if applicable (meaning TODO check if applicable)
 				case None: { panic(); }
 			}
 			return {};

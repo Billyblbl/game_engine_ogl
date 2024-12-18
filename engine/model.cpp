@@ -7,22 +7,13 @@
 #include <glutils.cpp>
 #include <buffer.cpp>
 
-template<typename Vertex, typename Index> struct CPUGeometry {
-	Array<Vertex> vertices;
-	Array<Index> indices;
-	GLuint draw_mode;
-};
-
-struct GPUGeometry {
+struct [[deprecated]] GPUGeometry {
 	GPUBuffer vbo;
 	GPUBuffer ibo;
 	VertexArray vao;
 	u32 element_count;
 	u32 vertex_count;
 
-	template<typename Vertex, typename Index> static inline GPUGeometry upload(const CPUGeometry<Vertex, Index>& geo) {
-		return upload(geo.vertices, geo.indices, geo.draw_mode);
-	}
 
 	template<typename Vertex = DefaultVertex2D> static GPUGeometry upload(
 		Array<const Vertex> vertex_data,
@@ -56,16 +47,11 @@ struct GPUGeometry {
 	template<typename Vertex> tuple<num_range<u64>, num_range<u64>> push(Array<const Vertex> vertices, Array<const u32> indices) {
 		if (element_count == 0) {
 			vao.associate(vbo.id, ibo.id, vertexAttributesOf<Vertex>);
-			element_count = indices.size();
 		}
-		auto needed_vbo_size = vertex_count + vertices.size();
-		auto needed_ibo_size = element_count + indices.size();
-		if (needed_ibo_size > ibo.size)
-			ibo.resize(round_up_bit(needed_ibo_size));
-		if (needed_vbo_size > vbo.size)
-			vbo.resize(round_up_bit(needed_vbo_size));
-		ibo.write(cast<const byte>(indices), element_count);
-		vbo.write(cast<const byte>(vertices), vertex_count);
+		ibo.push_as(indices);
+		vbo.push_as(vertices);
+
+
 		num_range<u64> index_range = { element_count, element_count + indices.size() };
 		num_range<u64> vertex_range = { vertex_count, vertex_count + vertices.size() };
 		element_count += indices.size();

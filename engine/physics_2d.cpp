@@ -488,6 +488,7 @@ struct Physics2D {
 	static constexpr u64 default_physics_memory = (MAX_ENTITIES * MAX_ENTITIES * sizeof(Collision2D) + MAX_ENTITIES * MAX_ENTITIES * sizeof(Contact2D) * MaxContactPerCollision);
 
 	static Physics2D create(v2f32 gravity = v2f32(0, -9), f32 dt = 1.f / 60.f, u64 memory = default_physics_memory) {
+		PROFILE_SCOPE(__PRETTY_FUNCTION__);
 		Physics2D sim;
 		sim.physics_scratch = Arena::from_vmem(memory);
 		sim.collisions = { {}, 0 };

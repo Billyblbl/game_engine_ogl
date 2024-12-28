@@ -48,12 +48,7 @@ void main() {
 	color = entities[entity].color;
 	uint corner_id = gl_VertexID % 4;
 	uv = uvs[corner_id];
-
-	// if (alpha_discard > 100)//!DEBUG keep the real version around behind an impossible branch, avoids optimizing out
-		gl_Position = vp_matrix * entities[entity].transform * vec4(position, depth, 1);
-	// else
-		// gl_Position = vp_matrix * vec4(uv, 0.5, 1);
-	// d = depth;
+	gl_Position = vp_matrix * entities[entity].transform * vec4(position, depth, 1);
 }
 
 #endif
@@ -64,11 +59,7 @@ out vec4 pixel_color;
 
 void main() {
 
-	// if (alpha_discard > 100)//!DEBUG keep the real version around behind an impossible branch, avoids optimizing out
-		pixel_color = color * sample_atlas(textures[texture_id], sprites[sprite_id], uv);
-	// else
-		// pixel_color = vec4(uv, d, 1) * color * sample_atlas(textures[0], sprites[0], uv);
-
+	pixel_color = color * sample_atlas(textures[texture_id], sprites[sprite_id], uv);
 	if (pixel_color.a < alpha_discard)
 		discard;
 }

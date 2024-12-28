@@ -1,44 +1,39 @@
 
-struct InstanceData {
-	mat4 matrix;
-	uvec4 rect;
-	vec4 dimensions; //x,y -> rect dimensions, z -> sprite depth
-};
+uniform sampler2D textures[MAX_TEXTURE_IMAGE_UNITS];
 
-vec2 rect_to_world(uvec4 rect, vec2 v) {
-	return v * (rect.zw - rect.xy) + rect.xy;
-}
-
-layout(location = 0) smooth pass vec2 texture_uv;
-layout(location = 1) flat pass uint instance;
-
-layout(binding = 0) uniform sampler2D atlas;
-layout(std430, binding = 0) buffer Entities { InstanceData instances[]; };
-layout(std140, binding = 0) uniform Scene {
+layout(std140) uniform Scene {
 	mat4 view_matrix;
-	uvec4 atlas_dimensions;
 	float alpha_discard;
 };
 
+smooth pass vec2 texture_uv;
+flat pass uint texture_id;
+smooth pass vec4 color;
+
 #ifdef VERTEX_SHADER
 
-layout(location = 0) in vec2 position;
-layout(location = 1) in vec2 vert_uv;
+in vec2 position;
+in vec2 vert_uv;
+in uint albedo_index;
+in float depth;
+in vec4 tint;
 
 void main() {
-	gl_Position = view_matrix * instances[gl_InstanceID].matrix * vec4(position, instances[gl_InstanceID].dimensions.z, 1.0);
-	texture_uv = rect_to_world(instances[gl_InstanceID].rect, vert_uv) / atlas_dimensions.xy;
-	instance = gl_InstanceID;
+	uint transform_index = gl_BaseInstance//* hijacked for this purpose since this shader ins't meant to be used with instancing
+	gl_Position = view_matrix * vec4(position, depth, 1.0);
+	texture_uv = vert_uv;
+	texture_id = albedo_index;
+	color = tint;
 }
 
 #endif
 
 #ifdef FRAGMENT_SHADER
 
-layout(location = 0) out vec4 pixel_color;
+out vec4 pixel_color;
 
 void main() {
-	pixel_color = texture(atlas, texture_uv);
+	pixel_color = color * texture(textures[texture_id], texture_uv);
 	if (pixel_color.a < alpha_discard)
 		discard;
 }

@@ -255,7 +255,7 @@ bool EditorWidget(const cstr label, Font& font) {
 struct UIRenderer {
 
 	GLuint pipeline;
-	GPUGeometry rect_buffer;
+	// GPUGeometry rect_buffer;
 
 	struct {
 		GLint textures;
@@ -266,6 +266,12 @@ struct UIRenderer {
 		BufferBinding	scene;
 		GPUBuffer commands;
 	} inputs;
+
+	struct {
+		VertexArray vao;
+		GPUBuffer ibo;
+		GPUBuffer vbo;
+	} meshes;
 
 	struct TextInstance {
 		m4x4f32 transform;
@@ -295,7 +301,16 @@ struct UIRenderer {
 		rd.pipeline = load_pipeline(GLScope::global(), path);
 		// describe(rd.pipeline);
 
-		rd.rect_buffer = GPUGeometry::allocate(vertexAttributesOf<v2f32>);
+		// rd.rect_buffer = GPUGeometry::allocate(vertexAttributesOf<v2f32>);
+		rd.meshes = {
+			.vao = VertexArray::create(GLScope::global()),
+			.ibo = GPUBuffer::create(GLScope::global(), sizeof(u32) * 6 * max_characters, GL_DYNAMIC_STORAGE_BIT | GL_MAP_WRITE_BIT | GL_MAP_PERSISTENT_BIT),
+			.vbo = GPUBuffer::create(GLScope::global(), sizeof(v2f32) * 4 * max_characters, GL_DYNAMIC_STORAGE_BIT | GL_MAP_WRITE_BIT | GL_MAP_PERSISTENT_BIT)
+		};
+
+		rd.meshes.vao.bind_index_buffer(rd.meshes.ibo.id);
+		auto binding_vert = rd.meshes.vao.bind_vertex_buffer(rd.meshes.vbo.id, 0, 0, sizeof(v2f32), 0);
+		rd.meshes.vao.bind_vattrib(rd.pipeline, "position", binding_vert, vattr_fmt<v2f32>(0));
 
 		rd.inputs.textures = init_binding_texture(rd.pipeline, "textures");
 
@@ -339,18 +354,18 @@ struct UIRenderer {
 		auto characters = List { cast<CharacterInstance>(inputs.characters.buffer.map()), 0 };
 		auto texts_instances = List { cast<TextInstance>(inputs.texts.buffer.map()), 0 };
 		auto glyphs = List { cast<rtu32>(inputs.glyphs.buffer.map()), 0 };
-		auto vertices = List { cast<v2f32>(rect_buffer.vbo.map()), 0 };
-		auto indices = List { cast<u32>(rect_buffer.ibo.map()), 0 };
+		auto vertices = List { cast<v2f32>(meshes.vbo.map()), 0 };
+		auto indices = List { cast<u32>(meshes.ibo.map()), 0 };
 		auto commands = List { cast<DrawCommandElement>(inputs.commands.map()), 0 };
 		{
 			defer {
-				inputs.commands.unmap({0, commands.current});
-				rect_buffer.ibo.unmap({0, indices.current});
-				rect_buffer.vbo.unmap({0, vertices.current});
-				inputs.glyphs.buffer.unmap({0, glyphs.current});
-				inputs.texts.buffer.unmap({0, texts_instances.current});
-				inputs.characters.buffer.unmap({0, characters.current});
-				inputs.fonts.buffer.unmap({0, fonts.current});
+				inputs.commands.unmap_as<DrawCommandElement>({0, commands.current});
+				meshes.ibo.unmap_as<u32>({0, indices.current});
+				meshes.vbo.unmap_as<v2f32>({0, vertices.current});
+				inputs.glyphs.buffer.unmap_as<rtu32>({0, glyphs.current});
+				inputs.texts.buffer.unmap_as<TextInstance>({0, texts_instances.current});
+				inputs.characters.buffer.unmap_as<CharacterInstance>({0, characters.current});
+				inputs.fonts.buffer.unmap_as<AtlasInstance>({0, fonts.current});
 			};
 			Font* font = null;
 			for (i32 batch = 0; batch >= 0; batch = linear_search(texts.subspan(batch), [=](Text& t) { return t.str.size() > 0 && t.font != font; })) {
@@ -491,7 +506,7 @@ struct UIRenderer {
 		//* submitting
 		//? whats the overhead difference between writing to mappings and writing directly to the buffers ?
 		GL_GUARD(glUseProgram(pipeline)); defer{ GL_GUARD(glUseProgram(0)); };
-		GL_GUARD(glBindVertexArray(rect_buffer.vao.id)); defer{ GL_GUARD(glBindVertexArray(0)); };
+		GL_GUARD(glBindVertexArray(meshes.vao.id)); defer{ GL_GUARD(glBindVertexArray(0)); };
 
 		push_texture_array(inputs.textures, 0, textures.used());
 		inputs.fonts.bind({0, fonts.used().size_bytes()}); defer{ inputs.fonts.unbind(); };
@@ -501,7 +516,7 @@ struct UIRenderer {
 		inputs.scene.push(Scene{ .project = m4x4f32(camera), .alpha_discard = 0.05f }); defer{ inputs.scene.unbind(); };
 
 		inputs.commands.bind(GL_DRAW_INDIRECT_BUFFER); defer{ inputs.commands.unbind(GL_DRAW_INDIRECT_BUFFER); };
-		GL_GUARD(glMultiDrawElementsIndirect(rect_buffer.vao.draw_mode, rect_buffer.vao.index_type, 0, commands.current, 0));
+		GL_GUARD(glMultiDrawElementsIndirect(meshes.vao.draw_mode, meshes.vao.index_type, 0, commands.current, 0));
 	}
 
 };

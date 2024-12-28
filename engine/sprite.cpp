@@ -270,60 +270,58 @@ struct SpriteMeshRenderer {
 
 };
 
-struct SpriteRenderer {
-	struct Scene {
-		m4x4f32 view_projection;
-		v4u32 atlas_dimensions;
-		f32 alpha_discard;
-	};
+// struct SpriteRenderer {
+// 	struct Scene {
+// 		m4x4f32 view_projection;
+// 		f32 alpha_discard;
+// 	};
 
-	struct Instance {
-		m4x4f32 matrix;
-		rtu32 uv_rect;
-		v4f32 dimensions; //x, y -> rect dims, z -> rect depths, w -> padding
-	};
+// 	GLuint pipeline;
 
-	GLuint pipeline;
-	GPUGeometry rect;
+// 	struct {
+// 		GLint textures;
+// 		struct {
+// 			GPUBuffer ibo;
+// 			struct {
+// 				GPUBuffer vertices;
+// 				GPUBuffer sprites;
+// 			} vbos;
+// 		} meshes;
+// 	} bindings;
+// 	List<GLuint> texture_ids;
 
-	struct {
-		ShaderInput atlas;
-		ShaderInput scene;
-		ShaderInput instances;
-	} inputs;
+// 	static Instance make_instance(const Sprite& sprite, const m4x4f32& matrix) {
+// 		Instance instance;
+// 		instance.uv_rect = sprite.view;
+// 		instance.matrix = matrix * glm::scale(v3f32(sprite.dimensions, 1));
+// 		instance.dimensions = v4f32(sprite.dimensions, sprite.depth, 0);
+// 		return instance;
+// 	}
 
-	static Instance make_instance(const Sprite& sprite, const m4x4f32& matrix) {
-		Instance instance;
-		instance.uv_rect = sprite.view;
-		instance.matrix = matrix * glm::scale(v3f32(sprite.dimensions, 1));
-		instance.dimensions = v4f32(sprite.dimensions, sprite.depth, 0);
-		return instance;
-	}
+// 	void operator()(
+// 		Array<Instance> sprites,
+// 		const m4x4f32& vp,
+// 		const TexBuffer& textures
+// 		) {
+// 		GL_GUARD(glUseProgram(pipeline)); defer{ GL_GUARD(glUseProgram(0)); };
+// 		GL_GUARD(glBindVertexArray(rect.vao.id)); defer{ GL_GUARD(glBindVertexArray(0)); };
+// 		inputs.atlas.bind_texture(textures.id); defer{ inputs.atlas.unbind(); };
+// 		inputs.instances.bind_content(sprites); defer{ inputs.instances.unbind(); };
+// 		inputs.scene.bind_object(Scene{ vp, textures.dimensions, 0.01f }); defer{ inputs.scene.unbind(); };
+// 		GL_GUARD(glDrawElementsInstanced(rect.vao.draw_mode, rect.element_count, rect.vao.index_type, null, sprites.size()));
+// 	}
 
-	void operator()(
-		Array<Instance> sprites,
-		const m4x4f32& vp,
-		const TexBuffer& textures
-		) {
-		GL_GUARD(glUseProgram(pipeline)); defer{ GL_GUARD(glUseProgram(0)); };
-		GL_GUARD(glBindVertexArray(rect.vao.id)); defer{ GL_GUARD(glBindVertexArray(0)); };
-		inputs.atlas.bind_texture(textures.id); defer{ inputs.atlas.unbind(); };
-		inputs.instances.bind_content(sprites); defer{ inputs.instances.unbind(); };
-		inputs.scene.bind_object(Scene{ vp, textures.dimensions, 0.01f }); defer{ inputs.scene.unbind(); };
-		GL_GUARD(glDrawElementsInstanced(rect.vao.draw_mode, rect.element_count, rect.vao.index_type, null, sprites.size()));
-	}
+// 	static SpriteRenderer load(const cstr pipeline_path = "./shaders/sprite.glsl", u32 max_draw_batch = 256, const GPUGeometry* mesh = null) {
+// 		PROFILE_SCOPE(__PRETTY_FUNCTION__);
+// 		SpriteRenderer rd;
+// 		rd.pipeline = load_pipeline(GLScope::global(), pipeline_path);
+// 		rd.rect = mesh ? *mesh : create_rect_mesh(v2f32(1));
+// 		rd.inputs.atlas = ShaderInput::create_slot(rd.pipeline, ShaderInput::Texture, "atlas");
+// 		rd.inputs.instances = ShaderInput::create_slot(rd.pipeline, ShaderInput::SSBO, "Entities", sizeof(Instance) * max_draw_batch);
+// 		rd.inputs.scene = ShaderInput::create_slot(rd.pipeline, ShaderInput::UBO, "Scene", sizeof(Scene));
+// 		return rd;
+// 	}
 
-	static SpriteRenderer load(const cstr pipeline_path = "./shaders/sprite.glsl", u32 max_draw_batch = 256, const GPUGeometry* mesh = null) {
-		PROFILE_SCOPE(__PRETTY_FUNCTION__);
-		SpriteRenderer rd;
-		rd.pipeline = load_pipeline(GLScope::global(), pipeline_path);
-		rd.rect = mesh ? *mesh : create_rect_mesh(v2f32(1));
-		rd.inputs.atlas = ShaderInput::create_slot(rd.pipeline, ShaderInput::Texture, "atlas");
-		rd.inputs.instances = ShaderInput::create_slot(rd.pipeline, ShaderInput::SSBO, "Entities", sizeof(Instance) * max_draw_batch);
-		rd.inputs.scene = ShaderInput::create_slot(rd.pipeline, ShaderInput::UBO, "Scene", sizeof(Scene));
-		return rd;
-	}
-
-};
+// };
 
 #endif

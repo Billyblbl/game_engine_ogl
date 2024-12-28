@@ -19,16 +19,70 @@ const static GLenum OGLLogSeverity[] = {
 	// GL_DEBUG_SEVERITY_NOTIFICATION
 };
 
-static void ogl_debug_callback(GLenum,
+static void ogl_debug_callback(
+	GLenum source,
 	GLenum type,
 	GLuint id,
 	GLenum severity,
-	GLsizei,
-	const GLchar* message,
+	GLsizei length,
+	const char* message,
 	const void*
 ) {
-	for (auto&& i : OGLLogSeverity) if (i == severity)
-		fprintf(stderr, "[%s] OpenGL Debug %u, %s on %u: %s\n", GLtoString(i).data(), type, GLtoString(type).data(), id, message);
+
+	string s_source;
+	switch (source) {
+		case GL_DEBUG_SOURCE_API: 						s_source = "API"; break;
+		case GL_DEBUG_SOURCE_WINDOW_SYSTEM:		s_source = "Window"; break;
+		case GL_DEBUG_SOURCE_SHADER_COMPILER:	s_source = "Shader"; break;
+		case GL_DEBUG_SOURCE_THIRD_PARTY:			s_source = "3rd Party"; break;
+		case GL_DEBUG_SOURCE_APPLICATION:			s_source = "App"; break;
+		case GL_DEBUG_SOURCE_OTHER:						s_source = "Other"; break;
+		default: s_source = "Unknown";
+	}
+
+	string s_type;
+	switch (type) {
+		case GL_DEBUG_TYPE_ERROR:								s_type = "Error"; break;
+		case GL_DEBUG_TYPE_DEPRECATED_BEHAVIOR:	s_type = "Deprecated Behaviour"; break;
+		case GL_DEBUG_TYPE_UNDEFINED_BEHAVIOR:	s_type = "Undefined Behaviour"; break; 
+		case GL_DEBUG_TYPE_PORTABILITY:					s_type = "Portability"; break;
+		case GL_DEBUG_TYPE_PERFORMANCE:					s_type = "Performance"; break;
+		case GL_DEBUG_TYPE_MARKER:							s_type = "Marker"; break;
+		case GL_DEBUG_TYPE_PUSH_GROUP:					s_type = "Push Group"; break;
+		case GL_DEBUG_TYPE_POP_GROUP:						s_type = "Pop Group"; break;
+		case GL_DEBUG_TYPE_OTHER:								s_type = "Other"; break;
+		default: s_type = "Unknown";
+	}
+
+	string s_severity;
+	switch (severity) {
+		case GL_DEBUG_SEVERITY_HIGH:					s_severity = "High"; break;
+		case GL_DEBUG_SEVERITY_MEDIUM:				s_severity = "Medium"; break;
+		case GL_DEBUG_SEVERITY_LOW:						s_severity = "Low"; break;
+		case GL_DEBUG_SEVERITY_NOTIFICATION:	s_severity = "Notification"; break;
+		default: s_severity = "Unknown";
+	}
+
+	constexpr GLuint BUFFER_DETAILED_INFO	= 131185;
+	constexpr GLuint SILENT[] = {
+		BUFFER_DETAILED_INFO
+	};
+
+	for (auto ignored : SILENT) if (id == ignored)
+		return;
+	fprintf(stderr, "[%.*s].[%.*s].[%.*s] (%u): %.*s\n",
+		(int)s_severity.size(), s_severity.data(),
+		(int)s_source.size(), s_source.data(),
+		(int)s_type.size(), s_type.data(),
+		id,
+		(int)length, message
+	);
+	constexpr GLuint DEBUG_IGNORED[] = {
+		// BUFFER_DETAILED_INFO
+	};
+	for (auto ignored : DEBUG_IGNORED) if (id == ignored)
+		return;
+	__debugbreak();
 }
 
 static void glfw_error_callback(int error, const cstr description) {
@@ -52,7 +106,6 @@ struct App {
 		glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 4);
 		glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 6);
 		glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
-		glfwWindowHint(GLFW_OPENGL_FORWARD_COMPAT, GL_TRUE);
 		auto window = glfwCreateWindow(window_dimensions.x, window_dimensions.y, window_title, NULL, NULL);
 		assert(window);
 		auto& input_context = Input::init_context(window);
@@ -61,9 +114,7 @@ struct App {
 
 		int display_w, display_h;
 		glfwGetFramebufferSize(window, &display_w, &display_h);
-		default_framebuffer.dimensions = v2u32(display_w, display_h);
-		default_framebuffer.clear_attachement = clear_bit(Color0Attc) | clear_bit(DepthAttc);
-		return App{ window, &input_context, default_framebuffer.dimensions, start_scene, Time::start() };
+		return App{ window, &input_context, v2u32(display_w, display_h), start_scene, Time::start() };
 	}
 
 	void release() {
@@ -80,7 +131,7 @@ struct App {
 
 };
 
-bool init_ogl(App& app, bool debug = DEBUG_GL) {
+bool init_ogl(bool debug = DEBUG_GL) {
 	PROFILE_SCOPE(__PRETTY_FUNCTION__);
 	printf("Initializing OpenGL\n");
 	GLenum err = glewInit();
@@ -95,21 +146,11 @@ bool init_ogl(App& app, bool debug = DEBUG_GL) {
 		glDebugMessageControl(GL_DONT_CARE, GL_DONT_CARE, GL_DONT_CARE, 0, null, GL_TRUE);
 	}
 
-	GL_GUARD(glViewport(0, 0, app.pixel_dimensions.x, app.pixel_dimensions.y));
-	// GL_GUARD(glEnable(GL_CULL_FACE));
-	GL_GUARD(glDisable(GL_CULL_FACE));
-	// GL_GUARD(glCullFace(GL_BACK));
-	// GL_GUARD(glCullFace(GL_FRONT));
-	GL_GUARD(glEnable(GL_DEPTH_TEST));
-	GL_GUARD(glDepthFunc(GL_LEQUAL));
-	GL_GUARD(glEnable(GL_BLEND));
-	GL_GUARD(glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA));
 	return true;
 }
 
 bool update(App& app, u64 target_scene) {
-	PROFILE_SCOPE("Window update");
-	defer{ glfwSwapBuffers(app.window); };
+	PROFILE_SCOPE(__PRETTY_FUNCTION__);
 	int display_w, display_h;
 	glfwGetFramebufferSize(app.window, &display_w, &display_h);
 	app.pixel_dimensions.x = display_w;
@@ -119,10 +160,25 @@ bool update(App& app, u64 target_scene) {
 		app.scene_id = 0;
 		return false;
 	}
+	{
+		PROFILE_SCOPE("sync");
+		glfwSwapBuffers(app.window);
+	}
 	PROFILE_SCOPE("Inputs");
 	Input::poll(*app.inputs);
 	update(app.runtime);
 	return app.scene_id == target_scene;
+}
+
+//? GLFW dependency in what should be opengl stuff, maybe move to a separate file
+RenderPass window_renderpass(GLFWwindow* window) {
+	int w, h;
+	glfwGetFramebufferSize(window, &w, &h);
+	return {
+		.framebuffer = 0,
+		.viewport = { v2u32(0, 0), v2u32(w, h) },
+		.scissor = { v2u32(0, 0), v2u32(w, h) }
+	};
 }
 
 #endif

@@ -5,8 +5,10 @@
 #include <cstdio>
 #include <optional>
 #include <math.cpp>
-#include <GL/glew.h>
 #define GLFW_INCLUDE_GLEXT
+#include <GL/glew.h>
+#include <GL/glcorearb.h>
+#include <GL/glext.h>
 #include <GLFW/glfw3.h> // Will drag system OpenGL headers
 
 #define serialise_macro(d) lstr(#d)
@@ -306,8 +308,10 @@ void CheckGLError(string expression, string file_name, u32 line_number) {
 
 #define DEBUG_GL true
 // #define DEBUG_GL false
+// #define DEBUG_GL_GUARD DEBUG_GL
+#define DEBUG_GL_GUARD false
 
-#if DEBUG_GL
+#if DEBUG_GL_GUARD
 #define GL_GUARD(x) [&]() -> auto { defer {CheckGLError(#x, __FILE__, __LINE__);}; return x;}()
 #else
 #define GL_GUARD(x) x

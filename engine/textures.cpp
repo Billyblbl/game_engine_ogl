@@ -9,6 +9,7 @@
 
 // #include <GL/glext.h>
 #include <glutils.cpp>
+#include <glresource.cpp>
 #include <string>
 #include <math.cpp>
 
@@ -79,10 +80,67 @@ struct SamplingConfig { SamplingFilter min, max; };
 template<u32 D> using Area = reg_polytope<glm::vec<D, u32>>;
 
 struct TexBuffer {
-	GLuint	id;
-	v4u32		dimensions;
-	TexType type;
-	GPUFormat format;
+	GLuint	id = 0;
+	v4u32		dimensions = v4u32(0);
+	TexType type = NoType;
+	GPUFormat format = {};
+
+	static TexBuffer create(GLScope& ctx, TexType type, v4u32 dimensions, GPUFormat format = RGBA32F) {
+		GLuint id;
+		GL_GUARD(glCreateTextures(type, 1, &id));
+		ctx.push<&GLScope::textures>(id);
+		printf("Creating %s:%ux%ux%ux%u id %u\n", GLtoString(type).data(), dimensions.x, dimensions.y, dimensions.z, dimensions.w, id);
+		switch (type) {
+			case TX1D:		GL_GUARD(glTextureStorage1D(id, dimensions.w, format, dimensions.x)); break;
+			case TX2D:
+			case TX1DARR:	GL_GUARD(glTextureStorage2D(id, dimensions.w, format, dimensions.x, dimensions.y)); break;
+			case TX3D:
+			case TX2DARR:	GL_GUARD(glTextureStorage3D(id, dimensions.w, format, dimensions.x, dimensions.y, dimensions.z)); break;
+			default: return fail_ret(GLtoString(type).data(), TexBuffer{});
+		}
+		return TexBuffer{
+			.id = id,
+			.dimensions = dimensions,
+			.type = type,
+			.format = format
+		};
+	}
+
+	bool upload(Array<byte> source, SrcFormat format, Area<3> box, GLint mipmap = 0) {
+		auto pixel_size = format.channel_count * format.channel_size;
+		if (pixel_size == 0 || source.size_bytes() == 0) return false;
+		else if (pixel_size % 2 == 1) {//odd size
+			GL_GUARD(glPixelStorei(GL_PACK_ALIGNMENT, 1));
+			GL_GUARD(glPixelStorei(GL_UNPACK_ALIGNMENT, 1));
+		} else if ((pixel_size / 2) % 2 == 1) {//even * odd size
+			GL_GUARD(glPixelStorei(GL_PACK_ALIGNMENT, 2));
+			GL_GUARD(glPixelStorei(GL_UNPACK_ALIGNMENT, 2));
+		} else {//even * even size (clamped to 8)
+			GL_GUARD(glPixelStorei(GL_PACK_ALIGNMENT, min(pixel_size, 8u)));
+			GL_GUARD(glPixelStorei(GL_UNPACK_ALIGNMENT, min(pixel_size, 8u)));
+		}
+
+		switch (type) {
+		case TX1D:		GL_GUARD(glTextureSubImage1D(id, mipmap, box.min.x, width(box), format.channels, format.type, source.data())); break;
+		case TX2D:
+		case TX1DARR:	GL_GUARD(glTextureSubImage2D(id, mipmap, box.min.x, box.min.y, width(box), height(box), format.channels, format.type, source.data())); break;
+		case TX3D:
+		case TX2DARR:	GL_GUARD(glTextureSubImage3D(id, mipmap, box.min.x, box.min.y, box.min.z, width(box), height(box), depth(box), format.channels, format.type, source.data())); break;
+		default: return fail_ret(GLtoString(type).data(), false);
+		}
+		return true;
+	}
+
+	template<typename T, u32 D> bool upload_as(Array<T> source, Area<D> area) {
+		//TODO proper area fit check
+		//TODO differentiate RGB vs sRGB texture upload https://youtu.be/MzJwiEIGj7k?t=2002
+		// expect(glm::length2(area.max - area.min) <= source.size());
+		return upload(cast<byte>(source), Format<T>, area);
+	}
+
+	template<typename T, u32 D> bool upload_as(Array<T> source, Area<D> area, u32 index) {
+		return upload(source, slice_to_area(area, index));
+	}
 
 	TexBuffer& conf_wrap(WrapConfig wrap) {
 		GL_GUARD(glTextureParameteri(id, GL_TEXTURE_WRAP_S, wrap.s));
@@ -162,89 +220,78 @@ struct TexBuffer {
 
 };
 
-constexpr TexBuffer null_tex = {
-	.id = 0,
-	.dimensions = v4u32(0),
-	.type = NoType,
-	.format = {}
-};
 
-TexBuffer create_texture(TexType type, v4u32 dimensions, GPUFormat format = RGBA32F) {
-	GLuint id;
-	GL_GUARD(glCreateTextures(type, 1, &id));
-	printf("Creating %s:%ux%ux%ux%u id %u\n", GLtoString(type).data(), dimensions.x, dimensions.y, dimensions.z, dimensions.w, id);
-	switch (type) {
-	case TX1D:		GL_GUARD(glTextureStorage1D(id, dimensions.w, format, dimensions.x)); break;
-	case TX2D:
-	case TX1DARR:	GL_GUARD(glTextureStorage2D(id, dimensions.w, format, dimensions.x, dimensions.y)); break;
-	case TX3D:
-	case TX2DARR:	GL_GUARD(glTextureStorage3D(id, dimensions.w, format, dimensions.x, dimensions.y, dimensions.z)); break;
-	default: return fail_ret(GLtoString(type).data(), null_tex);
-	}
-	return TexBuffer{
-	 .id = id,
-	 .dimensions = dimensions,
-	 .type = type,
-	 .format = format
-	};
-}
+// TexBuffer create_texture(GLScope& ctx, TexType type, v4u32 dimensions, GPUFormat format = RGBA32F) {
+// 	GLuint id;
+// 	GL_GUARD(glCreateTextures(type, 1, &id));
+// 	ctx.push<&GLScope::textures>(id);
+// 	printf("Creating %s:%ux%ux%ux%u id %u\n", GLtoString(type).data(), dimensions.x, dimensions.y, dimensions.z, dimensions.w, id);
+// 	switch (type) {
+// 	case TX1D:		GL_GUARD(glTextureStorage1D(id, dimensions.w, format, dimensions.x)); break;
+// 	case TX2D:
+// 	case TX1DARR:	GL_GUARD(glTextureStorage2D(id, dimensions.w, format, dimensions.x, dimensions.y)); break;
+// 	case TX3D:
+// 	case TX2DARR:	GL_GUARD(glTextureStorage3D(id, dimensions.w, format, dimensions.x, dimensions.y, dimensions.z)); break;
+// 	default: return fail_ret(GLtoString(type).data(), null_tex);
+// 	}
+// 	return TexBuffer{
+// 	 .id = id,
+// 	 .dimensions = dimensions,
+// 	 .type = type,
+// 	 .format = format
+// 	};
+// }
 
-TexBuffer& unload(TexBuffer& texture) {
-	GL_GUARD(glDeleteTextures(1, &texture.id));
-	texture = null_tex;
-	return texture;
-}
+// bool upload_texture_data(TexBuffer& texture, Array<byte> source, SrcFormat format, Area<3> box, GLint mipmap = 0) {
+// 	auto pixel_size = format.channel_count * format.channel_size;
+// 	if (pixel_size == 0 || source.size_bytes() == 0) return false;
+// 	else if (pixel_size % 2 == 1) {//odd size
+// 		GL_GUARD(glPixelStorei(GL_PACK_ALIGNMENT, 1));
+// 		GL_GUARD(glPixelStorei(GL_UNPACK_ALIGNMENT, 1));
+// 	} else if ((pixel_size / 2) % 2 == 1) {//even * odd size
+// 		GL_GUARD(glPixelStorei(GL_PACK_ALIGNMENT, 2));
+// 		GL_GUARD(glPixelStorei(GL_UNPACK_ALIGNMENT, 2));
+// 	} else {//even * even size (clamped to 8)
+// 		GL_GUARD(glPixelStorei(GL_PACK_ALIGNMENT, min(pixel_size, 8u)));
+// 		GL_GUARD(glPixelStorei(GL_UNPACK_ALIGNMENT, min(pixel_size, 8u)));
+// 	}
 
-bool upload_texture_data(TexBuffer& texture, Array<byte> source, SrcFormat format, Area<3> box, GLint mipmap = 0) {
-	auto pixel_size = format.channel_count * format.channel_size;
-	if (pixel_size == 0 || source.size_bytes() == 0) return false;
-	else if (pixel_size % 2 == 1) {//odd size
-		GL_GUARD(glPixelStorei(GL_PACK_ALIGNMENT, 1));
-		GL_GUARD(glPixelStorei(GL_UNPACK_ALIGNMENT, 1));
-	} else if ((pixel_size / 2) % 2 == 1) {//even * odd size
-		GL_GUARD(glPixelStorei(GL_PACK_ALIGNMENT, 2));
-		GL_GUARD(glPixelStorei(GL_UNPACK_ALIGNMENT, 2));
-	} else {//even * even size (clamped to 8)
-		GL_GUARD(glPixelStorei(GL_PACK_ALIGNMENT, min(pixel_size, 8u)));
-		GL_GUARD(glPixelStorei(GL_UNPACK_ALIGNMENT, min(pixel_size, 8u)));
-	}
-
-	switch (texture.type) {
-	case TX1D:		GL_GUARD(glTextureSubImage1D(texture.id, mipmap, box.min.x, width(box), format.channels, format.type, source.data())); break;
-	case TX2D:
-	case TX1DARR:	GL_GUARD(glTextureSubImage2D(texture.id, mipmap, box.min.x, box.min.y, width(box), height(box), format.channels, format.type, source.data())); break;
-	case TX3D:
-	case TX2DARR:	GL_GUARD(glTextureSubImage3D(texture.id, mipmap, box.min.x, box.min.y, box.min.z, width(box), height(box), depth(box), format.channels, format.type, source.data())); break;
-	default: return fail_ret(GLtoString(texture.type).data(), false);
-	}
-	return true;
-}
+// 	switch (texture.type) {
+// 	case TX1D:		GL_GUARD(glTextureSubImage1D(texture.id, mipmap, box.min.x, width(box), format.channels, format.type, source.data())); break;
+// 	case TX2D:
+// 	case TX1DARR:	GL_GUARD(glTextureSubImage2D(texture.id, mipmap, box.min.x, box.min.y, width(box), height(box), format.channels, format.type, source.data())); break;
+// 	case TX3D:
+// 	case TX2DARR:	GL_GUARD(glTextureSubImage3D(texture.id, mipmap, box.min.x, box.min.y, box.min.z, width(box), height(box), depth(box), format.channels, format.type, source.data())); break;
+// 	default: return fail_ret(GLtoString(texture.type).data(), false);
+// 	}
+// 	return true;
+// }
 
 template<u32 D> Area<D + 1> slice_to_area(Area<D> slice, u32 index) { return { { slice.min, index }, { slice.max, index + 1 } }; }
 
-template<typename T, u32 D> bool upload_texture_data(TexBuffer& texture, Array<T> source, Area<D> area) {
-	//TODO proper area fit check
-	//TODO differentiate RGB vs sRGB texture upload https://youtu.be/MzJwiEIGj7k?t=2002
-	// expect(glm::length2(area.max - area.min) <= source.size());
-	return upload_texture_data(texture, cast<byte>(source), Format<T>, area);
-}
+// template<typename T, u32 D> bool upload_texture_data(TexBuffer& texture, Array<T> source, Area<D> area) {
+// 	//TODO proper area fit check
+// 	//TODO differentiate RGB vs sRGB texture upload https://youtu.be/MzJwiEIGj7k?t=2002
+// 	// expect(glm::length2(area.max - area.min) <= source.size());
+// 	return upload_texture_data(texture, cast<byte>(source), Format<T>, area);
+// }
 
-template<typename T, u32 D> bool upload_texture_data(TexBuffer& texture, Array<T> source, Area<D> area, u32 index) {
-	return upload_texture_data(texture, source, slice_to_area(area, index));
-}
+// template<typename T, u32 D> bool upload_texture_data(TexBuffer& texture, Array<T> source, Area<D> area, u32 index) {
+// 	return upload_texture_data(texture, source, slice_to_area(area, index));
+// }
 
-TexBuffer create_texture(Array<byte> source, SrcFormat source_format, TexType type, v4u32 dimensions, GPUFormat internal_format = RGBA32F) {
-	auto texture = create_texture(type, dimensions, internal_format);
-	if (upload_texture_data(texture, source, source_format, bxu32{ v3u32(0), dimensions }))
-		return texture;
-	else
-		return fail_ret("texture creation failed", unload(texture));
-}
+// TexBuffer create_texture(GLScope& ctx, Array<byte> source, SrcFormat source_format, TexType type, v4u32 dimensions, GPUFormat internal_format = RGBA32F) {
+// 	auto texture = create_texture(ctx, type, dimensions, internal_format);
+// 	if (upload_texture_data(texture, source, source_format, bxu32{ v3u32(0), dimensions }))
+// 		return texture;
+// 	else
+// 		return fail_ret("texture creation failed", unload(texture));
+// }
 
-template<typename T> TexBuffer create_texture(Array<T> source, TexType type, v4u32 dimensions, GPUFormat internal_format = RGBA32F) {
-	expect(dimensions.x * dimensions.y * dimensions.z <= source.size());
-	return create_texture(cast<byte>(source), Format<T>, type, dimensions, internal_format);
-}
+// template<typename T> TexBuffer create_texture(GLScope& ctx, Array<T> source, TexType type, v4u32 dimensions, GPUFormat internal_format = RGBA32F) {
+// 	expect(dimensions.x * dimensions.y * dimensions.z <= source.size());
+// 	return create_texture(ctx, cast<byte>(source), Format<T>, type, dimensions, internal_format);
+// }
 
 //TODO Maybe? move this in a  more imgui specific place
 ImVec2 fit_to_area(ImVec2 area, v2f32 dimensions) {

@@ -2,6 +2,7 @@
 # define GBUFFER
 
 #include <glutils.cpp>
+#include <glresource.cpp>
 #include <blblstd.hpp>
 
 struct GPUBuffer {
@@ -16,11 +17,11 @@ struct GPUBuffer {
 	);
 	GLenum stretchy_usage() const { return (GLenum)(flags & ~STRETCHY_FLAG); }
 	bool stretchy() const { return (flags & STRETCHY_FLAG) == STRETCHY_FLAG; }
-	// bool stretchy;
 
-	static GPUBuffer create(u64 size, GLbitfield flags = 0, ROBuffer initial_data = {}) {
+	static GPUBuffer create(GLScope& ctx, u64 size, GLbitfield flags = 0, ROBuffer initial_data = {}) {
 		GLuint id;
 		GL_GUARD(glCreateBuffers(1, &id));
+		ctx.push<&GLScope::buffers>(id);
 		auto initial_ptr = initial_data.size() > 0 ? initial_data.data() : null;
 		GL_GUARD(glNamedBufferStorage(id, size, initial_ptr, flags));
 		return {
@@ -28,13 +29,13 @@ struct GPUBuffer {
 			.content = initial_data.size(),
 			.id = id,
 			.flags = flags
-			// .stretchy = false
 		};
 	}
 
-	static GPUBuffer create_stretchy(u64 size, GLenum usage = 0, ROBuffer initial_data = {}) {
+	static GPUBuffer create_stretchy(GLScope& ctx, u64 size, GLenum usage = 0, ROBuffer initial_data = {}) {
 		GLuint id;
 		GL_GUARD(glCreateBuffers(1, &id));
+		ctx.push<&GLScope::buffers>(id);
 		auto initial_ptr = initial_data.size() > 0 ? initial_data.data() : null;
 		GL_GUARD(glNamedBufferData(id, size, initial_ptr, usage));
 		return {
@@ -42,11 +43,8 @@ struct GPUBuffer {
 			.content = initial_data.size(),
 			.id = id,
 			.flags = usage | STRETCHY_FLAG
-			// .stretchy = true
 		};
 	}
-
-	void release() { GL_GUARD(glDeleteBuffers(1, &id)); }
 
 	GPUBuffer& resize(u64 new_size) {
 		assert(stretchy() && "Cannot resize immutable GPU buffer");
@@ -91,8 +89,8 @@ struct GPUBuffer {
 		return r;
 	}
 
-	template<typename T> num_range<u64> push_as(Array<const T> buff) { return push(cast<byte>(buff)); }
-	template<typename T> num_range<u64> push_as(const T& obj) { return push_as<T>(carray(&obj, 1)); }
+	template<typename T> num_range<u64> push_as(Array<T> buff) { return push(cast<byte>(buff)); }
+	template<typename T> num_range<u64> push_one(const T& obj) { return push_as<const T>(carray(&obj, 1)); }
 
 
 	Buffer map(num_range<u64> range = {}, GLbitfield access = GL_MAP_WRITE_BIT | GL_MAP_FLUSH_EXPLICIT_BIT) {
@@ -112,6 +110,10 @@ struct GPUBuffer {
 		if (flush_range.size() > 0)
 			flush(flush_range);
 		GL_GUARD(glUnmapNamedBuffer(id));
+	}
+
+	template<typename T> void unmap_as(num_range<u64> flush_range = {}) {
+		unmap({flush_range.min * sizeof(T), flush_range.size() * sizeof(T)});
 	}
 
 	num_range<u64> sync(ROBuffer buff, u64 offset = 0) {

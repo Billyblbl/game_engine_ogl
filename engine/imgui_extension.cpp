@@ -100,8 +100,30 @@ namespace ImGui {
 		return changed;
 	}
 
+	template<typename T> bool mask_flags(const cstr label, T& flags, Array<const tuple<const string, T>> masks) {
+		bool changed = false;
+		if (ImGui::BeginCombo(label, "", ImGuiComboFlags_NoPreview)) {
+			defer { ImGui::EndCombo(); };
+			for (auto& [name, mask] : masks) {
+				bool checked = (flags & mask) == mask;
+				if (ImGui::Selectable(name.cbegin(), &checked, ImGuiSelectableFlags_DontClosePopups | ImGuiSelectableFlags_AllowDoubleClick)) {
+					if (checked)
+						flags |= mask;
+					else
+						flags &= ~mask;
+					changed = true;
+				}
+			}
+		}
+		return changed;
+	}
+
 	template<typename T> inline bool bit_flags(const cstr label, T& flags, LiteralArray<string> bit_names) {
 		return bit_flags(label, flags, larray(bit_names));
+	}
+
+	template<typename T> inline bool mask_flags(const cstr label, T& flags, LiteralArray<tuple<const string, T>> masks) {
+		return mask_flags(label, flags, larray(masks));
 	}
 
 	inline void NewFrame_OGL_GLFW() {

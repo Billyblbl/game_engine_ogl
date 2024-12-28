@@ -8,109 +8,202 @@
 #include <tuple>
 #include <blblstd.hpp>
 
-enum Attachement : GLuint {
-	NoAttc = 0,
-	DepthAttc = GL_DEPTH_ATTACHMENT,
-	StencilAttc = GL_STENCIL_ATTACHMENT,
-	DepthStencilAttc = GL_DEPTH_STENCIL_ATTACHMENT,
-	Color0Attc = GL_COLOR_ATTACHMENT0,
-};
-
-GLbitfield clear_bit(Attachement attch) {
-	switch (attch) {
-	case NoAttc: return 0;
-	case DepthAttc: return GL_DEPTH_BUFFER_BIT;
-	case StencilAttc: return GL_STENCIL_BUFFER_BIT;
-	case DepthStencilAttc: return GL_DEPTH_BUFFER_BIT | GL_STENCIL_BUFFER_BIT;
-	default: return GL_COLOR_BUFFER_BIT;
-	}
-}
-
-constexpr GLuint MaxAttachements = GL_MAX_COLOR_ATTACHMENTS;
-
-struct AttachementBinding {
-	Attachement type;
-	TexBuffer texture;
-	GLint level;
-	GLint layer;
-	bool clear;
-};
-
-inline AttachementBinding bind_to_fb(
-	Attachement type,
-	const TexBuffer& texture,
-	GLint level,
-	GLint layer,
-	bool clear = true
-) {
-	return AttachementBinding{ type, texture, level, layer, clear };
-}
-
 tuple<bool, string> is_complete(GLuint fbf) {
 	auto status = GL_GUARD(glCheckNamedFramebufferStatus(fbf, GL_FRAMEBUFFER));
 	return tuple(status == GL_FRAMEBUFFER_COMPLETE, GLtoString(status));
 }
 
-struct FrameBuffer {
-	GLuint id;
-	GLbitfield clear_attachement;
+struct RenderTarget {
+
+	struct Slot {
+		GLenum id;
+		GLenum type;
+		GLbitfield flags;
+	};
+	//* default framebuffer targets
+	static constexpr Slot None = { GL_NONE, 0, 0 };
+	static constexpr Slot Front = { GL_FRONT, GL_COLOR, GL_COLOR_BUFFER_BIT };
+	static constexpr Slot Back = { GL_BACK, GL_COLOR, GL_COLOR_BUFFER_BIT };
+	static constexpr Slot Left = { GL_LEFT, GL_COLOR, GL_COLOR_BUFFER_BIT };
+	static constexpr Slot Right = { GL_RIGHT, GL_COLOR, GL_COLOR_BUFFER_BIT };
+	static constexpr Slot FrontAndBack = { GL_FRONT_AND_BACK, GL_COLOR, GL_COLOR_BUFFER_BIT };
+	static constexpr Slot FrontLeft = { GL_FRONT_LEFT, GL_COLOR, GL_COLOR_BUFFER_BIT };
+	static constexpr Slot FrontRight = { GL_FRONT_RIGHT, GL_COLOR, GL_COLOR_BUFFER_BIT };
+	static constexpr Slot BackLeft = { GL_BACK_LEFT, GL_COLOR, GL_COLOR_BUFFER_BIT };
+	static constexpr Slot BackRight = { GL_BACK_RIGHT, GL_COLOR, GL_COLOR_BUFFER_BIT };
+
+	//* FBO targets
+	static constexpr Slot Depth = { GL_DEPTH_ATTACHMENT, GL_DEPTH, GL_DEPTH_BUFFER_BIT };
+	static constexpr Slot Stencil = { GL_STENCIL_ATTACHMENT, GL_STENCIL, GL_STENCIL_BUFFER_BIT };
+	static constexpr Slot DepthStencil = { GL_DEPTH_STENCIL_ATTACHMENT, GL_DEPTH_STENCIL, GL_DEPTH_BUFFER_BIT | GL_STENCIL_BUFFER_BIT };
+	static constexpr Slot Color[] = {
+		{ GL_COLOR_ATTACHMENT0, GL_COLOR, GL_COLOR_BUFFER_BIT },
+		{ GL_COLOR_ATTACHMENT1, GL_COLOR, GL_COLOR_BUFFER_BIT },
+		{ GL_COLOR_ATTACHMENT2, GL_COLOR, GL_COLOR_BUFFER_BIT },
+		{ GL_COLOR_ATTACHMENT3, GL_COLOR, GL_COLOR_BUFFER_BIT },
+		{ GL_COLOR_ATTACHMENT4, GL_COLOR, GL_COLOR_BUFFER_BIT },
+		{ GL_COLOR_ATTACHMENT5, GL_COLOR, GL_COLOR_BUFFER_BIT },
+		{ GL_COLOR_ATTACHMENT6, GL_COLOR, GL_COLOR_BUFFER_BIT },
+		{ GL_COLOR_ATTACHMENT7, GL_COLOR, GL_COLOR_BUFFER_BIT },
+		{ GL_COLOR_ATTACHMENT8, GL_COLOR, GL_COLOR_BUFFER_BIT },
+		{ GL_COLOR_ATTACHMENT9, GL_COLOR, GL_COLOR_BUFFER_BIT },
+		{ GL_COLOR_ATTACHMENT10, GL_COLOR, GL_COLOR_BUFFER_BIT },
+		{ GL_COLOR_ATTACHMENT11, GL_COLOR, GL_COLOR_BUFFER_BIT },
+		{ GL_COLOR_ATTACHMENT12, GL_COLOR, GL_COLOR_BUFFER_BIT },
+		{ GL_COLOR_ATTACHMENT13, GL_COLOR, GL_COLOR_BUFFER_BIT },
+		{ GL_COLOR_ATTACHMENT14, GL_COLOR, GL_COLOR_BUFFER_BIT },
+		{ GL_COLOR_ATTACHMENT15, GL_COLOR, GL_COLOR_BUFFER_BIT }
+	};
+
 	v2u32 dimensions;
+	GLuint framebuffer;
+	Slot read_slot;
+	Array<const Slot> draw_slots;
+
+	static RenderTarget create(GLScope& ctx, v2u32 min_dimensions) {
+		GLuint id;
+		GL_GUARD(glCreateFramebuffers(1, &id));
+		ctx.push<&GLScope::framebuffers>(id);
+		return {
+			.dimensions = v4u32(min_dimensions, 1, 1),
+			.framebuffer = id,
+			.read_slot = None,
+			.draw_slots = {}
+		};
+	}
+
+	bool is_complete() const { return GL_GUARD(glCheckNamedFramebufferStatus(framebuffer, GL_FRAMEBUFFER)) == GL_FRAMEBUFFER_COMPLETE; }
+
+	RenderTarget& attach(const Slot& slt, const TexBuffer& texture, GLint mip = 0, GLint layer = 0) {
+		dimensions = glm::max(v4u32(dimensions, 0, 0), texture.dimensions);
+		switch (texture.type) {
+			case TX2DARR: case TX3D: GL_GUARD(glNamedFramebufferTextureLayer(framebuffer, slt.id, texture.id, mip, layer)); break;
+			default: GL_GUARD(glNamedFramebufferTexture(framebuffer, slt.id, texture.id, mip));
+		}
+		return *this;
+	}
+
+	struct Image {
+		TexBuffer* texture;
+		GLint mip;
+		GLint layer;
+	};
+
+	RenderTarget& attach(const Slot& slt, const Image& img) { return attach(slt, *img.texture, img.mip, img.layer); }
+
+	RenderTarget& attach(Array<const tuple<Slot, Image>> attachements) {
+		for (auto&& [slt, img] : attachements)
+			attach(slt, img);
+		return *this;
+	}
+
+	Array<const Slot> select_draw_slots(Array<const Slot> slt) {
+		auto last = draw_slots;
+		GLenum buffers_b[32];
+		auto buffers = map(larray(buffers_b), slt, [](const auto& t) -> GLenum { return t.id; });
+		glNamedFramebufferDrawBuffers(framebuffer, buffers.size(), buffers.data());
+		draw_slots = slt;
+		return last;
+	}
+
+	Slot select_read_slot(Slot slt) {//* uses state-machine-like functionality, not super useful except debug of default fbf read
+		auto last = read_slot;
+		GL_GUARD(glNamedFramebufferReadBuffer(framebuffer, slt.id));
+		read_slot = slt;
+		return last;
+	}
+
+	void clear_attachement(GLint slot_index, v4f32 color = v4f32(v3f32(0.3), 1), GLint stencil = 0) {
+		auto& target = draw_slots[slot_index];
+		switch (target.type) {
+			case GL_DEPTH: GL_GUARD(glClearNamedFramebufferfv(framebuffer, target.type, 0, &color.a)); break;
+			case GL_STENCIL: GL_GUARD(glClearNamedFramebufferiv(framebuffer, target.type, 0, &stencil)); break;
+			case GL_DEPTH_STENCIL: GL_GUARD(glClearNamedFramebufferfi(framebuffer, target.type, 0, color.a, stencil)); break;
+			default: GL_GUARD(glClearNamedFramebufferfv(framebuffer, target.type, slot_index, glm::value_ptr(color)));
+		}
+	}
+
+	void clear_slots(v4f32 color = v4f32(v3f32(0.3), 1), f32 depth = 1, GLint stencil = 0) {
+		for (auto i = 0llu; i < draw_slots.size(); i++) {
+			switch (draw_slots[i].type) {
+				case GL_DEPTH: case GL_DEPTH_STENCIL: clear_attachement(i, v4f32(depth), stencil); continue;
+				default: clear_attachement(i, color, stencil);
+			}
+		}
+	}
+
+	void bind() const { GL_GUARD(glBindFramebuffer(GL_FRAMEBUFFER, framebuffer)); }
+	static void unbind() { GL_GUARD(glBindFramebuffer(GL_FRAMEBUFFER, 0)); }
+
 };
 
-static FrameBuffer default_framebuffer = { 0, 0, v2u32(0) };
+struct ClearCommand {
+	GLbitfield attachements = GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT | GL_STENCIL_BUFFER_BIT;
+	v4f32 color = v4f32(v3f32(0.3), 1);
+	f32 depth = 1;
+	GLint stencil = 0;
+};
 
-FrameBuffer create_framebuffer(Array<const AttachementBinding> attachements, bool must_complete = true) {
-	GLuint id;
-	auto dimensions = v4u32(0);
-	GLbitfield clear_bits = 0;
-	GL_GUARD(glCreateFramebuffers(1, &id));
-	for (auto&& attachement : attachements) {
-		dimensions = glm::max(dimensions, attachement.texture.dimensions);
-		if (attachement.texture.type == TX2DARR || attachement.texture.type == TX3D)
-			GL_GUARD(glNamedFramebufferTextureLayer(id, attachement.type, attachement.texture.id, attachement.level, attachement.layer));
-		else
-			GL_GUARD(glNamedFramebufferTexture(id, attachement.type, attachement.texture.id, attachement.level));
-		if (attachement.clear)
-			clear_bits |= clear_bit(attachement.type);
+void clear(const ClearCommand& cmd) {
+	GL_GUARD(glClearColor(cmd.color.r, cmd.color.g, cmd.color.b, cmd.color.a));
+	GL_GUARD(glClearDepthf(cmd.depth));
+	GL_GUARD(glClearStencil(cmd.stencil));
+	GL_GUARD(glClear(cmd.attachements));
+}
+
+struct RenderPass {
+	GLuint framebuffer = 0;
+	rtu32 viewport = { v2u32(0, 0), v2u32(1920, 1080) };
+	rtu32 scissor = { v2u32(0, 0), v2u32(1920, 1080) };
+
+	static RenderPass dflt;
+};
+
+void start_render_pass(const RenderPass& rp) {
+	GL_GUARD(glBindFramebuffer(GL_FRAMEBUFFER, rp.framebuffer));
+	GL_GUARD(glViewport(rp.viewport.min.x, rp.viewport.min.y, rp.viewport.max.x - rp.viewport.min.x, rp.viewport.max.y - rp.viewport.min.y));
+	GL_GUARD(glScissor(rp.scissor.min.x, rp.scissor.min.y, rp.scissor.max.x - rp.scissor.min.x, rp.scissor.max.y - rp.scissor.min.y));
+}
+
+bool EditorWidget(const cstr label, RenderTarget& target) {
+	bool changed = false;
+	if (ImGui::TreeNode(label)) {
+		defer{ ImGui::TreePop(); };
+		changed |= EditorWidget("dimensions", target.dimensions);
+		changed |= EditorWidget("id", target.framebuffer);
+		changed |= EditorWidget("read_slot", target.read_slot);
+		changed |= EditorWidget("draw_slots", target.draw_slots);
 	}
-	if (must_complete) {
-		auto [complete, reason] = is_complete(id);
-		if (!complete)
-			fprintf(stderr, "Incomplete framebuffer %u : %s\n", id, reason.data());
+	return changed;
+}
+
+bool EditorWidget(const cstr label, RenderPass& rp) {
+	bool changed = false;
+	if (ImGui::TreeNode(label)) {
+		defer { ImGui::TreePop(); };
+		changed |= EditorWidget("framebuffer", rp.framebuffer);
+		changed |= EditorWidget("viewport", rp.viewport);
+		changed |= EditorWidget("scissor", rp.scissor);
 	}
-	return { id, clear_bits, dimensions };
+	return changed;
 }
 
-FrameBuffer create_framebuffer(LiteralArray<const AttachementBinding> attachements, bool must_complete = true) {
-	return create_framebuffer(larray(attachements), must_complete);
-}
+#define NamedEnum(t, e) tuple<const string, t>(#e, e)
 
-FrameBuffer& destroy_fb(FrameBuffer& fbf) {
-	GL_GUARD(glDeleteFramebuffers(1, &fbf.id));
-	fbf.id = 0;
-	fbf.dimensions = v2u32(0);
-	return fbf;
+bool EditorWidget(const cstr label, ClearCommand& cmd) {
+	bool changed = false;
+	if (ImGui::TreeNode(label)) {
+		defer { ImGui::TreePop(); };
+		changed |= ImGui::mask_flags("attachements", cmd.attachements, {
+			NamedEnum(GLbitfield, GL_COLOR_BUFFER_BIT),
+			NamedEnum(GLbitfield, GL_DEPTH_BUFFER_BIT),
+			NamedEnum(GLbitfield, GL_STENCIL_BUFFER_BIT)
+		});
+		changed |= ImGui::ColorEdit4("color", &cmd.color.x);
+		changed |= EditorWidget("depth", cmd.depth);
+		changed |= EditorWidget("stencil", cmd.stencil);
+	}
+	return changed;
 }
-
-void begin_render(FrameBuffer& fbf, rtf32 viewport = rtf32{ v2f32(0), v2f32(1) }) {
-	GL_GUARD(glBindFramebuffer(GL_FRAMEBUFFER, fbf.id));
-	GL_GUARD(glViewport(
-		viewport.min.x * fbf.dimensions.x,
-		viewport.min.y * fbf.dimensions.y,
-		width(viewport) * fbf.dimensions.x,
-		height(viewport) * fbf.dimensions.y
-	));
-}
-
-// should be optional for now
-void end_render() {
-	GL_GUARD(glBindFramebuffer(GL_FRAMEBUFFER, default_framebuffer.id));
-}
-
-void clear(FrameBuffer& fbf, v4f32 color = v4f32(0), GLbitfield bits = ~GLbitfield(0)) {
-	GL_GUARD(glClearColor(color.r, color.g, color.b, color.a));
-	GL_GUARD(glClear(fbf.clear_attachement & bits));
-}
-
 
 #endif

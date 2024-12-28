@@ -1,8 +1,6 @@
 #ifndef GRENDERING
 # define GRENDERING
 
-#include <GL/glew.h>
-#include <GL/glext.h>
 #include <glutils.cpp>
 #include <fstream>
 #include <buffer.cpp>
@@ -79,6 +77,8 @@ GLuint load_shader(const char* path, GLenum type) {
 	}
 }
 
+//todo replace glUnifrom* functions with glProgramUniform* versions
+
 GLint init_binding_texture(GLuint pipeline, const cstr name) {
 	return GL_GUARD(glGetUniformLocation(pipeline, name));
 }
@@ -93,6 +93,12 @@ GLint init_binding_ssbo(GLuint pipeline, const cstr name, GLint binding) {
 	auto index = GL_GUARD(glGetProgramResourceIndex(pipeline, GL_SHADER_STORAGE_BLOCK, name));
 	GL_GUARD(glShaderStorageBlockBinding(pipeline, index, binding));
 	return binding;
+}
+
+GLuint push_texture(GLint location, GLuint unit, GLuint texture) {
+	GL_GUARD(glBindTextureUnit(unit, texture));
+	GL_GUARD(glUniform1i(location, unit));
+	return unit + 1;
 }
 
 GLuint push_texture(GLint location, GLuint unit, TexBuffer texture) {
@@ -110,6 +116,21 @@ GLuint push_texture_array(GLint location, GLuint unit, Array<TexBuffer*> texture
 	return unit;
 }
 
+GLuint push_texture_array(GLint location, GLuint unit, Array<GLuint> textures) {
+	GLint units_buffer[textures.size()];
+	auto units = List { carray(units_buffer, textures.size()), 0 };
+	for (auto& t : textures)
+		GL_GUARD(glBindTextureUnit(units.push(GLint(unit++)), t));
+	GL_GUARD(glUniform1iv(location, textures.size(), units_buffer));
+	return unit;
+}
+
+GLuint unbind_array(num_range<GLuint> units) {
+	for (auto i = units.min; i != units.max; ++i)
+		GL_GUARD(glBindTextureUnit(i, 0));
+	return units.max;
+}
+
 struct BufferBinding {
 	enum BufferTarget : GLenum {
 		None = 0,
@@ -120,13 +141,6 @@ struct BufferBinding {
 	} target;
 	GLint index;
 	GPUBuffer buffer;
-	static BufferBinding create(BufferTarget target, GLint index, u64 size, GLbitfield flags = GL_MAP_WRITE_BIT | GL_MAP_READ_BIT| GL_DYNAMIC_STORAGE_BIT) {
-		return {
-			.target = target,
-			.index = index,
-			.buffer = GPUBuffer::create(size, flags)
-		 };
-	}
 
 	void bind(num_range<u64> range = {}) const { buffer.bind(target, index, range); }
 	void unbind() const { buffer.unbind(target, index); }
@@ -136,6 +150,7 @@ struct BufferBinding {
 
 	struct Sequencer {
 		GLuint pipeline;
+		GLScope* ctx;
 		GLint next_ssbo = 0;
 		GLint next_ubo = 0;
 		GLint next_aco = 0;
@@ -143,10 +158,10 @@ struct BufferBinding {
 
 		BufferBinding next(BufferTarget target, const cstr name, u64 size, GLbitfield flags = GL_MAP_WRITE_BIT | GL_MAP_READ_BIT| GL_DYNAMIC_STORAGE_BIT) {
 			switch (target) {
-				case UBO: return BufferBinding::create(target, init_binding_ubo(pipeline, name, next_ubo++), size, flags);
-				case SSBO: return BufferBinding::create(target, init_binding_ssbo(pipeline, name, next_ssbo++), size, flags);
-				case ACO: return BufferBinding::create(target, next_aco++, size, flags);//TODO implement init binding if applicable (meaning TODO check if applicable)
-				case TBO: return BufferBinding::create(target, next_tbo++, size, flags);//TODO implement init binding if applicable (meaning TODO check if applicable)
+				case UBO: return {.target = target, .index = init_binding_ubo(pipeline, name, next_ubo++), .buffer = GPUBuffer::create(*ctx, size, flags) };
+				case SSBO: return {.target = target, .index = init_binding_ssbo(pipeline, name, next_ssbo++), .buffer = GPUBuffer::create(*ctx, size, flags) };
+				case ACO: return {.target = target, .index = next_aco++, .buffer = GPUBuffer::create(*ctx, size, flags) };//TODO implement init binding if applicable (meaning TODO check if applicable)
+				case TBO: return {.target = target, .index = next_tbo++, .buffer = GPUBuffer::create(*ctx, size, flags) };//TODO implement init binding if applicable (meaning TODO check if applicable)
 				case None: { panic(); }
 			}
 			return {};
@@ -156,7 +171,7 @@ struct BufferBinding {
 };
 
 //TODO remove deprecated
-struct ShaderInput {
+struct [[deprecated]] ShaderInput {
 	enum Type : GLenum { None = 0, Texture = GL_UNIFORM, UBO = GL_UNIFORM_BLOCK, SSBO = GL_SHADER_STORAGE_BLOCK } type;
 	string name;
 	GLuint id;
@@ -204,7 +219,7 @@ struct ShaderInput {
 			auto buffer_binding = value[0];
 			auto buffer_size = value[1];
 			slot.id = buffer_binding;
-			slot.backing_buffer = GPUBuffer::create(max(u64(buffer_size), backing_size), GL_MAP_WRITE_BIT | GL_MAP_PERSISTENT_BIT | GL_DYNAMIC_STORAGE_BIT);
+			slot.backing_buffer = GPUBuffer::create(GLScope::global(), max(u64(buffer_size), backing_size), GL_MAP_WRITE_BIT | GL_MAP_PERSISTENT_BIT | GL_DYNAMIC_STORAGE_BIT);
 			break;
 		}
 		case None: { panic(); } break;
@@ -212,13 +227,6 @@ struct ShaderInput {
 		return slot;
 	}
 
-	void release() {
-		switch (type) {
-		case UBO:
-		case SSBO: { backing_buffer.release(); }
-		default: break;
-		}
-	}
 
 	void bind_texture(GLuint tid) { texture = tid; bind(); }
 	template<typename T> num_range<u64> bind_content(Array<T> content, u64 offset = 0) {
@@ -236,13 +244,14 @@ struct ShaderInput {
 // TODO glMultiDrawElementsIndirect
 //*
 
-GLuint create_render_pipeline(GLuint vertex_shader, GLuint fragment_shader) {
+GLuint create_render_pipeline(GLScope& ctx, GLuint vertex_shader, GLuint fragment_shader) {
 	if (vertex_shader == 0 || fragment_shader == 0) {
 		fprintf(stderr, "Failed to build render pipeline, invalid shader\n");
 		return 0;
 	}
 
 	auto program = GL_GUARD(glCreateProgram());
+	ctx.push<&GLScope::pipelines>(program);
 	GL_GUARD(glAttachShader(program, vertex_shader));
 	GL_GUARD(glAttachShader(program, fragment_shader));
 	GL_GUARD(glLinkProgram(program));
@@ -302,7 +311,7 @@ void describe(GLuint program) {
 		GL_GUARD(glGetProgramInterfaceiv(program, interface.id, GL_ACTIVE_RESOURCES, &ressource_count));
 		GL_GUARD(glGetProgramInterfaceiv(program, interface.id, GL_MAX_NAME_LENGTH, &name_buffer_size));
 		GLint values[interface.prop_count];
-		GLchar name[name_buffer_size];
+		char name[name_buffer_size];
 		for (auto resource : u32xrange{ 0, ressource_count }) {
 			GL_GUARD(glGetProgramResourceName(program, interface.id, resource, name_buffer_size, NULL, name));
 			GL_GUARD(glGetProgramResourceiv(program, interface.id, resource, interface.prop_count, interface.properties, interface.prop_count, NULL, values));
@@ -315,7 +324,7 @@ void describe(GLuint program) {
 	fflush(stdout);
 }
 
-GLuint load_pipeline(const char* path) {
+GLuint load_pipeline(GLScope& ctx,const char* path) {
 	printf("Loading pipeline %s\n", path);
 	fflush(stdout);
 	//TODO discard all this fstream garbage
@@ -328,7 +337,7 @@ GLuint load_pipeline(const char* path) {
 		file.close();
 		auto vert = create_shader(string(buffer, size), GL_VERTEX_SHADER);
 		auto frag = create_shader(string(buffer, size), GL_FRAGMENT_SHADER);
-		auto pipeline = create_render_pipeline(vert, frag);
+		auto pipeline = create_render_pipeline(ctx, vert, frag);
 		GL_GUARD(glDeleteShader(vert));
 		GL_GUARD(glDeleteShader(frag));
 		return pipeline;
@@ -338,19 +347,11 @@ GLuint load_pipeline(const char* path) {
 	}
 }
 
-void destroy_pipeline(GLuint& pipeline) {
-	GL_GUARD(glDeleteProgram(pipeline));
-	pipeline = 0;
-}
-
 void wait_gpu() {
 	GL_GUARD(glFinish());
 }
 
-struct RenderTarget {
-	FrameBuffer fbf = default_framebuffer;
-	v4f32 clear_color = v4f32(v3f32(0.3), 1);
-};
+m4x4f32 view_mat(const Transform2D& tr) { return inverse(m4x4f32(tr)); }
 
 struct Camera {
 	Spacial2D* pov = null;
@@ -359,23 +360,6 @@ struct Camera {
 	operator m4x4f32() const { return m4x4f32(*projection) * inverse(m4x4f32(pov->transform)); }
 };
 
-inline void render(const Camera& camera, auto commands) {
-	PROFILE_SCOPE(__PRETTY_FUNCTION__);
-	using namespace glm;
-	begin_render(camera.target->fbf);
-	clear(camera.target->fbf, camera.target->clear_color);
-	commands(camera);
-}
 
-#include <system_editor.cpp>
-bool EditorWidget(const cstr label, RenderTarget& target) {
-	bool changed = false;
-	if (ImGui::TreeNode(label)) {
-		defer{ ImGui::TreePop(); };
-		changed |= EditorWidget(label, target.fbf);
-		changed |= ImGui::ColorPicker4("Clear Color", glm::value_ptr(target.clear_color));
-	}
-	return changed;
-}
 
 #endif

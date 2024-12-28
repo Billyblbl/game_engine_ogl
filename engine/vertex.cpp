@@ -7,12 +7,11 @@
 #include <blblstd.hpp>
 #include <buffer.cpp>
 
-struct VertexAttributeLayout {
+struct [[deprecated]] VertexAttributeLayout {
 	GLint member_count = 0;
 	GLenum member_type = 0;
 	size_t offset = 0;
 	GLsizei stride = 0;
-	//TODO add "normalised" bool
 };
 
 template<typename T> constexpr auto make_vertex_attribute_layout(usize offset, GLsizei stride) { return VertexAttributeLayout{ 0, 0, offset, stride }; };
@@ -33,7 +32,7 @@ template<> constexpr auto make_vertex_attribute_layout<glm::ivec4>(usize offset,
 using GeometryLayout = Array<const VertexAttributeLayout>;
 template<typename T> const GeometryLayout vertexAttributesOf;
 
-void assemble_vao(GLuint vao, GLuint vbo, GLuint ibo, GeometryLayout layout, u64 vertex_offset = 0) {
+[[deprecated]] void assemble_vao(GLuint vao, GLuint vbo, GLuint ibo, GeometryLayout layout, u64 vertex_offset = 0) {
 	GL_GUARD(glBindVertexArray(vao));
 	GL_GUARD(glBindBuffer(GL_ARRAY_BUFFER, vbo));
 	GL_GUARD(glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, ibo));
@@ -72,12 +71,13 @@ struct VertexArray {
 
 	VertexArray& associate(GLuint vbo, GLuint ibo, GeometryLayout layout) { assemble_vao(id, vbo, ibo, layout); return *this; }
 
-	static VertexArray create(GLuint draw_mode = GL_TRIANGLES, GLenum index_type = gl_type_table<u32>.upload_type) {
-		VertexArray va;
-		va.draw_mode = draw_mode;
-		va.index_type = index_type;
-		GL_GUARD(glCreateVertexArrays(1, &va.id));
-		return va;
+	static VertexArray create(GLScope& ctx, GLuint draw_mode = GL_TRIANGLES, GLenum index_type = gl_type_table<u32>.upload_type) {
+		VertexArray vao;
+		vao.draw_mode = draw_mode;
+		vao.index_type = index_type;
+		GL_GUARD(glCreateVertexArrays(1, &vao.id));
+		ctx.push<&GLScope::vaos>(vao.id);
+		return vao;
 	}
 
 	GLuint  bind_vattrib(GLuint pipeline, const cstr name, GLuint binding, const VertexAttributeFormat& format) {
@@ -108,7 +108,6 @@ struct VertexArray {
 	void bind() const { GL_GUARD(glBindVertexArray(id)); }
 	static void unbind() { GL_GUARD(glBindVertexArray(0)); }
 
-	void release() { GL_GUARD(glDeleteVertexArrays(1, &id)); }
 };
 
 #pragma region defaults

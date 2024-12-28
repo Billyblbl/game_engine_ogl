@@ -17,18 +17,12 @@ struct ShapeRenderer {
 
 	static ShapeRenderer load(const cstr path = "./shaders/physics_debug.glsl") {
 		ShapeRenderer rd;
-		rd.pipeline = load_pipeline(path);
+		rd.pipeline = load_pipeline(GLScope::global(), path);
 		rd.instance = ShaderInput::create_slot(rd.pipeline, ShaderInput::UBO, "Object", sizeof(ShapeRenderInfo));
 		rd.vp_matrix = ShaderInput::create_slot(rd.pipeline, ShaderInput::UBO, "Camera", sizeof(m4x4f32));
 		rd.instance_mapping = (ShapeRenderInfo*)rd.instance.backing_buffer.map().data();
 		rd.vp_mapping = (m4x4f32*)rd.vp_matrix.backing_buffer.map().data();
 		return rd;
-	}
-
-	void release() {
-		instance.release();
-		vp_matrix.release();
-		destroy_pipeline(pipeline);
 	}
 
 	static Array<const VertexAttributeLayout> get_v2f32_attributes() {

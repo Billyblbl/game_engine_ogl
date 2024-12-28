@@ -21,9 +21,9 @@ struct [[deprecated]] GPUGeometry {
 		GLuint draw_mode = GL_TRIANGLES
 	) {
 		GPUGeometry rm;
-		rm.vbo = GPUBuffer::create(vertex_data.size_bytes(), GL_MAP_WRITE_BIT | GL_MAP_READ_BIT | GL_MAP_PERSISTENT_BIT , cast<const byte>(vertex_data));
-		rm.ibo = GPUBuffer::create(indices.size_bytes(), GL_MAP_WRITE_BIT | GL_MAP_READ_BIT | GL_MAP_PERSISTENT_BIT, cast<const byte>(indices));
-		rm.vao = VertexArray::create(draw_mode).associate(rm.vbo.id, rm.ibo.id, vertexAttributesOf<Vertex>);
+		rm.vbo = GPUBuffer::create(GLScope::global(), vertex_data.size_bytes(), GL_MAP_WRITE_BIT | GL_MAP_READ_BIT | GL_MAP_PERSISTENT_BIT , cast<const byte>(vertex_data));
+		rm.ibo = GPUBuffer::create(GLScope::global(), indices.size_bytes(), GL_MAP_WRITE_BIT | GL_MAP_READ_BIT | GL_MAP_PERSISTENT_BIT, cast<const byte>(indices));
+		rm.vao = VertexArray::create(GLScope::global(), draw_mode).associate(rm.vbo.id, rm.ibo.id, vertexAttributesOf<Vertex>);
 		rm.element_count = indices.size();
 		rm.vertex_count = vertex_data.size();
 		return rm;
@@ -36,9 +36,9 @@ struct [[deprecated]] GPUGeometry {
 		GLuint draw_mode = GL_TRIANGLES
 	) {
 		GPUGeometry rm;
-		rm.vbo = GPUBuffer::create(initial_v, GL_DYNAMIC_STORAGE_BIT | GL_MAP_WRITE_BIT | GL_MAP_READ_BIT | GL_MAP_PERSISTENT_BIT);
-		rm.ibo = GPUBuffer::create(initial_i, GL_DYNAMIC_STORAGE_BIT | GL_MAP_WRITE_BIT | GL_MAP_READ_BIT | GL_MAP_PERSISTENT_BIT);
-		rm.vao = VertexArray::create(draw_mode).associate(rm.vbo.id, rm.ibo.id, geo_specs);
+		rm.vbo = GPUBuffer::create(GLScope::global(), initial_v, GL_DYNAMIC_STORAGE_BIT | GL_MAP_WRITE_BIT | GL_MAP_READ_BIT | GL_MAP_PERSISTENT_BIT);
+		rm.ibo = GPUBuffer::create(GLScope::global(), initial_i, GL_DYNAMIC_STORAGE_BIT | GL_MAP_WRITE_BIT | GL_MAP_READ_BIT | GL_MAP_PERSISTENT_BIT);
+		rm.vao = VertexArray::create(GLScope::global(), draw_mode).associate(rm.vbo.id, rm.ibo.id, geo_specs);
 		rm.element_count = 0;
 		rm.vertex_count = 0;
 		return rm;
@@ -57,12 +57,6 @@ struct [[deprecated]] GPUGeometry {
 		element_count += indices.size();
 		vertex_count += vertices.size();
 		return {vertex_range, index_range};
-	}
-
-	void release() {
-		vao.release();
-		vbo.release();
-		ibo.release();
 	}
 
 };

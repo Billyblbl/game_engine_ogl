@@ -158,7 +158,7 @@ struct Font {
 		{ //* Allocate ressources
 			f.glyphs = arena.push_array<Glyph>(width(f.glyph_indices) + 1, true);
 			f.glyph_views = arena.push_array<rtu32>(width(f.glyph_indices) + 1, true);
-			f.glyph_atlas = Atlas2D::create(atlas_size, R32F, mipmaps);
+			f.glyph_atlas = Atlas2D::create(GLScope::global(), atlas_size, R32F, mipmaps);
 			f.glyph_atlas.texture
 				.conf_border_color(v4f32(1.0, 0, 1.0, 1.0))
 				.conf_wrap({ ClampToBorder, ClampToBorder, ClampToBorder })
@@ -193,7 +193,6 @@ struct Font {
 			f.glyphs[glyph.atlas_view_index] = glyph;
 		}
 
-
 		f.glyph_atlas.texture.generate_mipmaps(); //* auto generation since the manual lower res font is broken (cf below)
 		//TODO fix this so that it can be usable (offset problem with bitmap of the same glyph being different)
 		// {//* generate lower res glyphs in mipmaps
@@ -225,7 +224,6 @@ struct Font {
 	}
 
 	void release() {
-		glyph_atlas.release();
 		FT_Done_Face(face);
 	}
 
@@ -294,21 +292,21 @@ struct UIRenderer {
 		PROFILE_SCOPE(__PRETTY_FUNCTION__);
 
 		UIRenderer rd;
-		rd.pipeline = load_pipeline(path);
+		rd.pipeline = load_pipeline(GLScope::global(), path);
 		// describe(rd.pipeline);
 
 		rd.rect_buffer = GPUGeometry::allocate(vertexAttributesOf<v2f32>);
 
 		rd.inputs.textures = init_binding_texture(rd.pipeline, "textures");
 
-		BufferBinding::Sequencer bindings = { rd.pipeline };
+		BufferBinding::Sequencer bindings = { .pipeline = rd.pipeline, .ctx = &GLScope::global() };
 
 		rd.inputs.fonts = bindings.next(BufferBinding::SSBO, "Fonts", sizeof(AtlasInstance) * 16);
 		rd.inputs.characters = bindings.next(BufferBinding::SSBO, "Characters", sizeof(CharacterInstance) * max_characters);
 		rd.inputs.texts = bindings.next(BufferBinding::SSBO, "Texts", sizeof(TextInstance) * max_texts);
 		rd.inputs.glyphs = bindings.next(BufferBinding::SSBO, "Glyphs", sizeof(v4u32) * max_glyphs);
 		rd.inputs.scene = bindings.next(BufferBinding::UBO, "Scene", sizeof(Scene));
-		rd.inputs.commands = GPUBuffer::create(sizeof(DrawCommandElement) * 128, GL_DYNAMIC_STORAGE_BIT | GL_MAP_WRITE_BIT | GL_MAP_PERSISTENT_BIT);
+		rd.inputs.commands = GPUBuffer::create(GLScope::global(), sizeof(DrawCommandElement) * 128, GL_DYNAMIC_STORAGE_BIT | GL_MAP_WRITE_BIT | GL_MAP_PERSISTENT_BIT);
 
 		printf(
 			"UIRenderer:\n"
@@ -328,15 +326,6 @@ struct UIRenderer {
 		return rd;
 	}
 
-	void release() {
-		inputs.fonts.buffer.release();
-		inputs.texts.buffer.release();
-		inputs.characters.buffer.release();
-		inputs.scene.buffer.release();
-		inputs.glyphs.buffer.release();
-		rect_buffer.release();
-		destroy_pipeline(pipeline);
-	}
 
 	void operator()(Array<Text> texts, v2f32 canvas = v2f32(1920, 1080)) {
 		PROFILE_SCOPE(__PRETTY_FUNCTION__);

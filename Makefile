@@ -126,6 +126,7 @@ GFX_SRC += engine/application.cpp
 GFX_SRC += engine/buffer.cpp
 GFX_SRC += engine/framebuffer.cpp
 GFX_SRC += engine/glutils.cpp
+GFX_SRC += engine/glresource.cpp
 GFX_SRC += engine/model.cpp
 GFX_SRC += engine/rendering.cpp
 GFX_SRC += engine/textures.cpp

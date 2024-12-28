@@ -25,7 +25,7 @@ struct Atlas2D {
 			assert(contains(available, rect));
 		}
 		auto inner = rtu32{ rect.min + margins, rect.max - margins };
-		upload_texture_data(texture, img.data, img.format, slice_to_area<2>(inner, 0));
+		texture.upload(img.data, img.format, slice_to_area<2>(inner, 0));
 		next_line = max(next_line, current.y + height(rect));
 		current.x += width(rect);
 		return inner;
@@ -41,19 +41,14 @@ struct Atlas2D {
 		next_line = 0;
 	}
 
-	static Atlas2D create(v2u32 dimensions, GPUFormat format = RGBA32F, u32 mipmaps = 1, SamplingConfig default_sampling = { Nearest, Nearest }) {
+	static Atlas2D create(GLScope& ctx, v2u32 dimensions, GPUFormat format = RGBA32F, u32 mipmaps = 1, SamplingConfig default_sampling = { Nearest, Nearest }) {
 		PROFILE_SCOPE(__PRETTY_FUNCTION__);
 		Atlas2D atlas;
-		atlas.texture = create_texture(TX2D, v4u32(dimensions, 1, mipmaps), format);
+		atlas.texture = TexBuffer::create(ctx, TX2D, v4u32(dimensions, 1, mipmaps), format);
 		atlas.current = v2u32(0);
 		atlas.next_line = 0;
 		atlas.texture.conf_sampling(default_sampling);
 		return atlas;
-	}
-
-	void release() {
-		unload(texture);
-		reset();
 	}
 
 };

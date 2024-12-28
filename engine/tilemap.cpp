@@ -27,7 +27,7 @@ struct Tilemap {
 		if (!source)(tmx_perror("Tilemap Loading"), abort());//TODO handle failed load
 
 		auto heuristic_layer_count = count<tmx_layer, &tmx_layer::next>(source->ly_head);
-		tm.layer_atlas = Atlas2D::create(v2u32(source->width, source->height * heuristic_layer_count), R32UI);
+		tm.layer_atlas = Atlas2D::create(GLScope::global(), v2u32(source->width, source->height * heuristic_layer_count), R32UI);
 		tm.tree = source;
 
 		auto [scratch, scope] = scratch_push_scope(1lu << 17, &arena); defer{ scratch_pop_scope(scratch, scope); };
@@ -97,7 +97,6 @@ struct Tilemap {
 
 	void release() {
 		tmx_map_free(tree);
-		layer_atlas.release();
 	}
 
 };
@@ -189,7 +188,7 @@ struct TilemapRenderer {
 	static TilemapRenderer load(const cstr pipeline_path, u64 max_draw_batch = 256, u64 max_tiles = 1000, const GPUGeometry* mesh = null) {
 		PROFILE_SCOPE(__PRETTY_FUNCTION__);
 		TilemapRenderer rd;
-		rd.pipeline = load_pipeline(pipeline_path);
+		rd.pipeline = load_pipeline(GLScope::global(), pipeline_path);
 		rd.rect = mesh ? *mesh : create_rect_mesh(v2f32(1));
 		rd.inputs.atlas = ShaderInput::create_slot(rd.pipeline, ShaderInput::Texture, "atlas");
 		rd.inputs.tilemap = ShaderInput::create_slot(rd.pipeline, ShaderInput::Texture, "tilemap_atlas");
@@ -199,15 +198,6 @@ struct TilemapRenderer {
 		return rd;
 	}
 
-	void release() {
-		inputs.atlas.release();
-		inputs.tilemap.release();
-		inputs.instances.release();
-		inputs.tiles.release();
-		inputs.scene.release();
-		rect.release();
-		destroy_pipeline(pipeline);
-	}
 };
 
 #include <shape_2d.cpp>

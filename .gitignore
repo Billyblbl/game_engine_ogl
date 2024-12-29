@@ -8,6 +8,7 @@
 *.tiled-session
 
 .vscode
+.obsidian
 build
 env.mk
 *.spall

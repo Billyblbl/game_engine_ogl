@@ -137,20 +137,6 @@ struct RenderTarget {
 
 };
 
-struct ClearCommand {
-	GLbitfield attachements = GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT | GL_STENCIL_BUFFER_BIT;
-	v4f32 color = v4f32(v3f32(0.3), 1);
-	f32 depth = 1;
-	GLint stencil = 0;
-};
-
-void clear(const ClearCommand& cmd) {
-	GL_GUARD(glClearColor(cmd.color.r, cmd.color.g, cmd.color.b, cmd.color.a));
-	GL_GUARD(glClearDepthf(cmd.depth));
-	GL_GUARD(glClearStencil(cmd.stencil));
-	GL_GUARD(glClear(cmd.attachements));
-}
-
 struct RenderPass {
 	GLuint framebuffer = 0;
 	rtu32 viewport = { v2u32(0, 0), v2u32(1920, 1080) };
@@ -190,20 +176,5 @@ bool EditorWidget(const cstr label, RenderPass& rp) {
 
 #define NamedEnum(t, e) tuple<const string, t>(#e, e)
 
-bool EditorWidget(const cstr label, ClearCommand& cmd) {
-	bool changed = false;
-	if (ImGui::TreeNode(label)) {
-		defer { ImGui::TreePop(); };
-		changed |= ImGui::mask_flags("attachements", cmd.attachements, {
-			NamedEnum(GLbitfield, GL_COLOR_BUFFER_BIT),
-			NamedEnum(GLbitfield, GL_DEPTH_BUFFER_BIT),
-			NamedEnum(GLbitfield, GL_STENCIL_BUFFER_BIT)
-		});
-		changed |= ImGui::ColorEdit4("color", &cmd.color.x);
-		changed |= EditorWidget("depth", cmd.depth);
-		changed |= EditorWidget("stencil", cmd.stencil);
-	}
-	return changed;
-}
 
 #endif

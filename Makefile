@@ -124,6 +124,7 @@ GFX_ROOT=engine/gfx_module.cpp
 
 GFX_SRC += engine/application.cpp
 GFX_SRC += engine/buffer.cpp
+GFX_SRC += engine/pipeline.cpp
 GFX_SRC += engine/framebuffer.cpp
 GFX_SRC += engine/glutils.cpp
 GFX_SRC += engine/glresource.cpp

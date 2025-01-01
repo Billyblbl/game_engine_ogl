@@ -12,111 +12,263 @@
 #include <entity.cpp>
 
 #include <spall/profiling.cpp>
+#include <pipeline.cpp>
 
-//TODO remove fstream dependency
+struct DrawCommandElement {
+	GLuint count;
+	GLuint instance_count;
+	GLuint first_index;
+	GLint base_vertex;
+	GLuint base_instance;
+};
 
-i32 get_max_textures_frag() {
-	static i32 max_textures = 0;
-	if (max_textures == 0) {
-		GL_GUARD(glGetIntegerv(GL_MAX_TEXTURE_IMAGE_UNITS, &max_textures));
-	}
-	assert(max_textures >= 16);
-	return max_textures;
+struct DrawCommandVertex {
+	GLuint count;
+	GLuint instance_count;
+	GLuint first_vertex;
+	GLuint base_instance;
+};
+
+struct TextureBinding {
+	Array<GLuint> textures;
+	GLuint target;
+};
+
+struct BufferObjectBinding {
+	GLuint buffer;
+	GLenum type;
+	num_range<u32> range;
+	GLuint target;
+};
+
+struct VertexBinding {
+	GLuint buffer;
+	Array<GLuint> targets;
+	GLintptr offset;
+	GLsizeiptr stride;
+	GLuint divisor;
+};
+
+struct ClearCommand {
+	GLbitfield attachements = GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT | GL_STENCIL_BUFFER_BIT;
+	v4f32 color = v4f32(v3f32(0.3), 1);
+	f32 depth = 1;
+	GLint stencil = 0;
+};
+
+void clear(const ClearCommand& cmd) {
+	if (cmd.attachements & GL_COLOR_BUFFER_BIT)
+		GL_GUARD(glClearColor(cmd.color.r, cmd.color.g, cmd.color.b, cmd.color.a));
+	if (cmd.attachements & GL_DEPTH_BUFFER_BIT)
+		GL_GUARD(glClearDepthf(cmd.depth));
+	if (cmd.attachements & GL_STENCIL_BUFFER_BIT)
+		GL_GUARD(glClearStencil(cmd.stencil));
+	GL_GUARD(glClear(cmd.attachements));
 }
 
-GLuint create_shader(string source, GLenum type) {
-	assert(*source.end() == '\0' && "Shader source must be null terminated");
-	auto shader = GL_GUARD(glCreateShader(type));
-	char max_texture_text[16];
-	sprintf(max_texture_text, "%d", get_max_textures_frag());
-	const cstrp content[] = {
-		"#version 460 core\n"//0
-		"#define ", GLtoString(type).substr(3).data(),"\n\n", //* shader type | line 1,2
-		"#ifdef VERTEX_SHADER\n"//3
-		"#define pass out\n"//4
-		"#endif\n"//5
-		"#ifdef FRAGMENT_SHADER\n"//6
-		"#define pass in\n"//7
-		"#endif\n",//8
-		"#define MAX_TEXTURE_IMAGE_UNITS ", max_texture_text, "\n",//9
-		source.data(), "\n"//n
+struct RenderCommand {
+	GLuint pipeline;
+	enum DrawType : u32 {
+		D_CLEAR = 0,	//* glClear
+		D_MDEI,				//* glMultiDrawElementsIndirect
+		D_MDAI,				//* glMultiDrawArraysIndirect
+		D_DE,					//* glDrawElementsInstancedBaseVertexBaseInstance
+		D_DA,					//* glDrawArraysInstanced
+		D_MDE,				//* glMultiDrawElementsBaseVertex
+		D_MDA,				//* glMultiDrawArrays
+		D_DRAWTYPE_COUNT
+	} draw_type;
+	union {
+		struct {
+			GLuint buffer;
+			GLsizei stride;
+			num_range<GLsizei> range;
+		} d_indirect;
+		ClearCommand d_clear;
+		DrawCommandElement d_element;
+		DrawCommandVertex d_vertex;
+		Array<DrawCommandElement> d_melements;
+		Array<DrawCommandVertex> d_mvertices;
+	} draw;
+	GLuint vao;
+	struct {
+		GLuint buffer;
+		GLenum index_type;
+		GLenum primitive;
+	} ibo;
+	Array<VertexBinding> vertex_buffers;
+	Array<TextureBinding> textures;
+	Array<BufferObjectBinding> buffers;
+};
+
+void render_cmd(const RenderCommand& batch) {
+	if (batch.draw_type == RenderCommand::D_CLEAR)
+		return clear(batch.draw.d_clear);
+	assert((batch.draw_type < RenderCommand::D_DRAWTYPE_COUNT) && "Unsupported draw type");
+	glUseProgram(batch.pipeline); defer { glUseProgram(0); };
+	struct { GLuint next[R_TYPE_COUNT]; } bindings = { .next = {0, 0, 0, 0, 0, 0} };
+
+	//* configure & bind vertex buffers, index buffers, vertex array
+	for (auto vbo : batch.vertex_buffers) {
+		glVertexArrayVertexBuffer(batch.vao, bindings.next[R_VERT], vbo.buffer, vbo.offset, vbo.stride);
+		glVertexArrayBindingDivisor(batch.vao, bindings.next[R_VERT], vbo.divisor);
+		for (auto target : vbo.targets)
+			glVertexArrayAttribBinding(batch.vao, target, bindings.next[R_VERT]);
+		bindings.next[R_VERT]++;
+	}
+	glVertexArrayElementBuffer(batch.vao, batch.ibo.buffer);
+	glBindVertexArray(batch.vao); defer { glBindVertexArray(0); };
+
+	//* push texture uniforms
+	const static u32 max_tex = get_max_textures_combined();
+	GLint tex_units[max_tex];
+	for (auto tex : batch.textures) {
+		if (tex.textures.size() == 0)
+			continue;
+		//* bind textures to units
+		auto tex_list = List { .capacity = carray(tex_units, max_tex), .current = 0 };
+		for (auto id : tex.textures) {
+			assert(max_tex >= bindings.next[R_TEX] && "Not enough texture units");
+			GL_GUARD(glBindTextureUnit(bindings.next[R_TEX], id));
+			tex_list.push(bindings.next[R_TEX]++);
+		}
+		//* write bound units to uniform
+		if (tex_list.current == 1)
+			GL_GUARD(glProgramUniform1i(batch.pipeline, tex.target, tex_list.used()[0]));
+		else
+			GL_GUARD(glProgramUniform1iv(batch.pipeline, tex.target, tex_list.current, tex_list.used().data()));
 	};
-	const auto size = array_size(content);
+	//* defered unbinds
+	defer { for (GLuint unit = 0; unit < bindings.next[R_TEX]; unit++) glBindTextureUnit(unit, 0); };
 
-	GL_GUARD(glShaderSource(shader, size, content, null));
-	GL_GUARD(glCompileShader(shader));
+	//* bind buffer objects
+	for (auto buf : batch.buffers) {
+		u32 rindex = type_to_rindex(buf.type);
+		assert(rindex >= R_SSBO && rindex <= R_TBO && "Invalid buffer type");
+		if (buf.range.size() == 0)
+			GL_GUARD(glBindBufferBase(buf.type, bindings.next[rindex], buf.buffer));
+		else
+			GL_GUARD(glBindBufferRange(buf.type, bindings.next[rindex], buf.buffer, buf.range.min, buf.range.size()));
+		auto binding = bindings.next[rindex]++;
+		switch (buf.type) {
+			case GL_UNIFORM_BUFFER: glUniformBlockBinding(batch.pipeline, buf.target, binding); break;
+			case GL_SHADER_STORAGE_BUFFER: glShaderStorageBlockBinding(batch.pipeline, buf.target, binding); break;
+			default: assert(0 && "Invalid buffer type");
+		}
+	}
+	defer { //* defered unbinds
+		for (i32 buf_type : i32xrange { R_SSBO, R_TBO }) for (GLuint binding : idx_range<GLuint>{ 0, bindings.next[buf_type] })
+			glBindBufferBase(rindex_to_type[buf_type], binding, 0);
+	};
 
-	GLint is_compiled = 0;
-	GL_GUARD(glGetShaderiv(shader, GL_COMPILE_STATUS, &is_compiled));
-	if (!is_compiled) {
-		GLint log_length;
-		GL_GUARD(glGetShaderiv(shader, GL_INFO_LOG_LENGTH, &log_length));
-		char log[log_length + 1];
-		memset(log, 0, log_length + 1);
-		GL_GUARD(glGetShaderInfoLog(shader, log_length, nullptr, log));
-		fprintf(stderr, "Failed to build %s shader - Shader log : \n%s\n", GLtoString(type).data(), log);
-		return 0;
-	} else {
-		return shader;
+	//* dispatch
+	switch(batch.draw_type) {
+		case RenderCommand::D_MDEI: {
+			glBindBuffer(GL_DRAW_INDIRECT_BUFFER, batch.draw.d_indirect.buffer); defer { glBindBuffer(GL_DRAW_INDIRECT_BUFFER, 0); };
+			return glMultiDrawElementsIndirect(
+				batch.ibo.primitive,
+				batch.ibo.index_type,
+				(void*)u64(batch.draw.d_indirect.range.min * batch.draw.d_indirect.stride),
+				batch.draw.d_indirect.range.size(),
+				batch.draw.d_indirect.stride
+			);
+		}
+		case RenderCommand::D_MDAI:{
+			glBindBuffer(GL_DRAW_INDIRECT_BUFFER, batch.draw.d_indirect.buffer); defer { glBindBuffer(GL_DRAW_INDIRECT_BUFFER, 0); };
+			return glMultiDrawArraysIndirect(
+				batch.ibo.primitive,
+				(void*)u64(batch.draw.d_indirect.range.min * batch.draw.d_indirect.stride),
+				batch.draw.d_indirect.range.size(),
+				batch.draw.d_indirect.stride
+			);
+		}
+		case RenderCommand::D_DE: return glDrawElementsInstancedBaseVertexBaseInstance(
+			batch.ibo.primitive,
+			batch.draw.d_element.count,
+			batch.ibo.index_type,
+			(void*)(batch.draw.d_element.first_index * index_size(batch.ibo.index_type)),
+			batch.draw.d_element.instance_count,
+			batch.draw.d_element.base_vertex,
+			batch.draw.d_element.base_instance
+		);
+		case RenderCommand::D_DA: return glDrawArraysInstancedBaseInstance(
+			batch.ibo.primitive,
+			batch.draw.d_vertex.first_vertex,
+			batch.draw.d_vertex.count,
+			batch.draw.d_vertex.instance_count,
+			batch.draw.d_vertex.base_instance
+		);
+		case RenderCommand::D_MDE: {
+			GLsizei counts[batch.draw.d_melements.size()];
+			GLint base_vertices[batch.draw.d_melements.size()];
+			void* indices[batch.draw.d_melements.size()];
+			for (u32 i = 0; i < batch.draw.d_melements.size(); i++) {
+				counts[i] = batch.draw.d_melements[i].count;
+				base_vertices[i] = batch.draw.d_melements[i].base_vertex;
+				indices[i] = (void*)(batch.draw.d_melements[i].first_index * index_size(batch.ibo.index_type));
+			}
+			return glMultiDrawElementsBaseVertex(
+				batch.ibo.primitive,
+				counts,
+				batch.ibo.index_type,
+				indices,
+				batch.draw.d_melements.size(),
+				base_vertices
+			);
+		}
+		case RenderCommand::D_MDA: {
+			GLint firsts[batch.draw.d_mvertices.size()];
+			GLsizei counts[batch.draw.d_mvertices.size()];
+			for (u32 i = 0; i < batch.draw.d_mvertices.size(); i++) {
+				firsts[i] = batch.draw.d_mvertices[i].first_vertex;
+				counts[i] = batch.draw.d_mvertices[i].count;
+			}
+			return glMultiDrawArrays(
+				batch.ibo.primitive,
+				firsts,
+				counts,
+				batch.draw.d_mvertices.size()
+			);
+		}
+		default: return assert(0 && "Unsupported draw type");
 	}
 }
 
-GLuint load_shader(const char* path, GLenum type) {
-	printf("Loading shader %s\n", path);
-	fflush(stdout);
-	if (std::ifstream file{ path, std::ios::binary | std::ios::ate }) {
-		usize size = file.tellg();
-		char buffer[size + 1];
-		memset(buffer, 0, size + 1);
-		file.seekg(0);
-		file.read(buffer, size);
-		file.close();
-		return create_shader(string(buffer, size), type);
-	} else {
-		return (fprintf(stderr, "failed to open file %s\n", path), 0);
-	}
-}
-
-//todo replace glUnifrom* functions with glProgramUniform* versions
-
-GLint init_binding_texture(GLuint pipeline, const cstr name) {
+[[deprecated]] GLint init_binding_texture(GLuint pipeline, const cstr name) {
 	return GL_GUARD(glGetUniformLocation(pipeline, name));
 }
 
-GLint init_binding_ubo(GLuint pipeline, const cstr name, GLint binding) {
+[[deprecated]] GLint init_buffer_binding(GLuint pipeline, const cstr name, GLenum type, GLint binding) {
+	auto index = GL_GUARD(glGetProgramResourceIndex(pipeline, type, name));
+	switch (type) {
+	case GL_UNIFORM_BLOCK: GL_GUARD(glUniformBlockBinding(pipeline, index, binding)); return binding;
+	case GL_SHADER_STORAGE_BLOCK: GL_GUARD(glShaderStorageBlockBinding(pipeline, index, binding)); return binding;
+	default:
+		assert(0 && "Invalid buffer type");
+		return -1;
+	}
+	return binding;
+}
+
+[[deprecated]] GLint init_binding_ubo(GLuint pipeline, const cstr name, GLint binding) {
 	auto index = GL_GUARD(glGetProgramResourceIndex(pipeline, GL_UNIFORM_BLOCK, name));
 	GL_GUARD(glUniformBlockBinding(pipeline, index, binding));
 	return binding;
 }
 
-GLint init_binding_ssbo(GLuint pipeline, const cstr name, GLint binding) {
+[[deprecated]] GLint init_binding_ssbo(GLuint pipeline, const cstr name, GLint binding) {
 	auto index = GL_GUARD(glGetProgramResourceIndex(pipeline, GL_SHADER_STORAGE_BLOCK, name));
 	GL_GUARD(glShaderStorageBlockBinding(pipeline, index, binding));
 	return binding;
 }
 
-GLuint push_texture(GLint location, GLuint unit, GLuint texture) {
+[[deprecated]] GLuint push_texture(GLint location, GLuint unit, GLuint texture) {
 	GL_GUARD(glBindTextureUnit(unit, texture));
 	GL_GUARD(glUniform1i(location, unit));
 	return unit + 1;
 }
 
-GLuint push_texture(GLint location, GLuint unit, TexBuffer texture) {
-	texture.bind_unit(unit);
-	GL_GUARD(glUniform1i(location, unit));
-	return unit + 1;
-}
-
-GLuint push_texture_array(GLint location, GLuint unit, Array<TexBuffer*> textures) {
-	GLint units_buffer[textures.size()];
-	auto units = List { carray(units_buffer, textures.size()), 0 };
-	for (auto& t : textures)
-		t->bind_unit(units.push(GLint(unit++)));
-	GL_GUARD(glUniform1iv(location, textures.size(), units_buffer));
-	return unit;
-}
-
-GLuint push_texture_array(GLint location, GLuint unit, Array<GLuint> textures) {
+[[deprecated]] GLuint push_texture_array(GLint location, GLuint unit, Array<GLuint> textures) {
 	GLint units_buffer[textures.size()];
 	auto units = List { carray(units_buffer, textures.size()), 0 };
 	for (auto& t : textures)
@@ -125,13 +277,13 @@ GLuint push_texture_array(GLint location, GLuint unit, Array<GLuint> textures) {
 	return unit;
 }
 
-GLuint unbind_array(num_range<GLuint> units) {
+[[deprecated]] GLuint unbind_array(num_range<GLuint> units) {
 	for (auto i = units.min; i != units.max; ++i)
 		GL_GUARD(glBindTextureUnit(i, 0));
 	return units.max;
 }
 
-struct BufferBinding {
+struct [[deprecated]] BufferBinding {
 	enum BufferTarget : GLenum {
 		None = 0,
 		UBO = GL_UNIFORM_BUFFER,
@@ -170,196 +322,21 @@ struct BufferBinding {
 
 };
 
-//TODO remove deprecated
-struct [[deprecated]] ShaderInput {
-	enum Type : GLenum { None = 0, Texture = GL_UNIFORM, UBO = GL_UNIFORM_BLOCK, SSBO = GL_SHADER_STORAGE_BLOCK } type;
-	string name;
-	GLuint id;
-	union {
-		GPUBuffer backing_buffer;
-		GLuint texture;
-	};
-
-	num_range<u64> bind(num_range<u64> range = {}) const {
-		switch (type) {
-		case Texture: { GL_GUARD(glBindTextureUnit(id, texture)); } break;
-		case UBO: { GL_GUARD(glBindBufferRange(GL_UNIFORM_BUFFER, id, backing_buffer.id, range.min, range.size())); } break;
-		case SSBO: { GL_GUARD(glBindBufferRange(GL_SHADER_STORAGE_BUFFER, id, backing_buffer.id, range.min, range.size())); } break;
-		case None: { panic(); } break;
-		}
-		return range;
+bool EditorWidget(const cstr label, ClearCommand& cmd) {
+	bool changed = false;
+	if (ImGui::TreeNode(label)) {
+		defer { ImGui::TreePop(); };
+		changed |= ImGui::mask_flags("attachements", cmd.attachements, {
+			NamedEnum(GLbitfield, GL_COLOR_BUFFER_BIT),
+			NamedEnum(GLbitfield, GL_DEPTH_BUFFER_BIT),
+			NamedEnum(GLbitfield, GL_STENCIL_BUFFER_BIT)
+		});
+		changed |= ImGui::ColorEdit4("color", &cmd.color.x);
+		changed |= EditorWidget("depth", cmd.depth);
+		changed |= EditorWidget("stencil", cmd.stencil);
 	}
-
-	void unbind() const {
-		switch (type) {
-		case Texture: { GL_GUARD(glBindTextureUnit(id, 0)); } break;
-		case UBO: { GL_GUARD(glBindBufferRange(GL_UNIFORM_BUFFER, id, 0, 0, 0)); } break;
-		case SSBO: { GL_GUARD(glBindBufferRange(GL_SHADER_STORAGE_BUFFER, id, 0, 0, 0)); } break;
-		case None: { panic(); } break;
-		}
-	}
-
-	static ShaderInput create_slot(GLuint pipeline, Type type, const cstr name, u64 backing_size = 0) {
-		ShaderInput slot;
-		slot.name = name;
-		slot.type = type;
-		switch (type) {
-		case Texture: {
-			auto loc = GL_GUARD(glGetUniformLocation(pipeline, name));
-			GLuint unit = 0;
-			GL_GUARD(glGetnUniformuiv(pipeline, loc, sizeof(GLuint), &unit));
-			slot.id = unit;
-		} break;
-		case UBO: case SSBO: {
-			auto index = GL_GUARD(glGetProgramResourceIndex(pipeline, type, name));
-			constexpr GLenum prop[] = { GL_BUFFER_BINDING, GL_BUFFER_DATA_SIZE };
-			constexpr auto prop_count = array_size(prop);
-			GLint value[prop_count];
-			GL_GUARD(glGetProgramResourceiv(pipeline, type, index, prop_count, prop, prop_count, NULL, value));
-			auto buffer_binding = value[0];
-			auto buffer_size = value[1];
-			slot.id = buffer_binding;
-			slot.backing_buffer = GPUBuffer::create(GLScope::global(), max(u64(buffer_size), backing_size), GL_MAP_WRITE_BIT | GL_MAP_PERSISTENT_BIT | GL_DYNAMIC_STORAGE_BIT);
-			break;
-		}
-		case None: { panic(); } break;
-		}
-		return slot;
-	}
-
-
-	void bind_texture(GLuint tid) { texture = tid; bind(); }
-	template<typename T> num_range<u64> bind_content(Array<T> content, u64 offset = 0) {
-		if (content.size() == 0)
-			return {};
-		if (backing_buffer.size < content.size_bytes() + offset)//TODO old content conservation
-			backing_buffer.resize(content.size_bytes() + offset);
-		return bind(backing_buffer.write(cast<byte>(content), offset));
-	}
-	template<typename T> num_range<u64> bind_object(const T& content, u64 offset = 0) { return bind_content(carray(&content, 1), offset); }
-};
-
-//*
-//* https://www.khronos.org/opengl/wiki/Vertex_Rendering#Multi-Draw
-// TODO glMultiDrawElementsIndirect
-//*
-
-GLuint create_render_pipeline(GLScope& ctx, GLuint vertex_shader, GLuint fragment_shader) {
-	if (vertex_shader == 0 || fragment_shader == 0) {
-		fprintf(stderr, "Failed to build render pipeline, invalid shader\n");
-		return 0;
-	}
-
-	auto program = GL_GUARD(glCreateProgram());
-	ctx.push<&GLScope::pipelines>(program);
-	GL_GUARD(glAttachShader(program, vertex_shader));
-	GL_GUARD(glAttachShader(program, fragment_shader));
-	GL_GUARD(glLinkProgram(program));
-	GLint linked;
-	GL_GUARD(glGetProgramiv(program, GL_LINK_STATUS, &linked));
-	GL_GUARD(glDetachShader(program, vertex_shader));
-	GL_GUARD(glDetachShader(program, fragment_shader));
-	if (!linked) {
-		GLint logLength;
-		GL_GUARD(glGetProgramiv(program, GL_INFO_LOG_LENGTH, &logLength));
-		char log[logLength + 1];
-		log[logLength] = '\0';
-		GL_GUARD(glGetProgramInfoLog(program, logLength, nullptr, log));
-		fprintf(stderr, "Failed to build render pipeline %u, pipeline program log : %s\n", program, log);
-		return 0;
-	} else {
-		return program;
-	}
+	return changed;
 }
-
-struct DrawCommandElement {
-	GLuint count;
-	GLuint instance_count;
-	GLuint first_index;
-	GLint base_vertex;
-	GLuint base_instance;
-};
-
-struct DrawCommandVertex {
-	GLuint count;
-	GLuint instance_count;
-	GLuint first_vertex;
-	GLuint base_instance;
-};
-
-void describe(GLuint program) {
-	struct {
-		GLenum id;
-		string name;
-		u32 prop_count;
-		GLenum properties[10];
-		string property_names[10];
-	} interfaces[] = {
-		{GL_UNIFORM, "GL_UNIFORM", 6, { GL_TYPE, GL_ARRAY_SIZE, GL_OFFSET, GL_BLOCK_INDEX, GL_ARRAY_STRIDE, GL_LOCATION }, { "GL_TYPE", "GL_ARRAY_SIZE", "GL_OFFSET", "GL_BLOCK_INDEX", "GL_ARRAY_STRIDE", "GL_LOCATION" }},
-		{GL_UNIFORM_BLOCK, "GL_UNIFORM_BLOCK", 4, { GL_BUFFER_BINDING, GL_BUFFER_DATA_SIZE, GL_NUM_ACTIVE_VARIABLES, GL_ACTIVE_VARIABLES }, { "GL_BUFFER_BINDING", "GL_BUFFER_DATA_SIZE", "GL_NUM_ACTIVE_VARIABLES", "GL_ACTIVE_VARIABLES" }},
-		{GL_PROGRAM_INPUT, "GL_PROGRAM_INPUT", 5, { GL_TYPE, GL_ARRAY_SIZE, GL_LOCATION, GL_IS_PER_PATCH, GL_LOCATION_COMPONENT }, { "GL_TYPE", "GL_ARRAY_SIZE", "GL_LOCATION", "GL_IS_PER_PATCH", "GL_LOCATION_COMPONENT" }},
-		{GL_PROGRAM_OUTPUT, "GL_PROGRAM_OUTPUT", 5, { GL_TYPE, GL_ARRAY_SIZE, GL_LOCATION, GL_IS_PER_PATCH, GL_LOCATION_COMPONENT }, { "GL_TYPE", "GL_ARRAY_SIZE", "GL_LOCATION", "GL_IS_PER_PATCH", "GL_LOCATION_COMPONENT" }},
-		{GL_BUFFER_VARIABLE, "GL_BUFFER_VARIABLE", 7, { GL_TYPE, GL_ARRAY_SIZE, GL_OFFSET, GL_BLOCK_INDEX, GL_ARRAY_STRIDE, GL_TOP_LEVEL_ARRAY_SIZE, GL_TOP_LEVEL_ARRAY_STRIDE }, { "GL_TYPE", "GL_ARRAY_SIZE", "GL_OFFSET", "GL_BLOCK_INDEX", "GL_ARRAY_STRIDE", "GL_TOP_LEVEL_ARRAY_SIZE", "GL_TOP_LEVEL_ARRAY_STRIDE" }},
-		{GL_SHADER_STORAGE_BLOCK, "GL_SHADER_STORAGE_BLOCK", 4, {GL_BUFFER_BINDING, GL_BUFFER_DATA_SIZE, GL_NUM_ACTIVE_VARIABLES, GL_ACTIVE_VARIABLES }, {"GL_BUFFER_BINDING", "GL_BUFFER_DATA_SIZE", "GL_NUM_ACTIVE_VARIABLES", "GL_ACTIVE_VARIABLES" }},
-	};
-
-	printf("Program %u :\n", program);
-	for (auto& interface : interfaces) {
-		printf("-- interface %s :\n", interface.name.data());
-		GLint ressource_count = 0;
-		GLint name_buffer_size = 0;
-		GL_GUARD(glGetProgramInterfaceiv(program, interface.id, GL_ACTIVE_RESOURCES, &ressource_count));
-		GL_GUARD(glGetProgramInterfaceiv(program, interface.id, GL_MAX_NAME_LENGTH, &name_buffer_size));
-		GLint values[interface.prop_count];
-		char name[name_buffer_size];
-		for (auto resource : u32xrange{ 0, ressource_count }) {
-			GL_GUARD(glGetProgramResourceName(program, interface.id, resource, name_buffer_size, NULL, name));
-			GL_GUARD(glGetProgramResourceiv(program, interface.id, resource, interface.prop_count, interface.properties, interface.prop_count, NULL, values));
-			printf("Ressource %s : {\n", name);
-			for (auto prop : u32xrange{ 0, interface.prop_count })
-				printf("\t%s : %i\n", interface.property_names[prop].data(), values[prop]);
-			printf("}\n");
-		}
-	}
-	fflush(stdout);
-}
-
-GLuint load_pipeline(GLScope& ctx,const char* path) {
-	printf("Loading pipeline %s\n", path);
-	fflush(stdout);
-	//TODO discard all this fstream garbage
-	if (std::ifstream file{ path, std::ios::binary | std::ios::ate }) {
-		usize size = file.tellg();
-		char buffer[size + 1];
-		memset(buffer, 0, size + 1);
-		file.seekg(0);
-		file.read(buffer, size);
-		file.close();
-		auto vert = create_shader(string(buffer, size), GL_VERTEX_SHADER);
-		auto frag = create_shader(string(buffer, size), GL_FRAGMENT_SHADER);
-		auto pipeline = create_render_pipeline(ctx, vert, frag);
-		GL_GUARD(glDeleteShader(vert));
-		GL_GUARD(glDeleteShader(frag));
-		return pipeline;
-	} else {
-		fprintf(stderr, "failed to open file %s\n", path);
-		return 0;
-	}
-}
-
-void wait_gpu() {
-	GL_GUARD(glFinish());
-}
-
-m4x4f32 view_mat(const Transform2D& tr) { return inverse(m4x4f32(tr)); }
-
-struct Camera {
-	Spacial2D* pov = null;
-	OrthoCamera* projection = null;
-	RenderTarget* target = null;
-	operator m4x4f32() const { return m4x4f32(*projection) * inverse(m4x4f32(pov->transform)); }
-};
-
 
 
 #endif

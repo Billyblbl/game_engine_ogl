@@ -12,7 +12,7 @@ bool engine_test(App& app, u64 scene_id) {
 	// auto playground_scene = PlaygroundScene::create(); defer{ playground_scene.release(); };
 	auto scene = RefactorScene::create(GLScope::global(), app.window);
 
-	wait_gpu();
+	glFinish();
 
 	PROFILE_SCOPE("Frame");
 	while (update(app, scene_id)) {

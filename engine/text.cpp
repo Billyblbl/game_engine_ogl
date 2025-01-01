@@ -349,7 +349,7 @@ struct UIRenderer {
 
 		auto [scratch, scope] = scratch_push_scope(sizeof(void*) * get_max_textures_frag()); defer{ scratch_pop_scope(scratch, scope); };
 
-		auto textures = List { scratch.push_array<TexBuffer*>(get_max_textures_frag()), 0 };
+		auto textures = List { scratch.push_array<GLuint>(get_max_textures_frag()), 0 };
 		auto fonts = List { cast<AtlasInstance>(inputs.fonts.buffer.map()), 0 };
 		auto characters = List { cast<CharacterInstance>(inputs.characters.buffer.map()), 0 };
 		auto texts_instances = List { cast<TextInstance>(inputs.texts.buffer.map()), 0 };
@@ -380,7 +380,7 @@ struct UIRenderer {
 					.glyph_range = glyph_range,
 					.texture_index = u32(textures.current)
 				});
-				textures.push(&font->glyph_atlas.texture);
+				textures.push(font->glyph_atlas.texture.id);
 
 				for (auto& text : texts.subspan(batch)) if (text.font == font && text.str.size() > 0) {
 					auto text_index = u32(texts_instances.current);

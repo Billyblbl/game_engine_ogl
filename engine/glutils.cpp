@@ -426,6 +426,18 @@ template<> constexpr GLTypeTable gl_type_table<u32> = { GL_UNSIGNED_INT,		{ NONE
 template<> constexpr GLTypeTable gl_type_table<u16> = { GL_UNSIGNED_SHORT,	{ NONE, R16UI	, RG16UI, RGB16UI	, RGBA16UI}, { 0, GL_RED_INTEGER, GL_RG, GL_RGB, GL_RGBA } };
 template<> constexpr GLTypeTable gl_type_table<u8 > = { GL_UNSIGNED_BYTE,		{ NONE, R8UI	, RG8UI	, RGB8UI	, RGBA8UI	}, { 0, GL_RED_INTEGER, GL_RG, GL_RGB, GL_RGBA } };
 
+u64 index_size(GLenum index_type) {
+	switch (index_type) {
+		case GL_BYTE:
+		case GL_UNSIGNED_BYTE: return 1;
+		case GL_SHORT:
+		case GL_UNSIGNED_SHORT: return 2;
+		case GL_INT:
+		case GL_UNSIGNED_INT: return 4;
+		default: return 0;
+	}
+}
+
 struct SrcFormat {
 	GLenum type;
 	GLenum channels;

@@ -334,11 +334,12 @@ struct RefactorScene {
 			.depth = cam.clear.depth,
 			.stencil = cam.clear.stencil
 		});
-		gfx.draw_sprite_meshes(m4x4f32(cam.proj) * view_mat(cam.space.transform), batch);
+		auto [scratch, scope] = scratch_push_scope(1 << 16); defer { scratch_pop_scope(scratch, scope); };
+		render_cmd(gfx.draw_sprite_meshes(scratch, m4x4f32(cam.proj) * glm::inverse(m4x4f32(cam.space.transform)), batch));
 
 		start_render_pass(cam.pass);
 		clear(cam.clear);
-		gfx.draw_sprite_meshes(m4x4f32(cam.proj) * view_mat(cam.space.transform), batch);
+		render_cmd(gfx.draw_sprite_meshes(scratch, m4x4f32(cam.proj) * glm::inverse(m4x4f32(cam.space.transform)), batch));
 
 		{
 			ImGui::Begin("Debug FBO color"); defer { ImGui::End(); };

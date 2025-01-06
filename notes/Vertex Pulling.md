@@ -7,6 +7,7 @@ https://github.com/nlguillemot/ProgrammablePulling
 - can allow for more complex access patterns
 - Easy to put in place but not necessary to make the standard way
 - To apply on a case by case basis per renderer
-- pushing can only share data between vertices by divisor
-- can use pushing to provide indices for pulling, useful if the shader is does not know the divisor in advance (effectively uses a vbo as an ibo in a sense)
+- ~~pushing can only share data between vertices by divisor~~ this is actually false, divisor is for instance id not vertex id, need pulling or duplication to share data between vertices
+- ~~can use pushing to provide indices for pulling, useful if the shader is does not know the divisor in advance (effectively uses a vbo as an ibo in a sense)~~
+
 

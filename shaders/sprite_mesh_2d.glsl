@@ -35,20 +35,28 @@ smooth pass vec4 color;
 #ifdef VERTEX_SHADER
 
 in vec2 position;
-in uint albedo_index;
-in float depth;
+// in uint albedo_index;
+// in float depth;
+
+struct QuadInfo {
+	uint albedo_index;
+	float depth;
+};
+
+layout(std430) restrict readonly buffer Quads { QuadInfo quads[]; };
 
 const vec2 uvs[] = { vec2(0, 1), vec2(1, 1), vec2(0, 0), vec2(1, 0) };
 
 void main() {
+	QuadInfo info = quads[gl_VertexID / 4];
 	uint entity = gl_BaseInstance + gl_InstanceID;
 	uint quad_in_mesh = (gl_VertexID - gl_BaseVertex) / 4;
 	sprite_id = entities[entity].state_range.x + quad_in_mesh;
-	texture_id = albedo_index;
+	texture_id = info.albedo_index;
 	color = entities[entity].color;
 	uint corner_id = gl_VertexID % 4;
 	uv = uvs[corner_id];
-	gl_Position = vp_matrix * entities[entity].transform * vec4(position, depth, 1);
+	gl_Position = vp_matrix * entities[entity].transform * vec4(position, info.depth, 1);
 }
 
 #endif

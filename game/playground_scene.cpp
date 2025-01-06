@@ -170,9 +170,16 @@ const struct {
 struct RefactorScene {
 
 	struct {
-		SpriteMeshRenderer draw_sprite_meshes;
+		// SpriteMeshRenderer draw_sprite_meshes;
 		Atlas2D sprite_atlas;
 		rtu32 white_sprite;
+
+		SpriteMesh::Pipeline draw_sprite_meshes;
+		SpriteMesh::Renderer sm_rd;
+
+		Tilemap level;
+		Tilemap::Pipeline draw_tilemap;
+		Tilemap::Renderer tm_rd;
 	} gfx;
 	static constexpr v4f32 WHITE_PIXEL[] = { v4f32(1) };
 
@@ -181,7 +188,7 @@ struct RefactorScene {
 		Spacial2D space;
 		OrthoCamera proj;
 		ClearCommand clear;
-		RenderPass pass;
+		RenderTarget target;
 	} cam;
 
 	struct {
@@ -189,31 +196,42 @@ struct RefactorScene {
 			Spacial2D space;
 			rtu32 sprite;
 			v4f32 color;
-		} entities [3];
+		} entities[3];
 		u32 mesh_index;
 	} test;
 
-	static RefactorScene create(GLScope& ctx, GLFWwindow* window) {
+	static RefactorScene create(GLScope& ctx) {
 		auto [scratch, scope] = scratch_push_scope(1ull << 18); defer{ scratch_pop_scope(scratch, scope); };
-		auto atlas = Atlas2D::create(ctx, v2u32(256, 256));
+		auto atlas = Atlas2D::create(ctx, v2u32(256 * 8, 256 * 8));
 		auto white = atlas.push(make_image(larray(WHITE_PIXEL), v2u32(1)));
-		auto renderer = SpriteMeshRenderer::load(ctx);
 
-		auto tex = renderer.push_texture(atlas.texture.id);
-		SpriteMeshRenderer::Quad q[] = {{
-			.albedo_index = tex,
-			.depth = 0,
+		auto sprite_pipeline = SpriteMesh::Pipeline::create(ctx);
+		auto sprite_renderer = sprite_pipeline.make_renderer(ctx);
+		auto tex = sprite_renderer.push_texture(atlas.texture.id);
+		SpriteMesh::Quad q[] = { {
+			.info = {
+				.albedo_index = tex,
+				.depth = 0,
+			},
 			.rect = rtu32{ .min = v2u32(0), .max = v2u32(5) },
-		}};
-		auto mesh_index = renderer.push_quad_mesh(larray(q), 16);
+		} };
+		auto mesh_index = sprite_renderer.push_quad_mesh(larray(q), 16);
 
-		// auto img = load_image(assets.test_sidescroll_path); defer{ unload(img); };
-		// auto spritesheet = atlas.push(img);
+		auto tm = Tilemap::load(ctx, atlas, assets.level);
+		auto tm_ppl = Tilemap::Pipeline::create(ctx);
+		auto tm_rd = tm_ppl.make_renderer(ctx, tm);
+
 		return {
 			.gfx = {
-				.draw_sprite_meshes = renderer,
 				.sprite_atlas = atlas,
-				.white_sprite = white
+				.white_sprite = white,
+
+				.draw_sprite_meshes = sprite_pipeline,
+				.sm_rd = sprite_renderer,
+
+				.level = tm,
+				.draw_tilemap = tm_ppl,
+				.tm_rd = tm_rd
 			},
 			.clock = Time::start(),
 			.cam = {
@@ -231,11 +249,12 @@ struct RefactorScene {
 					.center = v3f32(0)
 				},
 				.clear = {
+					.attachements = GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT,
 					.color = v4f32(v3f32(0.2), 1),
 					.depth = 10,
 					.stencil = 0
 				},
-				.pass = window_renderpass(window)
+				.target = RenderTarget::make_default(ctx)
 			},
 			.test = {
 				.entities = {
@@ -284,9 +303,24 @@ struct RefactorScene {
 		};
 	}
 
-	bool operator()(GLFWwindow* window, bool debug = false) {
+	tuple<rtu32, RenderTarget&> operator()(bool debug = DEBUG_GL) {
 		PROFILE_SCOPE(__PRETTY_FUNCTION__);
 		if (debug) {
+			auto [scratch, scope] = scratch_push_scope(1 << 16); defer{ scratch_pop_scope(scratch, scope); };
+			if (ImGui::Begin("Test")) {
+				defer{ ImGui::End(); };
+				EditorWidget("Tilemap", gfx.level);
+				for (u32 i = 0; auto & ent : test.entities) {
+					ImGui::PushID(i); defer{ ImGui::PopID(); };
+					ImGui::Text("Sprite [%u]", i++);
+					ImGui::Indent(); defer{ ImGui::Unindent(); };
+					ImGui::BeginGroup(); defer{ ImGui::EndGroup(); };
+					EditorWidget("space", ent.space);
+					EditorWidget("sprite", ent.sprite);
+					ImGui::ColorEdit4("color", glm::value_ptr(ent.color));
+				}
+				EditorWidget("mesh_index", test.mesh_index);
+			}
 			if (ImGui::Begin("Misc")) {
 				EditorWidget("Clock", clock);
 				if (ImGui::TreeNode("Camera")) {
@@ -294,64 +328,38 @@ struct RefactorScene {
 					EditorWidget("Space", cam.space);
 					EditorWidget("Projection", cam.proj);
 					EditorWidget("Clear", cam.clear);
-					EditorWidget("RenderPass", cam.pass);
-					if (ImGui::Button("Reset RenderPass")) cam.pass = window_renderpass(window);
-				}
-				if (ImGui::TreeNode("Test")) {
-					defer{ ImGui::TreePop(); };
-					for (u32 i = 0;	auto& ent : test.entities) {
-						ImGui::PushID(&ent); defer{ ImGui::PopID(); };
-						ImGui::Text("[%u]:", i++);
-						EditorWidget("space", ent.space);
-						EditorWidget("sprite", ent.sprite);
-						ImGui::ColorEdit4("color", glm::value_ptr(ent.color));
-					}
-					EditorWidget("mesh_index", test.mesh_index);
+					EditorWidget("Target", cam.target);
 				}
 			} ImGui::End();
 		}
-
-		static auto render_texture = TexBuffer::create(GLScope::global(), TexType::TX2D, v4u32(cam.pass.viewport.max - cam.pass.viewport.min, 1, 1));
-		static auto depth_texture = TexBuffer::create(GLScope::global(), TexType::TX2D, v4u32(cam.pass.viewport.max - cam.pass.viewport.min, 1, 1), GPUFormat::DEPTH_COMPONENT32);
-		static auto fbo = RenderTarget::create(GLScope::global(), cam.pass.viewport.max - cam.pass.viewport.min)
-			.attach(RenderTarget::Color[0], render_texture, 0, 0)
-			.attach(RenderTarget::Depth, depth_texture, 0, 0);
+		auto [scratch, scope] = scratch_push_scope(1 << 16); defer{ scratch_pop_scope(scratch, scope); };
 
 		//* accumulate
-		auto batch = gfx.draw_sprite_meshes.start_batch();
-		for (auto& ent : test.entities)
-			batch.push_entity(ent.space.transform, ent.color, test.mesh_index, carray(&ent.sprite, 1));
+		{
+			auto batch = gfx.sm_rd.start_batch(); defer { gfx.sm_rd.consume_batch(batch); };
+			for (auto& ent : test.entities)
+				batch.push_entity(ent.space.transform, ent.color, test.mesh_index, carray(&ent.sprite, 1));
+		}
 
 		//* submit draws
-		start_render_pass({
-			.framebuffer = fbo.framebuffer,
-			.viewport = cam.pass.viewport,
-			.scissor = cam.pass.scissor,
-		});
-		clear({
-			.attachements = RenderTarget::Color[0].flags | RenderTarget::Depth.flags,
-			.color = cam.clear.color,
-			.depth = cam.clear.depth,
-			.stencil = cam.clear.stencil
-		});
-		auto [scratch, scope] = scratch_push_scope(1 << 16); defer { scratch_pop_scope(scratch, scope); };
-		render_cmd(gfx.draw_sprite_meshes(scratch, m4x4f32(cam.proj) * glm::inverse(m4x4f32(cam.space.transform)), batch));
-
-		start_render_pass(cam.pass);
-		clear(cam.clear);
-		render_cmd(gfx.draw_sprite_meshes(scratch, m4x4f32(cam.proj) * glm::inverse(m4x4f32(cam.space.transform)), batch));
-
-		{
-			ImGui::Begin("Debug FBO color"); defer { ImGui::End(); };
-			ImGui::Image((void*)u64(render_texture.id), ImGui::GetContentRegionAvail(), ImVec2(0, 1), ImVec2(1, 0));
+		auto drawn = start_render_pass(render_target_pass(cam.target, flex_viewport(cam.target.dimensions, cam.proj.dimensions, FLEX_CONTAINED))); {
+			clear(cam.clear);
+			render_cmd(gfx.draw_sprite_meshes(scratch, gfx.sm_rd, {
+				.view_projection = m4x4f32(cam.proj) * glm::inverse(m4x4f32(cam.space.transform)),
+				.alpha_discard = 0.01f,
+				.padding = {}
+			}));
+			render_cmd(gfx.draw_tilemap(scratch, gfx.tm_rd,
+				Tilemap::Scene{
+					.view_projection = m4x4f32(cam.proj) * glm::inverse(m4x4f32(cam.space.transform)),
+					.parallax_pov = cam.space.transform.translation,
+					.alpha_discard = 0.1f,
+					.padding = {}
+				},
+				gfx.sprite_atlas.texture.id
+			));
 		}
-
-		{
-			ImGui::Begin("Debug FBO depth"); defer { ImGui::End(); };
-			ImGui::Image((void*)u64(depth_texture.id), ImGui::GetContentRegionAvail(), ImVec2(0, 1), ImVec2(1, 0));
-		}
-
-		return true;
+		return { drawn, cam.target };
 	}
 
 };

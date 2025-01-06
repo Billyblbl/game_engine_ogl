@@ -58,6 +58,8 @@ Image load_image(const cstr path) {
 	return make_image<u8>(carray((byte*)img, width * height * channels), v2u32(width, height), channels);
 }
 
+Image copy(Arena& arena, const Image& img) { return { img.format, img.dimensions, arena.push_array(img.data), img.pixel_size }; }
+
 //! should only be given an image loaded with load_image
 Image& unload(Image& img) {
 	stbi_image_free(img.data.data());
@@ -66,6 +68,11 @@ Image& unload(Image& img) {
 	img.data = {};
 	img.pixel_size = 0;
 	return img;
+}
+
+Image load_image(Arena& arena, const cstr path) {
+	auto original = load_image(path); defer { unload(original); };
+	return copy(arena, original);
 }
 
 #endif

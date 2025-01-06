@@ -32,6 +32,10 @@ struct GPUBuffer {
 		};
 	}
 
+	template<typename T> static GPUBuffer upload(GLScope& ctx, Array<T> data, GLbitfield flags = 0) {
+		return create(ctx, data.size_bytes(), flags, cast<byte>(data));
+	}
+
 	static GPUBuffer create_stretchy(GLScope& ctx, u64 size, GLenum usage = 0, ROBuffer initial_data = {}) {
 		GLuint id;
 		GL_GUARD(glCreateBuffers(1, &id));
@@ -67,9 +71,13 @@ struct GPUBuffer {
 		return { offset, offset + buff.size_bytes() };
 	}
 
-	template<typename T> num_range<u64> write_as(Array<const T> buff, u64 offset = 0) {
+	template<typename T> num_range<u64> write_as(Array<T> buff, u64 offset = 0) {
 		auto range = write(carray((byte*)buff.data(), buff.size_bytes()), offset * sizeof(T));
 		return { range.min / sizeof(T), range.max / sizeof(T) };
+	}
+
+	template<typename T> num_range<u64> write_one(T& obj, u64 offset = 0) {
+		return write_as<const T>(carray(&obj, 1), offset);
 	}
 
 	num_range<u64> allocate(u64 size) {

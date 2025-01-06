@@ -51,9 +51,12 @@ namespace ImGui {
 		ImGui::DestroyContext();
 	}
 
-	void Draw(ImDrawData* data = null);
-	void Draw(ImDrawData* data) {
-		ImGui_ImplOpenGL3_RenderDrawData(data == null ? ImGui::GetDrawData() : data);
+	inline void Draw(ImDrawData* data = null) {
+		if (data == null) {
+			ImGui::Render();
+			data = ImGui::GetDrawData();
+		}
+		ImGui_ImplOpenGL3_RenderDrawData(data);
 		if (ImGui::GetIO().ConfigFlags & ImGuiConfigFlags_ViewportsEnable) {
 			GLFWwindow* backup_current_context = glfwGetCurrentContext();
 			ImGui::UpdatePlatformWindows();
@@ -62,21 +65,6 @@ namespace ImGui {
 		}
 	}
 
-	inline void BeginFrame_OGL_GLFW() {
-		ImGui_ImplOpenGL3_NewFrame();
-		ImGui_ImplGlfw_NewFrame();
-		ImGui::NewFrame();
-	}
-
-	inline void EndFrame_OGL_GLFW() {
-		ImGui::Render();
-	}
-
-	inline auto GetWindowContentSize() {
-		auto min = ImGui::GetWindowContentRegionMin();
-		auto max = ImGui::GetWindowContentRegionMax();
-		return ImVec2(max.x - min.x, max.y - min.y);
-	}
 
 	template<typename T> bool bit_flags(const cstr label, T& flags, Array<const string> bit_names, bool same_line = true) {
 		bool changed = false;
@@ -145,7 +133,7 @@ namespace ImGui {
 	inline ImVec2 from_glm(v2f32 in) { return { in.x, in.y }; }
 
 	inline ImVec2 fit_to_window(ImVec2 dimensions) {
-		auto window = GetWindowContentSize();
+		auto window = ImGui::GetContentRegionAvail();
 		auto ratios = ImVec2(window.x / dimensions.x, window.y / dimensions.y);
 		return ImVec2(
 			dimensions.x * min(ratios.x, ratios.y),

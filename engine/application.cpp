@@ -170,7 +170,6 @@ bool update(App& app, u64 target_scene) {
 	return app.scene_id == target_scene;
 }
 
-//? GLFW dependency in what should be opengl stuff, maybe move to a separate file
 RenderPass window_renderpass(GLFWwindow* window) {
 	int w, h;
 	glfwGetFramebufferSize(window, &w, &h);
@@ -178,6 +177,16 @@ RenderPass window_renderpass(GLFWwindow* window) {
 		.framebuffer = 0,
 		.viewport = { v2u32(0, 0), v2u32(w, h) },
 		.scissor = { v2u32(0, 0), v2u32(w, h) }
+	};
+}
+
+RenderTarget window_render_target(GLFWwindow* window) {
+	int w, h;
+	glfwGetFramebufferSize(window, &w, &h);
+	return {
+		.dimensions = v2u32(w, h),
+		.framebuffer = 0,
+		.attachments = {}
 	};
 }
 

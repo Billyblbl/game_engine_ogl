@@ -19,9 +19,16 @@ struct Atlas2D {
 		auto available = rtu32{ current, texture.dimensions };
 		auto rect = rtu32{ current, current + v2u32(img.dimensions) + 2u * margins };
 		if (!contains(available, rect)) {
+			// auto _current = current;
 			current = v2u32(0, next_line);
 			available = rtu32{ current, texture.dimensions };
 			rect = rtu32{ current, current + v2u32(img.dimensions) + 2u * margins };
+			// if (!contains(available, rect)) {
+			// 	//TODO grow
+			// 	current = _current;
+			// 	available = rtu32{ current, texture.dimensions };
+			// 	rect = rtu32{ current, current + v2u32(img.dimensions) + 2u * margins };
+			// }
 			assert(contains(available, rect));
 		}
 		auto inner = rtu32{ rect.min + margins, rect.max - margins };
@@ -33,6 +40,12 @@ struct Atlas2D {
 
 	rtu32 load(const cstr path) {
 		auto img = load_image(path); defer{ unload(img); };
+		return push(img);
+	}
+
+	rtu32 load(string path) {
+		//TODO handle missing \0 in path
+		auto img = load_image(path.data()); defer{ unload(img); };
 		return push(img);
 	}
 

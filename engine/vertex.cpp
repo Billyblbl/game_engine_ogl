@@ -76,4 +76,30 @@ struct VertexArray {
 
 };
 
+struct QuadGeometry {
+	static constexpr u32 QUAD_INDICES[6] = { 0, 1, 2, 2, 1, 3 };
+
+	v2f32 vertices[4];
+	u32 indices[6];
+
+	static QuadGeometry create(rtf32 rect, u32 starting_index = 0) {
+		return {
+			.vertices = {
+				rect.min,
+				v2f32(rect.max.x, rect.min.y),
+				v2f32(rect.min.x, rect.max.y),
+				rect.max
+			},
+			.indices = {
+				starting_index + QUAD_INDICES[0],
+				starting_index + QUAD_INDICES[1],
+				starting_index + QUAD_INDICES[2],
+				starting_index + QUAD_INDICES[3],
+				starting_index + QUAD_INDICES[4],
+				starting_index + QUAD_INDICES[5]
+			}
+		};
+	}
+};
+
 #endif

@@ -111,10 +111,18 @@ static constexpr GLenum rindex_to_type[] = {
 
 GLuint get_shader_input(GLuint pipeline, const cstr name, Resource type) {
 	switch (type) {
-		case R_TEX: return GL_GUARD(glGetUniformLocation(pipeline, name));
 		case R_UBO: return GL_GUARD(glGetProgramResourceIndex(pipeline, GL_UNIFORM_BLOCK, name));
 		case R_SSBO: return GL_GUARD(glGetProgramResourceIndex(pipeline, GL_SHADER_STORAGE_BLOCK, name));
-		case R_VERT: return GL_GUARD(glGetAttribLocation(pipeline, name));
+		case R_TEX: {
+			auto loc = GL_GUARD(glGetUniformLocation(pipeline, name));
+			assert(loc >= 0);
+			return loc;
+		}
+		case R_VERT: {
+			auto loc = GL_GUARD(glGetAttribLocation(pipeline, name));
+			assert(loc >= 0);
+			return loc;
+		}
 		//todo ACO, TBO ?
 		default: assert(0 && "Invalid buffer type"); return 0;
 	}

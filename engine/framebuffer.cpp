@@ -55,33 +55,62 @@ struct RenderTarget {
 		{ GL_COLOR_ATTACHMENT15, GL_COLOR, GL_COLOR_BUFFER_BIT }
 	};
 
+	struct Attachement {
+		Slot slot;
+		TexBuffer texture;
+		GLint mip;
+		GLint layer;
+	};
+
 	v2u32 dimensions;
 	GLuint framebuffer;
-	Slot read_slot;
-	Array<const Slot> draw_slots;
+	Array<Attachement> attachments;
 
-	static RenderTarget create(GLScope& ctx, v2u32 min_dimensions) {
+	static RenderTarget create(GLScope& ctx, LiteralArray<Attachement> bindings) { return create(ctx, larray(bindings)); }
+	static RenderTarget create(GLScope& ctx, Array<const Attachement> bindings) {
 		GLuint id;
 		GL_GUARD(glCreateFramebuffers(1, &id));
 		ctx.push<&GLScope::framebuffers>(id);
+		v4u32 min_dimensions = v4u32(0);
+
+		auto attachements = map(ctx.arena, bindings,
+			[&](const Attachement& attch) -> Attachement {
+				min_dimensions = glm::max(min_dimensions, attch.texture.dimensions);
+				switch (attch.texture.type) {
+				case TX2DARR: case TX3D: glNamedFramebufferTextureLayer(id, attch.slot.id, attch.texture.id, attch.mip, attch.layer); break;
+				default: glNamedFramebufferTexture(id, attch.slot.id, attch.texture.id, attch.mip);
+				}
+				return attch;
+			}
+		);
+
 		return {
-			.dimensions = v4u32(min_dimensions, 1, 1),
+			.dimensions = min_dimensions,
 			.framebuffer = id,
-			.read_slot = None,
-			.draw_slots = {}
+			.attachments = attachements
 		};
 	}
 
-	bool is_complete() const { return GL_GUARD(glCheckNamedFramebufferStatus(framebuffer, GL_FRAMEBUFFER)) == GL_FRAMEBUFFER_COMPLETE; }
-
-	RenderTarget& attach(const Slot& slt, const TexBuffer& texture, GLint mip = 0, GLint layer = 0) {
-		dimensions = glm::max(v4u32(dimensions, 0, 0), texture.dimensions);
-		switch (texture.type) {
-			case TX2DARR: case TX3D: GL_GUARD(glNamedFramebufferTextureLayer(framebuffer, slt.id, texture.id, mip, layer)); break;
-			default: GL_GUARD(glNamedFramebufferTexture(framebuffer, slt.id, texture.id, mip));
-		}
-		return *this;
+	static RenderTarget make_default(GLScope& ctx, v2u32 dimensions = v2u32(1920, 1080)) {
+		return RenderTarget::create(ctx,
+			{
+				RenderTarget::Attachement{
+					.slot = RenderTarget::Color[0],
+					.texture = TexBuffer::create(ctx, TexType::TX2D, v4u32(dimensions, 1, 1), GPUFormat::RGBA32F),
+					.mip = 0,
+					.layer = 0
+				},
+				RenderTarget::Attachement{
+					.slot = RenderTarget::Depth,
+					.texture = TexBuffer::create(ctx, TexType::TX2D, v4u32(dimensions, 1, 1), GPUFormat::DEPTH_COMPONENT32),
+					.mip = 0,
+					.layer = 0
+				}
+			}
+		);
 	}
+
+	bool is_complete() const { return GL_GUARD(glCheckNamedFramebufferStatus(framebuffer, GL_FRAMEBUFFER)) == GL_FRAMEBUFFER_COMPLETE; }
 
 	struct Image {
 		TexBuffer* texture;
@@ -89,66 +118,80 @@ struct RenderTarget {
 		GLint layer;
 	};
 
-	RenderTarget& attach(const Slot& slt, const Image& img) { return attach(slt, *img.texture, img.mip, img.layer); }
-
-	RenderTarget& attach(Array<const tuple<Slot, Image>> attachements) {
-		for (auto&& [slt, img] : attachements)
-			attach(slt, img);
-		return *this;
-	}
-
-	Array<const Slot> select_draw_slots(Array<const Slot> slt) {
-		auto last = draw_slots;
-		GLenum buffers_b[32];
-		auto buffers = map(larray(buffers_b), slt, [](const auto& t) -> GLenum { return t.id; });
-		glNamedFramebufferDrawBuffers(framebuffer, buffers.size(), buffers.data());
-		draw_slots = slt;
-		return last;
-	}
-
-	Slot select_read_slot(Slot slt) {//* uses state-machine-like functionality, not super useful except debug of default fbf read
-		auto last = read_slot;
-		GL_GUARD(glNamedFramebufferReadBuffer(framebuffer, slt.id));
-		read_slot = slt;
-		return last;
-	}
-
-	void clear_attachement(GLint slot_index, v4f32 color = v4f32(v3f32(0.3), 1), GLint stencil = 0) {
-		auto& target = draw_slots[slot_index];
-		switch (target.type) {
-			case GL_DEPTH: GL_GUARD(glClearNamedFramebufferfv(framebuffer, target.type, 0, &color.a)); break;
-			case GL_STENCIL: GL_GUARD(glClearNamedFramebufferiv(framebuffer, target.type, 0, &stencil)); break;
-			case GL_DEPTH_STENCIL: GL_GUARD(glClearNamedFramebufferfi(framebuffer, target.type, 0, color.a, stencil)); break;
-			default: GL_GUARD(glClearNamedFramebufferfv(framebuffer, target.type, slot_index, glm::value_ptr(color)));
-		}
-	}
-
-	void clear_slots(v4f32 color = v4f32(v3f32(0.3), 1), f32 depth = 1, GLint stencil = 0) {
-		for (auto i = 0llu; i < draw_slots.size(); i++) {
-			switch (draw_slots[i].type) {
-				case GL_DEPTH: case GL_DEPTH_STENCIL: clear_attachement(i, v4f32(depth), stencil); continue;
-				default: clear_attachement(i, color, stencil);
-			}
-		}
-	}
-
 	void bind() const { GL_GUARD(glBindFramebuffer(GL_FRAMEBUFFER, framebuffer)); }
 	static void unbind() { GL_GUARD(glBindFramebuffer(GL_FRAMEBUFFER, 0)); }
 
 };
+
+void blit_fb(const RenderTarget& source, const RenderTarget& target, rtu32 from = { v2u32(0), v2u32(0) }, rtu32 to = { v2u32(0), v2u32(0) }, GLbitfield mask = GL_COLOR_BUFFER_BIT, SamplingFilter filter = SamplingFilter::Nearest) {
+	if (from.size() == v2u32(0))
+		from = { v2u32(0, 0), source.dimensions };
+	if (to.size() == v2u32(0))
+		to = { v2u32(0, 0), target.dimensions };
+
+	GL_GUARD(glBlitNamedFramebuffer(
+		source.framebuffer, target.framebuffer,
+		from.min.x, from.min.y, from.max.x, from.max.y,
+		to.min.x, to.min.y, to.max.x, to.max.y,
+		mask, filter
+	));
+}
 
 struct RenderPass {
 	GLuint framebuffer = 0;
 	rtu32 viewport = { v2u32(0, 0), v2u32(1920, 1080) };
 	rtu32 scissor = { v2u32(0, 0), v2u32(1920, 1080) };
 
+	rtu32 draw_region() const { return intersect(viewport, scissor); }
 	static RenderPass dflt;
 };
 
-void start_render_pass(const RenderPass& rp) {
+rtu32 start_render_pass(const RenderPass& rp) {
 	GL_GUARD(glBindFramebuffer(GL_FRAMEBUFFER, rp.framebuffer));
 	GL_GUARD(glViewport(rp.viewport.min.x, rp.viewport.min.y, rp.viewport.max.x - rp.viewport.min.x, rp.viewport.max.y - rp.viewport.min.y));
 	GL_GUARD(glScissor(rp.scissor.min.x, rp.scissor.min.y, rp.scissor.max.x - rp.scissor.min.x, rp.scissor.max.y - rp.scissor.min.y));
+	return rp.draw_region();
+}
+
+RenderPass render_target_pass(const RenderTarget& target, rtu32 viewport = {}, rtu32 scissor = {}) {
+	if (viewport.size() == v2u32(0)) viewport = { v2u32(0, 0), target.dimensions };
+	if (scissor.size() == v2u32(0)) scissor = { v2u32(0, 0), target.dimensions };
+	return {
+		.framebuffer = target.framebuffer,
+		.viewport = viewport,
+		.scissor = scissor,
+	};
+}
+
+enum : u32 {
+	FLEX_CONTAINED = 1,
+	FLEX_CONTAINING = 2,
+	FLEX_CENTER = 4,
+};
+
+rtu32 center_rect(v2u32 size, rtu32 rect) {
+	v2u32 offset = (size - rect.size()) / 2u;
+	return {
+		.min = rect.min + offset,
+		.max = rect.max + offset
+	};
+}
+
+rtu32 flex_viewport(v2u32 size, v2u32 aspect_ratio = v2u32(16, 9), u32 flags = FLEX_CONTAINED | FLEX_CENTER) {
+	auto r = v2f32(size) / v2f32(aspect_ratio);
+	f32 mul = 0;
+	if (flags & FLEX_CONTAINED)
+		mul = min(r.x, r.y);
+	else if (flags & FLEX_CONTAINING)
+		mul = max(r.x, r.y);
+	if (flags & FLEX_CENTER) return center_rect(size, {
+		.min = v2u32(0, 0),
+		.max = v2f32(aspect_ratio) * v2f32(mul)
+	});
+	else return {
+		.min = v2u32(0, 0),
+		.max = v2f32(aspect_ratio) * v2f32(mul)
+	};
 }
 
 bool EditorWidget(const cstr label, RenderTarget& target) {
@@ -157,8 +200,7 @@ bool EditorWidget(const cstr label, RenderTarget& target) {
 		defer{ ImGui::TreePop(); };
 		changed |= EditorWidget("dimensions", target.dimensions);
 		changed |= EditorWidget("id", target.framebuffer);
-		changed |= EditorWidget("read_slot", target.read_slot);
-		changed |= EditorWidget("draw_slots", target.draw_slots);
+		changed |= EditorWidget("attachments", target.attachments);
 	}
 	return changed;
 }
@@ -166,7 +208,7 @@ bool EditorWidget(const cstr label, RenderTarget& target) {
 bool EditorWidget(const cstr label, RenderPass& rp) {
 	bool changed = false;
 	if (ImGui::TreeNode(label)) {
-		defer { ImGui::TreePop(); };
+		defer{ ImGui::TreePop(); };
 		changed |= EditorWidget("framebuffer", rp.framebuffer);
 		changed |= EditorWidget("viewport", rp.viewport);
 		changed |= EditorWidget("scissor", rp.scissor);

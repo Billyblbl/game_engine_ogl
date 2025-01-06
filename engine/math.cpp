@@ -83,9 +83,10 @@ template<typename P> P direction(Segment<P> s) { return s.B - s.A; }
 template<typename P> struct reg_polytope {
 	P min;
 	P max;
-	template<typename OP> operator reg_polytope<OP>() { return { OP(min), OP(max) }; }
-	inline Segment<P> diagonal() { return { min, max }; }
-	bool contain(P p) { return glm::all(glm::lessThanEqual(p, max)) && glm::all(glm::lessThanEqual(min, p)); }
+	template<typename OP> operator reg_polytope<OP>() const { return { OP(min), OP(max) }; }
+	inline Segment<P> diagonal() const { return { min, max }; }
+	bool contain(P p) const { return glm::all(glm::lessThanEqual(p, max)) && glm::all(glm::lessThanEqual(min, p)); }
+	P size() const { return max - min; }
 };
 
 template<typename P> reg_polytope<P> bounds(Segment<P> s) {

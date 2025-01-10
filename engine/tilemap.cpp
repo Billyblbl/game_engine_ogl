@@ -220,7 +220,7 @@ struct Tilemap {
 						recurse(node.children, local_offset);
 					else if (node.type == Tilemap::Node::LAYER) {
 						auto rect = rtf32{ local_offset, local_offset + v2f32(tm.dimensions) };
-						auto [v, i] = QuadGeometry::create(rect, 4 * quad_count);
+						auto [v, i] = QuadGeo::create(rect, 4 * quad_count);
 						copy(larray(v), carray(&vertices[4 * quad_count], 4));
 						copy(larray(i), carray(&indices[6 * quad_count], 6));
 						quads[quad_count] = {

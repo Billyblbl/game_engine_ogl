@@ -3,7 +3,6 @@ struct Entity {
 	mat4 transform;
 	vec4 color;
 	uvec2 state_range;
-	// uint padding[2];
 };
 
 uniform sampler2D textures[MAX_TEXTURE_IMAGE_UNITS];
@@ -29,14 +28,9 @@ flat pass uint texture_id;
 flat pass uint sprite_id;
 smooth pass vec4 color;
 
-//!DEBUG
-// smooth pass float d;
-
 #ifdef VERTEX_SHADER
 
 in vec2 position;
-// in uint albedo_index;
-// in float depth;
 
 struct QuadInfo {
 	uint albedo_index;

@@ -6,18 +6,18 @@ kanban-plugin: board
 
 ## TODO
 
-- [ ] Test
 
 
 ## Doing
 
-- [ ] Tilemap rendering
 
 
 ## Done
 
 - [ ] Tilemap renderr
 - [ ] Tilemap pipeline
+- [ ] Tilemap rendering
+- [ ] Test
 
 
 

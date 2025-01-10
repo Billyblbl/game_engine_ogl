@@ -120,7 +120,7 @@ namespace SpriteMesh {
 			struct { v2f32 v[4]; } vertices[quads.size()];
 			Quad::Info infos[quads.size()];
 			for (auto i : u32xrange{ 0, quads.size() }) {
-				auto [vert, idx] = QuadGeometry::create(quads[i].rect, 4 * i);
+				auto [vert, idx] = QuadGeo::create(quads[i].rect, 4 * i);
 				copy(larray(idx), carray(&indices[i].i[0], 6));
 				copy(larray(vert), carray(&vertices[i].v[0], 4));
 				infos[i] = quads[i].info;
@@ -226,6 +226,7 @@ namespace SpriteMesh {
 			};
 
 			rd.vao.conf_vattrib(vertices.positions, vattr_fmt<v2f32>(0));
+			rd.push_texture(TexBuffer::white().id);
 
 			return rd;
 		}

@@ -170,18 +170,18 @@ const struct {
 struct RefactorScene {
 
 	struct {
-		// SpriteMeshRenderer draw_sprite_meshes;
 		Atlas2D sprite_atlas;
-		rtu32 white_sprite;
-
 		SpriteMesh::Pipeline draw_sprite_meshes;
 		SpriteMesh::Renderer sm_rd;
 
 		Tilemap level;
 		Tilemap::Pipeline draw_tilemap;
 		Tilemap::Renderer tm_rd;
+
+		UI::Pipeline draw_ui;
+		UI::Renderer ui_rd;
+		Text::Font font;
 	} gfx;
-	static constexpr v4f32 WHITE_PIXEL[] = { v4f32(1) };
 
 	Time::Clock clock;
 	struct {
@@ -203,14 +203,14 @@ struct RefactorScene {
 	static RefactorScene create(GLScope& ctx) {
 		auto [scratch, scope] = scratch_push_scope(1ull << 18); defer{ scratch_pop_scope(scratch, scope); };
 		auto atlas = Atlas2D::create(ctx, v2u32(256 * 8, 256 * 8));
-		auto white = atlas.push(make_image(larray(WHITE_PIXEL), v2u32(1)));
 
 		auto sprite_pipeline = SpriteMesh::Pipeline::create(ctx);
 		auto sprite_renderer = sprite_pipeline.make_renderer(ctx);
 		auto tex = sprite_renderer.push_texture(atlas.texture.id);
+		(void)tex;
 		SpriteMesh::Quad q[] = { {
 			.info = {
-				.albedo_index = tex,
+				.albedo_index = 0,
 				.depth = 0,
 			},
 			.rect = rtu32{ .min = v2u32(0), .max = v2u32(5) },
@@ -221,17 +221,24 @@ struct RefactorScene {
 		auto tm_ppl = Tilemap::Pipeline::create(ctx);
 		auto tm_rd = tm_ppl.make_renderer(ctx, tm);
 
+		auto ui_ppl = UI::Pipeline::create(ctx);
+		auto ui_rd = ui_ppl.make_renderer(ctx);
+		auto font = Text::Font::load(ctx, Text::FT_Global(), "test_stuff/test_font.ttf");
+
 		return {
 			.gfx = {
 				.sprite_atlas = atlas,
-				.white_sprite = white,
 
 				.draw_sprite_meshes = sprite_pipeline,
 				.sm_rd = sprite_renderer,
 
 				.level = tm,
 				.draw_tilemap = tm_ppl,
-				.tm_rd = tm_rd
+				.tm_rd = tm_rd,
+
+				.draw_ui = ui_ppl,
+				.ui_rd = ui_rd,
+				.font = font,
 			},
 			.clock = Time::start(),
 			.cam = {
@@ -268,7 +275,7 @@ struct RefactorScene {
 							.velocity = null_transform_2d,
 							.accel = null_transform_2d
 						},
-						.sprite = white,
+						.sprite = { v2u32(0), v2u32(1) },
 						.color = v4f32(1, 0, 0, 1),
 					},
 					{
@@ -281,7 +288,7 @@ struct RefactorScene {
 							.velocity = null_transform_2d,
 							.accel = null_transform_2d
 						},
-						.sprite = white,
+						.sprite = { v2u32(0), v2u32(1) },
 						.color = v4f32(0, 1, 0, 1),
 					},
 					{
@@ -294,7 +301,7 @@ struct RefactorScene {
 							.velocity = null_transform_2d,
 							.accel = null_transform_2d
 						},
-						.sprite = white,
+						.sprite = { v2u32(0), v2u32(1) },
 						.color = v4f32(0, 0, 1, 1),
 					},
 				},
@@ -335,29 +342,56 @@ struct RefactorScene {
 		auto [scratch, scope] = scratch_push_scope(1 << 16); defer{ scratch_pop_scope(scratch, scope); };
 
 		//* accumulate
-		{
+		{//* sprite mesh
 			auto batch = gfx.sm_rd.start_batch(); defer { gfx.sm_rd.consume_batch(batch); };
 			for (auto& ent : test.entities)
 				batch.push_entity(ent.space.transform, ent.color, test.mesh_index, carray(&ent.sprite, 1));
 		}
+		{//* ui
+			auto batch = UI::Batch::start(scratch, 1024, 1024*1024, {
+				.canvas_projection = OrthoCamera{
+					.dimensions = v3f32(cam.target.dimensions, 100),
+					// .center = v3f32(0)
+					.center = v3f32(-v2f32(cam.target.dimensions) / 2.f, 0)
+				},
+				.alpha_discard = 0.1f,
+				.padding = {}
+			}); defer { gfx.ui_rd.apply_batch(batch); };
+
+			static rtf32 rect = { v2f32(100, 100), v2f32(500, 500) };
+			static Text::Style style = {
+				.color = v4f32(1, 1, 1, 1),
+				.scale = 1,
+				.linespace = 1,
+				.axis = Text::Axis::H
+			};
+			static char text_buffer[1024] = "test hello world";
+			ImGui::Begin("Test text"); defer{ ImGui::End(); };
+			ImGui::InputTextMultiline("Text", text_buffer, IM_ARRAYSIZE(text_buffer));
+			EditorWidget("Rect", rect);
+			EditorWidget("Style", style);
+			batch.push_text(text_buffer, rect, 0, gfx.font, style);
+		}
 
 		//* submit draws
 		auto drawn = start_render_pass(render_target_pass(cam.target, flex_viewport(cam.target.dimensions, cam.proj.dimensions, FLEX_CONTAINED))); {
+			auto vp = m4x4f32(cam.proj) * glm::inverse(m4x4f32(cam.space.transform));
 			clear(cam.clear);
 			render_cmd(gfx.draw_sprite_meshes(scratch, gfx.sm_rd, {
-				.view_projection = m4x4f32(cam.proj) * glm::inverse(m4x4f32(cam.space.transform)),
+				.view_projection = vp,
 				.alpha_discard = 0.01f,
 				.padding = {}
 			}));
 			render_cmd(gfx.draw_tilemap(scratch, gfx.tm_rd,
 				Tilemap::Scene{
-					.view_projection = m4x4f32(cam.proj) * glm::inverse(m4x4f32(cam.space.transform)),
+					.view_projection = vp,
 					.parallax_pov = cam.space.transform.translation,
 					.alpha_discard = 0.1f,
 					.padding = {}
 				},
 				gfx.sprite_atlas.texture.id
 			));
+			render_cmd(gfx.draw_ui(scratch, gfx.ui_rd));
 		}
 		return { drawn, cam.target };
 	}

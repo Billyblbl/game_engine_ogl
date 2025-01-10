@@ -77,7 +77,8 @@ using SwizzleConfig = glm::vec<4, Swizzle>;
 using WrapConfig = glm::vec<3, WrapMode>;
 struct SamplingConfig { SamplingFilter min, max; };
 
-template<u32 D> using Area = reg_polytope<glm::vec<D, u32>>;
+template<i32 D> using Area = reg_polytope<glm::vec<D, u32>>;
+template<i32 D> Area<D + 1> slice_to_area(Area<D> slice, u32 index) { return { { slice.min, index }, { slice.max, u32(index + 1) } }; }
 
 struct TexBuffer {
 	GLuint	id = 0;
@@ -131,15 +132,11 @@ struct TexBuffer {
 		return true;
 	}
 
-	template<typename T, u32 D> bool upload_as(Array<T> source, Area<D> area) {
+	template<typename T, i32 D> bool upload_as(Array<T> source, Area<D> area) {
 		//TODO proper area fit check
 		//TODO differentiate RGB vs sRGB texture upload https://youtu.be/MzJwiEIGj7k?t=2002
 		// expect(glm::length2(area.max - area.min) <= source.size());
 		return upload(cast<byte>(source), Format<T>, area);
-	}
-
-	template<typename T, u32 D> bool upload_as(Array<T> source, Area<D> area, u32 index) {
-		return upload(source, slice_to_area(area, index));
 	}
 
 	TexBuffer& conf_wrap(WrapConfig wrap) {
@@ -218,10 +215,20 @@ struct TexBuffer {
 		return id;
 	}
 
+	static TexBuffer& white() {
+		static TexBuffer buffer = []() -> TexBuffer {
+			auto t = create(GLScope::global(), TX2D, v4u32(1), RGBA32F);
+			v4f32 wpixel[] = { v4f32(1) };
+
+			t.upload_as(larray(wpixel), slice_to_area<2>(rtu32{ v2u32(0), v2u32(1) }, 0u));
+
+			// assert(() && "failed to create white texture");
+			return t;
+		}();
+		return buffer;
+	}
+
 };
-
-template<u32 D> Area<D + 1> slice_to_area(Area<D> slice, u32 index) { return { { slice.min, index }, { slice.max, index + 1 } }; }
-
 
 bool EditorWidget(const cstr label, TexBuffer& buffer) {
 	if (ImGui::TreeNode(label)) {

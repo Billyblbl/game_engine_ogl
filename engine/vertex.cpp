@@ -76,13 +76,25 @@ struct VertexArray {
 
 };
 
-struct QuadGeometry {
+struct QuadGeo {
 	static constexpr u32 QUAD_INDICES[6] = { 0, 1, 2, 2, 1, 3 };
+	template<typename I> struct Idx { I i[6]; };
 
 	v2f32 vertices[4];
 	u32 indices[6];
 
-	static QuadGeometry create(rtf32 rect, u32 starting_index = 0) {
+	template<typename I> static Idx<I> make_indices(I start = 0) {
+		return { .i = {
+			start + QUAD_INDICES[0],
+			start + QUAD_INDICES[1],
+			start + QUAD_INDICES[2],
+			start + QUAD_INDICES[3],
+			start + QUAD_INDICES[4],
+			start + QUAD_INDICES[5],
+		}};
+	}
+
+	static QuadGeo create(rtf32 rect, u32 starting_index = 0) {
 		return {
 			.vertices = {
 				rect.min,

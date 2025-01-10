@@ -59,7 +59,7 @@ Array<v2i32> flood_outline(Arena& arena, auto markings_view, v2i32 start, v2u64 
 			outline.push(coord);
 	}
 
-	arena.pop(to_fill.capacity.size());
+	arena.pop_local(to_fill.capacity.size());
 	return outline.shrink_to_content(arena);
 }
 

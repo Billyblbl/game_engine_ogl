@@ -14,3 +14,4 @@ env.mk
 *.spall
 *.cap
 *.url
+*.rdc

@@ -474,7 +474,7 @@ namespace UI {
 			quads.content = 0;
 			sheets.content = 0;
 			scene.content = 0;
-			textures.current = 1;//* keep the white texture
+			textures.current = 0;
 		}
 
 	};
@@ -519,8 +519,6 @@ namespace UI {
 				.scene = GPUBuffer::create(ctx, sizeof(Scene), GL_DYNAMIC_STORAGE_BIT),
 				.textures = { ctx.arena.push_array<GLuint>(get_max_textures_frag()), 0 }
 			};
-
-			rd.textures.push(TexBuffer::white().id);
 
 			rd.vao.conf_vattrib(quads.rect, vattr_fmt<v4f32>(offsetof(Quad, rect)));//TODO get format from shader, would only need to provide offset
 			rd.vao.conf_vattrib(quads.sprite, vattr_fmt<v4u32>(offsetof(Quad, sprite)));

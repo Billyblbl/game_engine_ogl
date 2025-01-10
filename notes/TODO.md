@@ -10,7 +10,7 @@
 - [x] Tilemap renderer -> [[Tilemap rework]]
 	- [x] Command construction
 	- ~~Reuse modified spritemesh renderer instead ?~~
-- [ ] Rework ui renderer
+- [x] Rework ui renderer
 	- sheets system
 		- sheet decides style & depth
 		- push quads per sheet

@@ -271,13 +271,10 @@ inline bool EditorWidget(const cstr label, Array<char> data) {
 }
 
 template<typename T> inline bool EditorWidget(const cstr label, T* data) {
-	auto change = false;
-	if (ImGui::TreeNode(label)) {
-		defer{ ImGui::TreePop(); };
-		ImGui::Text("ptr : %p", data);
-		change |= EditorWidget("value", *data);
-	}
-	return change;
+	auto buff_size = snprintf(nullptr, 0, "%s : %p", label, data);
+	char buffer[buff_size + 1];
+	snprintf(buffer, buff_size, "%s : %p", label, data);
+	return EditorWidget(buffer, *data);
 }
 
 #endif

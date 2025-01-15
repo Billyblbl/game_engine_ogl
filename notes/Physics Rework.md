@@ -1,0 +1,12 @@
+- [ ] Narrow phase detection
+- [ ] Debug renderer
+- [ ] Physical response
+- [ ] Broad phase aabb tree
+	- [ ] make broad phase data structs based on narrow's input
+- [ ] Broad phase tilemap sample
+- [x] decouple & make a version of shape dedicated to narrow
+	- shape is always convex for narrow
+	- simpler shape, only goal is to make a support function
+	- no need for tree in the shape, offsets will be done with a single transform at submit point
+- may be able to just fix the jitter
+- narrow & broad phase are too coupled

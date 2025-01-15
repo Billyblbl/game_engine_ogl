@@ -173,7 +173,7 @@ Array<v2f32> weld_segments(Arena& arena, Array<Segment<v2f32>> pieces) {
 #define for2(i, r) for (auto y : u32xrange{ r.min.y, r.max.y } ) for (auto x : u32xrange { r.min.x, r.max.x}) if (i = v2u32(x, y); true)
 // for2(v2u32 pixel, (rtu32{ v2u32(0), source.dimensions })) if (free_spot(source[v2i32(x, y)]) && is_collider(source[v2i32(x, y)])) {
 
-Array<Array<v2f32>> outline_polygons(Arena& arena, const Image& source, rtu64 clip, const m3x3f32& transform, auto is_collider, u64 expected_poly_count = 8) {
+Array<Polygon> outline_polygons(Arena& arena, const Image& source, rtu64 clip, const m3x3f32& transform, auto is_collider, u64 expected_poly_count = 8) {
 	auto clip_dims = dims_p2(clip);
 	bool markings[clip_dims.y][clip_dims.x];
 	memset(markings, 0, clip_dims.y * clip_dims.x);
@@ -199,16 +199,16 @@ Array<Array<v2f32>> outline_polygons(Arena& arena, const Image& source, rtu64 cl
 #include <shape_2d.cpp>
 #include <animation.cpp>
 
-Shape2D create_frame_shape(Arena& arena, const Image& source, rtu32 clip, auto is_collider) {
-	auto dims = dims_p2(clip);
-	auto transform = glm::scale(glm::translate(m3x3f32(1), v2f32(-.5f, .5f)), v2f32(1.f / dims.x, -1.f / dims.y));//TODO parameterises this, currently uses assumed render rect of 1x1 with origin at its center
-	auto outlines = outline_polygons(arena, source, clip, transform, is_collider);
-	return create_polyshape(arena, outlines);
-}
+// Shape2D create_frame_shape(Arena& arena, const Image& source, rtu32 clip, auto is_collider) {
+// 	auto dims = dims_p2(clip);
+// 	auto transform = glm::scale(glm::translate(m3x3f32(1), v2f32(-.5f, .5f)), v2f32(1.f / dims.x, -1.f / dims.y));//TODO parameterises this, currently uses assumed render rect of 1x1 with origin at its center
+// 	auto outlines = outline_polygons(arena, source, clip, transform, is_collider);
+// 	return create_polyshape(arena, outlines);
+// }
 
-AnimationGrid<Shape2D> create_animated_shape(Arena& arena, const Image& source, const AnimationGrid<rtu32>& animation, auto is_collider) {
-	return { map(arena, animation.keyframes, [&](rtu32 clip) { return create_frame_shape(arena, source, clip, is_collider); }), animation.dimensions };
-}
+// AnimationGrid<Shape2D> create_animated_shape(Arena& arena, const Image& source, const AnimationGrid<rtu32>& animation, auto is_collider) {
+// 	return { map(arena, animation.keyframes, [&](rtu32 clip) { return create_frame_shape(arena, source, clip, is_collider); }), animation.dimensions };
+// }
 
 #pragma region standard filters
 

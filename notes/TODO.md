@@ -20,9 +20,7 @@
 		- "list"-like ui panel layouts may share a sheet for elements
 	- tinted textured quads, sample into white texture for flat colors
 - [ ] Rework physics
-	- needs to be simpler, GJK is nice and all but probably overengineered for this purpose
-	- Might not even need rotations, could probably just go with AABBs all the way
-		- lets start with AABB, others will use those for culling anyway
+	- [[Physics Rework]]
 - [ ] Trim application complexity
 - [ ] Sound perf
 	- profiler indicates pretty long processing, what is going on here ?

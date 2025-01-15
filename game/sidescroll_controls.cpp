@@ -181,34 +181,34 @@ struct SidescrollCharacter {
 template<> tuple<bool, SidescrollCharacter> use_as<SidescrollCharacter>(EntityHandle handle);
 
 //TODO this is an ass way to ground characters
-void ground_characters(Array<SidescrollCharacter> characters, Array<Collision2D> collisions, v2f32 gravity_dir) {
-	for (auto& ch : characters) ch.ctrl->grounded = false;
-	(void)collisions;
-	(void)gravity_dir;
-	// for (auto& col : collisions) for (auto i : u64xrange{ 0, 2 }) if (auto [is_ctrl, ch] = use_as<SidescrollCharacter>(col.entities[i].handle); is_ctrl) {
-	// 	auto grounding_contact = (
-	// 		[&](const Contact2D& ctc) {
-	// 			auto lever = normalize(ctc.levers[i]);
-	// 			auto normal = normalize(ctc.penetration);
-	// 			return dot(lever, gravity_dir) > 0 && angle(normal, gravity_dir) < ch.ctrl->max_slope;
-	// 		}
-	// 	);
-	// 	if ((ch.ctrl->grounded = (linear_search(col.contacts, grounding_contact) >= 0)))
-	// 		ch.ctrl->falling = false;
-	// }
-}
+// void ground_characters(Array<SidescrollCharacter> characters, Array<Collision2D> collisions, v2f32 gravity_dir) {
+// 	for (auto& ch : characters) ch.ctrl->grounded = false;
+// 	(void)collisions;
+// 	(void)gravity_dir;
+// 	// for (auto& col : collisions) for (auto i : u64xrange{ 0, 2 }) if (auto [is_ctrl, ch] = use_as<SidescrollCharacter>(col.entities[i].handle); is_ctrl) {
+// 	// 	auto grounding_contact = (
+// 	// 		[&](const Contact2D& ctc) {
+// 	// 			auto lever = normalize(ctc.levers[i]);
+// 	// 			auto normal = normalize(ctc.penetration);
+// 	// 			return dot(lever, gravity_dir) > 0 && angle(normal, gravity_dir) < ch.ctrl->max_slope;
+// 	// 		}
+// 	// 	);
+// 	// 	if ((ch.ctrl->grounded = (linear_search(col.contacts, grounding_contact) >= 0)))
+// 	// 		ch.ctrl->falling = false;
+// 	// }
+// }
 
-void update_characters(Array<SidescrollCharacter> characters, Array<Collision2D> collisions, v2f32 gravity, const Time::Clock& clock) {
-	PROFILE_SCOPE("Characters updates");
-	ground_characters(characters, collisions, normalize(gravity));
-	for (auto& ch : characters) {
-		ch.space->velocity.translation = control(*ch.ctrl, ch.space->velocity.translation, ch.space->transform.scale, clock.dt);
-		auto frame = animate_sidescroll_character(*ch.anim, ch.animations, *ch.ctrl, clock.current);
-		ch.sprite->view = {
-			ch.spritesheet.min + frame.min,
-			ch.spritesheet.min + frame.max,
-		};
-	}
-}
+// void update_characters(Array<SidescrollCharacter> characters, Array<Collision2D> collisions, v2f32 gravity, const Time::Clock& clock) {
+// 	PROFILE_SCOPE("Characters updates");
+// 	ground_characters(characters, collisions, normalize(gravity));
+// 	for (auto& ch : characters) {
+// 		ch.space->velocity.translation = control(*ch.ctrl, ch.space->velocity.translation, ch.space->transform.scale, clock.dt);
+// 		auto frame = animate_sidescroll_character(*ch.anim, ch.animations, *ch.ctrl, clock.current);
+// 		ch.sprite->view = {
+// 			ch.spritesheet.min + frame.min,
+// 			ch.spritesheet.min + frame.max,
+// 		};
+// 	}
+// }
 
 #endif

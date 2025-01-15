@@ -157,6 +157,7 @@ GLuint create_render_pipeline(GLScope& ctx, GLuint vertex_shader, GLuint fragmen
 	}
 }
 
+void describe(GLuint program);
 GLuint load_pipeline(GLScope& ctx,const char* path) {
 	printf("Loading pipeline %s\n", path);
 	fflush(stdout);
@@ -173,6 +174,8 @@ GLuint load_pipeline(GLScope& ctx,const char* path) {
 		auto pipeline = create_render_pipeline(ctx, vert, frag);
 		GL_GUARD(glDeleteShader(vert));
 		GL_GUARD(glDeleteShader(frag));
+		if constexpr (DEBUG_GL)
+			describe(pipeline);
 		return pipeline;
 	} else {
 		fprintf(stderr, "failed to open file %s\n", path);

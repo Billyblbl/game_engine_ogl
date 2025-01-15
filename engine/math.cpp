@@ -126,6 +126,9 @@ template<typename P> inline bool collide(const reg_polytope<P> a, const reg_poly
 	return (all(greaterThan(dim_vec(intersect(a, b)), P(0))));
 }
 
+template<typename P> inline reg_polytope<P> operator&(const reg_polytope<P> a, const reg_polytope<P> b) { return intersect(a, b); }
+template<typename P> inline reg_polytope<P> operator|(const reg_polytope<P> a, const reg_polytope<P> b) { return combined_aabb(a, b); }
+
 template<typename T> T lerp(T a, T b, f32 t) { return a + t * (b - a); }
 template<typename T> f32 inv_lerp(T a, T b, T v) { return (b == a) ? 0 : (v - a) / (b - a); }
 

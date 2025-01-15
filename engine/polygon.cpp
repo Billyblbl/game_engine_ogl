@@ -4,7 +4,20 @@
 #include <blblstd.hpp>
 #include <math.cpp>
 
-using Polygon = Array<v2f32>;
+using Polygon = Array<const v2f32>;
+using PolygonMesh = Array<const Polygon>;
+
+union Triangle {
+	v2f32 vertices[3];
+	struct { v2f32 A, B, C; };
+
+	static Triangle from_array(Polygon vertices) {
+		Triangle triangle;
+		for (auto i : u64xrange{ 0, 3 })
+			triangle.vertices[i] = vertices[i];
+		return triangle;
+	}
+};
 
 tuple<Polygon, usize> read_polygon(FILE* file, Arena& arena) {
 	usize read = 0;
@@ -97,7 +110,7 @@ inline bool is_convex(Polygon poly, WindingOrder wo) {
 	return true;
 }
 
-bool intersect_poly_poly(Array<v2f32> p1, Array<v2f32> p2);
+// bool intersect_poly_poly(Array<v2f32> p1, Array<v2f32> p2);
 
 //*from https://mathworld.wolfram.com/TriangleInterior.html#:~:text=The%20simplest%20way%20to%20determine,it%20lies%20outside%20the%20triangle.
 bool intersect_tri_point(Polygon triangle, v2f32 point) {
@@ -131,11 +144,9 @@ tuple<Array<Polygon>, Array<v2f32>> ear_clip(Arena& arena, Polygon polygon, bool
 	auto polys = List{ arena.push_array<Polygon>(polygon.size() - 2), 0 };
 	auto poly_verts = List{ arena.push_array<v2f32>((polygon.size() - 2) * 3), 0 };
 
-	struct Triangle { v2f32 points[3]; };
-
 	auto angle_triangle = (
 		[&](i64 i) -> Triangle {
-			return { {
+			return { .vertices = {
 				remaining[modidx(i - 1, remaining.current)],
 				remaining[modidx(i * 1, remaining.current)],
 				remaining[modidx(i + 1, remaining.current)]
@@ -149,7 +160,7 @@ tuple<Array<Polygon>, Array<v2f32>> ear_clip(Arena& arena, Polygon polygon, bool
 			if (!convex_at(remaining.used(), i, wo))
 				return false;
 			//* if there's a point of the remaining polygon that isn't part of the triangle yet still intersects with it
-			for (auto v : remaining.used()) if (linear_search(larray(tri.points), v) < 0 && intersect_tri_point(larray(tri.points), v))
+			for (auto v : remaining.used()) if (linear_search(larray(tri.vertices), v) < 0 && intersect_tri_point(larray(tri.vertices), v))
 				return false;
 			return true;
 		}
@@ -160,7 +171,7 @@ tuple<Array<Polygon>, Array<v2f32>> ear_clip(Arena& arena, Polygon polygon, bool
 		auto ear = linear_search_idx(remaining.used(), is_ear, reflex + remaining.current - 1);
 		assert(ear >= 0);
 		auto tri = angle_triangle(ear);
-		polys.push(poly_verts.push(larray(tri.points)));
+		polys.push(poly_verts.push(larray(tri.vertices)));
 		remaining.remove_ordered(ear);
 	}
 	polys.push(poly_verts.push(remaining.used()));

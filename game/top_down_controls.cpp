@@ -43,11 +43,11 @@ namespace controls {
 		);
 	}
 
-	void animate_character(TopDownControl& ctrl, rtu32* sprite, Shape2D* shape, rtu32 spritesheet, AnimationGrid<rtu32>* animation, AnimationGrid<Shape2D>* shape_animation, f32 time) {
-		auto coord = locomotion(ctrl, time);
-		if (sprite) *sprite = sub_rect(spritesheet, animate(*animation, coord));
-		if (shape) *shape = animate(*shape_animation, coord);
-	}
+	// void animate_character(TopDownControl& ctrl, rtu32* sprite, Shape2D* shape, rtu32 spritesheet, AnimationGrid<rtu32>* animation, AnimationGrid<Shape2D>* shape_animation, f32 time) {
+	// 	auto coord = locomotion(ctrl, time);
+	// 	if (sprite) *sprite = sub_rect(spritesheet, animate(*animation, coord));
+	// 	if (shape) *shape = animate(*shape_animation, coord);
+	// }
 
 	v2f32 move_top_down(v2f32 velocity, v2f32 input, f32 speed, f32 accel, f32 time) {
 		auto target_velocity = input * speed;
@@ -56,11 +56,11 @@ namespace controls {
 		return velocity + effective_accel;
 	}
 
-	struct CharacterLocomotionAnimationData {
-		AnimationGrid<rtu32>* frames;
-		AnimationGrid<Shape2D>* shapes;
-		rtu32* spritesheet;
-	};
+	// struct CharacterLocomotionAnimationData {
+	// 	AnimationGrid<rtu32>* frames;
+	// 	AnimationGrid<Shape2D>* shapes;
+	// 	rtu32* spritesheet;
+	// };
 
 }
 

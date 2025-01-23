@@ -4,172 +4,273 @@
 #include <physics_2d.cpp>
 #include <rendering.cpp>
 
-// struct ShapeRenderer {
-// 	struct ShapeRenderInfo { v4f32 color; };
-// 	GLuint pipeline;
+namespace Physics2D {
 
-// 	ShaderInput instance;
-// 	ShaderInput vp_matrix;
+	namespace Debug {
 
-// 	ShapeRenderInfo* instance_mapping;
-// 	m4x4f32* vp_mapping;
+		struct alignas(16) Instance {
+			v4f32 rows[3];//* alignement stuff because of stf430 forcing vec3s to take the size of a vec4 in glsl, even inside a mat3
+			v4f32 color;
 
-// 	static ShapeRenderer load(const cstr path = "./shaders/physics_debug.glsl") {
-// 		ShapeRenderer rd;
-// 		rd.pipeline = load_pipeline(GLScope::global(), path);
-// 		rd.instance = ShaderInput::create_slot(rd.pipeline, ShaderInput::UBO, "Object", sizeof(ShapeRenderInfo));
-// 		rd.vp_matrix = ShaderInput::create_slot(rd.pipeline, ShaderInput::UBO, "Camera", sizeof(m4x4f32));
-// 		rd.instance_mapping = (ShapeRenderInfo*)rd.instance.backing_buffer.map().data();
-// 		rd.vp_mapping = (m4x4f32*)rd.vp_matrix.backing_buffer.map().data();
-// 		return rd;
-// 	}
+			static Instance create(const m3x3f32& transform, v4f32 color) {
+				return {
+					.rows = {
+						v4f32(transform[0], 0),
+						v4f32(transform[1], 0),
+						v4f32(transform[2], 0)
+					},
+					.color = color
+				};
+			}
+		};
 
-// 	static Array<const VertexAttributeLayout> get_v2f32_attributes() {
-// 		static const auto v2f32Attribute = make_vertex_attribute_layout<v2f32>(0, sizeof(v2f32));
-// 		return carray(&v2f32Attribute, 1);
-// 	}
+		const Instance ColliderAABB = Instance::create(m3x3f32(1), v4f32(1, 0, 0, 1));
+		const Instance AABBIntersection = Instance::create(m3x3f32(1), v4f32(0, 1, 0, 1));
 
-// 	void draw_polygon(Array<v2f32> polygon, bool wireframe = true) const {
-// 		(void)polygon;
-// 		(void)wireframe;
-// 		// if (polygon.size() == 0) return;
-// 		// u32 indices[polygon.size()];
-// 		// for (auto i : u32xrange{ 0, polygon.size() })
-// 		// 	indices[i] = i;
-// 		// auto mesh = upload_mesh(get_v2f32_attributes(), polygon, carray(indices, polygon.size()), GL_TRIANGLE_FAN); defer{ delete_mesh(mesh); };
-// 		// if (wireframe)
-// 		// 	GL_GUARD(glPolygonMode(GL_FRONT_AND_BACK, GL_LINE));
-// 		// {
-// 		// 	GL_GUARD(glUseProgram(pipeline)); defer{ GL_GUARD(glUseProgram(0)); };
-// 		// 	GL_GUARD(glBindVertexArray(mesh.vao)); defer{ GL_GUARD(glBindVertexArray(0)); };
-// 		// 	vp_matrix.bind(); defer{ vp_matrix.unbind(); };
-// 		// 	instance.bind(); defer{ instance.unbind(); };
-// 		// 	GL_GUARD(glDrawElements(mesh.draw_mode, mesh.element_count, mesh.index_type, nullptr));
-// 		// }
-// 		// if (wireframe)
-// 		// 	GL_GUARD(glPolygonMode(GL_FRONT_AND_BACK, GL_FILL));
-// 		// wait_gpu();
-// 	}
+		enum InstanceID : GLuint {
+			COLLIDER_AABB,
+			AABB_INTERSECTION,
+			SHAPE
+		};//! hijacks DrawCommandVertex.base_instance during batch construction, replaced when passing the batch to the renderer for transmission to GPU buffer
 
-// 	void draw_circle(v3f32 circle, bool wireframe = true) const {
-// 		(void)circle;
-// 		(void)wireframe;
-// 		// constexpr auto detail = 8;
-// 		// u32 indices[detail + 1] = { 0 };
-// 		// v2f32 vertices[detail + 1] = { v2f32(0) };
-// 		// for (auto i : u32xrange{ 0, detail }) {
-// 		// 	indices[i + 1] = i;
-// 		// 	auto angle = lerp(0.f, 2 * glm::pi<f32>(), f32(i) / f32(detail - 2));
-// 		// 	auto v = v2f32(glm::cos(angle), glm::sin(angle));
-// 		// 	vertices[i + 1] = v * circle.z + v2f32(circle);
-// 		// }
-// 		// auto mesh = upload_mesh(get_v2f32_attributes(), larray(vertices), larray(indices), GL_TRIANGLE_FAN); defer{ delete_mesh(mesh); };
-// 		// if (wireframe)
-// 		// 	GL_GUARD(glPolygonMode(GL_FRONT_AND_BACK, GL_LINE));
-// 		// {
-// 		// 	GL_GUARD(glUseProgram(pipeline)); defer{ GL_GUARD(glUseProgram(0)); };
-// 		// 	GL_GUARD(glBindVertexArray(mesh.vao)); defer{ GL_GUARD(glBindVertexArray(0)); };
-// 		// 	vp_matrix.bind(); defer{ vp_matrix.unbind(); };
-// 		// 	instance.bind(); defer{ instance.unbind(); };
-// 		// 	GL_GUARD(glDrawElements(mesh.draw_mode, mesh.element_count, mesh.index_type, nullptr));
+		struct Batch {
+			Arena* arena;
+			u32 total_instances;
+			List<v2f32> vertices;
+			List<Convex*> shapes;
+			List<DrawCommandVertex>	commands;
+			List<List<Instance>> instances;
 
-// 		// 	// pipeline(mesh, 1, { bind_to(vp_matrix, 0), bind_to(instance, 1) });
+			static Batch create(Arena* arena, u32 expected_shapes = 1024) {
+				Batch b = {
+					.arena = arena,
+					.total_instances = 0,
+					.vertices = { arena->push_array<v2f32>(expected_shapes), 0 },
+					.shapes = { arena->push_array<Convex*>(expected_shapes), 0 },
+					.commands = { arena->push_array<DrawCommandVertex>(expected_shapes), 0 },
+					.instances = { arena->push_array<List<Instance>>(expected_shapes), 0 }
+				};
 
-// 		// }
-// 		// if (wireframe)
-// 		// 	GL_GUARD(glPolygonMode(GL_FRONT_AND_BACK, GL_FILL));
-// 		// wait_gpu();
-// 	}
+				return b;
+			}
 
-// 	void draw_line(Segment<v2f32> line) const {
-// 		(void)line;
-// 		// u32 indices[2] = { 0, 1 };
-// 		// v2f32 vertices[2] = { line.A, line.B };
-// 		// auto mesh = upload_mesh(get_v2f32_attributes(), larray(vertices), larray(indices), GL_LINE_STRIP); defer{ delete_mesh(mesh); };
-// 		// {
-// 		// 	GL_GUARD(glUseProgram(pipeline)); defer{ GL_GUARD(glUseProgram(0)); };
-// 		// 	GL_GUARD(glBindVertexArray(mesh.vao)); defer{ GL_GUARD(glBindVertexArray(0)); };
-// 		// 	vp_matrix.bind(); defer{ vp_matrix.unbind(); };
-// 		// 	instance.bind(); defer{ instance.unbind(); };
-// 		// 	GL_GUARD(glDrawElements(mesh.draw_mode, mesh.element_count, mesh.index_type, nullptr));
+			u32 write_polygon(Polygon poly) {
+				auto index = vertices.current;
+				vertices.push_growing(*arena, poly);
+				return index;
+			}
 
-// 		// 	// pipeline(mesh, 1, { bind_to(vp_matrix, 0), bind_to(instance, 1) });
+			u32 write_rect(rtf32 rect) {
+				auto [v] = QuadGeo::make_vertices<v2f32>(rect);
+				return write_polygon(larray(v));
+			}
 
-// 		// }
-// 		// wait_gpu();
-// 	}
+			u32 write_capsule(v2f32 foci[2], f32 radius) {
+				auto index = write_circle(foci[0], radius);
+				write_circle(foci[1], radius);
+				write_polygon(carray(foci, 2));
+				//TODO replace middle line with sides
+				return index;
+			}
 
-// 	void draw_point(v2f32 point) const {
-// 		(void)point;
-// 		// u32 idx = 0;
-// 		// auto mesh = upload_mesh(get_v2f32_attributes(), carray(&point, 1), carray(&idx, 1), GL_POINTS); defer{ delete_mesh(mesh); };
-// 		// {
-// 		// 	GL_GUARD(glUseProgram(pipeline)); defer{ GL_GUARD(glUseProgram(0)); };
-// 		// 	GL_GUARD(glBindVertexArray(mesh.vao)); defer{ GL_GUARD(glBindVertexArray(0)); };
-// 		// 	vp_matrix.bind(); defer{ vp_matrix.unbind(); };
-// 		// 	instance.bind(); defer{ instance.unbind(); };
-// 		// 	GL_GUARD(glDrawElements(mesh.draw_mode, mesh.element_count, mesh.index_type, nullptr));
-// 		// }
-// 		// wait_gpu();
-// 	}
+			u32 write_ellipse(v2f32 foci[2], f32 radius) {
+				auto index = write_circle(foci[0], radius);
+				write_circle(foci[1], radius);
+				return index;
+				//TODO implement
+			}
 
-// 	void operator()(
-// 		const Shape2D& shape,
-// 		const m3x3f32& model_matrix,
-// 		const m4x4f32& vp,
-// 		v4f32 color,
-// 		bool wireframe = true,
-// 		bool local_aabbs = true,
-// 		bool world_aabbs = true,
-// 		bool radius = true//TODO
-// 		) {
-// 		(void)radius;
-// 		vp_matrix.backing_buffer.sync(cast<byte>(carray(&vp, 1)));
+			constexpr static u32 DEBUG_CIRCLE_SEGMENTS = 32;
 
-// 		auto [scratch, scope] = scratch_push_scope(1 << 16); defer{ scratch_pop_scope(scratch, scope); };
+			u32 write_circle(v2f32 center, f32 radius, u32 segments = DEBUG_CIRCLE_SEGMENTS) {
+				v2f32 v[segments];
+				for (u32 i = 0; i < segments; i++)
+					v[i] = center + v2f32(cosf(2 * glm::pi<f32>() / segments * i), sinf(2 * glm::pi<f32>() / segments * i)) * radius;
+				return write_polygon(carray(v, segments));
+			}
 
-// 		auto traverse = (
-// 			[&](auto& recurse, const Shape2D& s, m3x3f32 mat) -> void {
-// 				auto local = mat * s.transform;
-// 				ShapeRenderInfo info{ color };
-// 				{
-// 					instance.backing_buffer.sync(cast<byte>(carray(&info, 1)));
-// 					auto local_scope = scratch.current; defer{ scratch_pop_scope(scratch, local_scope); };
-// 					auto points = map(scratch, s.points, [&](v2f32 p) { return v2f32(local * v3f32(p, 1)); });
-// 					draw_polygon(points, wireframe);
+			u32 register_shape(Convex* shape, u32 expected_count = 1) {
+				auto index = shapes.current;
+				auto start_vertex = vertices.current;
+				switch (shape->type) {
+				case Convex::POLYGON: write_polygon(shape->poly); break;
+				case Convex::CIRCLE: write_circle(shape->center, shape->radius); break;
+				case Convex::RECT: write_rect(shape->rect); break;
+				case Convex::CAPSULE: write_capsule(shape->foci, shape->radius); break;
+				case Convex::ELLIPSE: write_ellipse(shape->foci, shape->radius); break;
+				default: return index;
+				}
+				auto vertex_count = vertices.current - start_vertex;
+				shapes.push_growing(*arena, shape);
+				commands.push_growing(*arena,
+					DrawCommandVertex{
+						.count = GLuint(vertex_count),
+						.instance_count = 0,
+						.first_vertex = GLuint(start_vertex),
+						.base_instance = SHAPE
+					}
+				);
+				instances.push_growing(*arena, List{ arena->push_array<Instance>(expected_count), 0 });
+				return index;
+			}
 
-// 					if (world_aabbs) {
-// 						auto aabb = aabb_transformed_aabb(s.aabb, mat);
-// 						v2f32 aabb_corners[] = { aabb.min, v2f32(aabb.min.x, aabb.max.y), aabb.max, v2f32(aabb.max.x, aabb.min.y), };
-// 						info = { v4f32(1, 0, 1, 1) };
-// 						instance.backing_buffer.sync(cast<byte>(carray(&info, 1)));
-// 						draw_polygon(larray(aabb_corners), true);
-// 					}
-// 				}
+			u32 cache_get_shape(Convex* shape) {
+				auto shape_index = index_of(shapes.used(), shape);
+				if (shape_index == -1)
+					return register_shape(shape);
+				return shape_index;
+			}
 
-// 				if (local_aabbs) {
-// 					v2f32 aabb_corners[] = {
-// 						v2f32(mat * v3f32(s.aabb.min, 1)),
-// 						v2f32(mat * v3f32(v2f32(s.aabb.min.x, s.aabb.max.y), 1)),
-// 						v2f32(mat * v3f32(s.aabb.max, 1)),
-// 						v2f32(mat * v3f32(v2f32(s.aabb.max.x, s.aabb.min.y), 1)),
-// 					};
+			u32 push_collider(const Collider& collider, v4f32 color) {
+				assert(collider.shape);
+				push_aabb(collider.aabb);
+				auto shape_index = cache_get_shape(collider.shape);
+				auto instance_index = instances[shape_index].current;
+				instances[shape_index].push_growing(*arena, Instance::create(collider.transform, color));
+				commands[shape_index].instance_count += 1;
+				total_instances += 1;
+				return instance_index;
+			}
 
-// 					info = { v4f32(0, 1, 1, 1) };
-// 					instance.backing_buffer.sync(cast<byte>(carray(&info, 1)));
-// 					draw_polygon(larray(aabb_corners), true);
-// 				}
+			u32 push_aabb(rtf32 aabb, InstanceID id = COLLIDER_AABB) {
+				auto start_vertex = vertices.current;
+				write_rect(aabb);
+				shapes.push_growing(*arena, nullptr);
+				commands.push_growing(*arena,
+					DrawCommandVertex{
+						.count = 4,
+						.instance_count = 1,
+						.first_vertex = GLuint(start_vertex),
+						.base_instance = id
+					}
+				);
+				instances.push_growing(*arena, { {}, 0 });
+				total_instances += 1;
+				return 0;
+			}
 
-// 				info = { color };
-// 				instance.backing_buffer.sync(cast<byte>(carray(&info, 1)));
+		};
 
-// 				for (auto child : s.children)
-// 					recurse(recurse, child, local);
-// 			}
-// 		);
-// 		traverse(traverse, shape, model_matrix);
-// 	}
+		struct Renderer {
+			VertexArray vao;
+			GPUBuffer vertices;
+			GPUBuffer instances;
+			GPUBuffer commands;
+			GPUBuffer view_projection;
 
-// };
+			Renderer& apply_batch(Batch& batch, m4x4f32 vp) {
+				reset();
+				vertices.push_as(batch.vertices.used());
+				{
+					auto mapping = List{ instances.map_as<Instance>({0, batch.total_instances + 2}) , 0 }; defer{ instances.unmap_as<Instance>({0, mapping.current}); };
+					mapping.push(ColliderAABB);
+					mapping.push(AABBIntersection);
+					for (usize i = 0; i < batch.commands.current; i++) switch (batch.commands[i].base_instance) {
+						case COLLIDER_AABB: batch.commands[i].base_instance = 0; break;
+						case AABB_INTERSECTION: batch.commands[i].base_instance = 1; break;
+						case SHAPE: {
+							batch.commands[i].base_instance = mapping.current;
+							mapping.push(batch.instances[i].used());
+						} break;
+						default: break;
+					}
+				}
+				commands.push_as(batch.commands.used());
+				view_projection.push_one(vp);
+				return *this;
+			}
+
+			void reset() {
+				vertices.content = 0;
+				instances.content = 0;
+				commands.content = 0;
+				view_projection.content = 0;
+			}
+		};
+
+		struct Pipeline {
+			GLuint id;
+			GLuint view_projection;
+			GLuint position;
+			GLuint instances;
+
+			static Pipeline create(GLScope& ctx) {
+				auto ppl = load_pipeline(ctx, "shaders/physics_debug.glsl");
+				return {
+					.id = ppl,
+					.view_projection = get_shader_input(ppl, "Camera", R_UBO),
+					.position = get_shader_input(ppl, "position", R_VERT),
+					.instances = get_shader_input(ppl, "Instances", R_SSBO)
+				};
+			}
+
+			Renderer create_renderer(GLScope& ctx) {
+				//TODO reasonable starting sizes
+				Renderer rd = {
+					.vao = VertexArray::create(ctx, GL_LINE_LOOP),
+					.vertices = GPUBuffer::create_stretchy(ctx, sizeof(v2f32) * 4, GL_DYNAMIC_DRAW),
+					.instances = GPUBuffer::create_stretchy(ctx, sizeof(Instance) * 2, GL_DYNAMIC_DRAW),
+					.commands = GPUBuffer::create_stretchy(ctx, sizeof(DrawCommandVertex) * 2, GL_DYNAMIC_DRAW),
+					.view_projection = GPUBuffer::create(ctx, sizeof(m4x4f32), GL_DYNAMIC_STORAGE_BIT)
+				};
+
+				rd.vao.conf_vattrib(position, vattr_fmt<v2f32>(0));
+				return rd;
+			}
+
+			RenderCommand operator()(Arena& arena, const Renderer& rd) const {
+				return {
+					.pipeline = id,
+					.draw_type = RenderCommand::D_MDAI,
+					.draw = {.d_indirect = {
+						.buffer = rd.commands.id,
+						.stride = sizeof(DrawCommandVertex),
+						.range = { 0, GLsizei(rd.commands.content_as<DrawCommandVertex>()) }
+					}},
+					.vao = rd.vao.id,
+					.ibo = {
+						.buffer = 0,
+						.index_type = 0,
+						.primitive = rd.vao.draw_mode
+					},
+					.vertex_buffers = arena.push_array({VertexBinding{
+						.buffer = rd.vertices.id,
+						.targets = arena.push_array({ position }),
+						.offset = 0,
+						.stride = sizeof(v2f32),
+						.divisor = 0
+					}}),
+					.textures = {},
+					.buffers = arena.push_array({
+						BufferObjectBinding{
+							.buffer = rd.view_projection.id,
+							.type = GL_UNIFORM_BUFFER,
+							.range = { 0, sizeof(m4x4f32) },
+							.target = view_projection
+						},
+						BufferObjectBinding{
+							.buffer = rd.instances.id,
+							.type = GL_SHADER_STORAGE_BUFFER,
+							.range = { 0, GLuint(rd.instances.content) },
+							.target = instances
+						}
+					}),
+				};
+			}
+		};
+
+		Pipeline& gppl() {
+			static Pipeline ppl = Pipeline::create(GLScope::global());
+			return ppl;
+		}
+
+		Renderer& grd() {
+			static Renderer rd = gppl().create_renderer(GLScope::global());
+			return rd;
+		}
+
+		RenderCommand render(Arena& arena, Batch& batch, m4x4f32 vp) { return gppl()(arena, grd().apply_batch(batch, vp)); }
+	}
+}
 
 #endif

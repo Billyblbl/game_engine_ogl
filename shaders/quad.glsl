@@ -32,8 +32,8 @@ flat pass uint _texture;
 	in vec4 rect;
 	in uvec4 sprite;
 
-	const vec2 verts[] = { vec2(0, 0), vec2(1, 0), vec2(0, 1), vec2(1, 1) };
-	const vec2 uvs[] = { vec2(0, 1), vec2(1, 1), vec2(0, 0), vec2(1, 0) };
+	const vec2 verts[] = { vec2(0, 0), vec2(1, 0), vec2(1, 1), vec2(0, 1) };
+	const vec2 uvs[] = { vec2(0, 1), vec2(1, 1), vec2(1, 0), vec2(0, 0) };
 //* }
 
 void main() {

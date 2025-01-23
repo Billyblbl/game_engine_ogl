@@ -209,11 +209,16 @@ void describe(GLuint program) {
 		GLint values[interface.prop_count];
 		char name[name_buffer_size];
 		for (auto resource : u32xrange{ 0, ressource_count }) {
-			GL_GUARD(glGetProgramResourceName(program, interface.id, resource, name_buffer_size, NULL, name));
+			GLsizei name_size = 0;
+			GL_GUARD(glGetProgramResourceName(program, interface.id, resource, name_buffer_size, &name_size, name));
 			GL_GUARD(glGetProgramResourceiv(program, interface.id, resource, interface.prop_count, interface.properties, interface.prop_count, NULL, values));
-			printf("Ressource %s : {\n", name);
-			for (auto prop : u32xrange{ 0, interface.prop_count })
-				printf("\t%s : %i\n", interface.property_names[prop].data(), values[prop]);
+			printf("Ressource %.*s : {\n", name_size, name);
+			for (auto prop : u32xrange{ 0, interface.prop_count }) {
+				switch (interface.properties[prop]) {
+					// case GL_TYPE: printf("\t%s : %.*s\n", interface.property_names[prop].data(), int(GLtoString(values[prop]).size()), GLtoString(values[prop]).data()); break;
+					default: printf("\t%s : %i\n", interface.property_names[prop].data(), values[prop]); break;
+				}
+			}
 			printf("}\n");
 		}
 	}

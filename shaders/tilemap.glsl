@@ -40,7 +40,7 @@ flat pass uint tilemap_id;
 #ifdef VERTEX_SHADER
 
 //*Vertices {
-	const vec2 qd_uvs[] = { vec2(0, 1), vec2(1, 1), vec2(0, 0), vec2(1, 0) };
+	const vec2 qd_uvs[] = { vec2(0, 1), vec2(1, 1), vec2(1, 0), vec2(0, 0) };
 	in vec2 position;
 //*}
 

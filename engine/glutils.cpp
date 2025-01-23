@@ -447,10 +447,10 @@ struct SrcFormat {
 
 template<typename P> constexpr SrcFormat Format = { 0, 0, 0, 0 };
 template<typename T, i32 I> constexpr SrcFormat Format<glm::vec<I, T>> = {
-	gl_type_table<T>.upload_type,
-	gl_type_table<T>.upload_format[I],
-	I,
-	sizeof(T)
+	.type = gl_type_table<T>.upload_type,
+	.channels = gl_type_table<T>.upload_format[I],
+	.channel_count = I,
+	.channel_size = sizeof(T)
 };
 
 template<> constexpr SrcFormat Format<f32> = Format<v1f32>;

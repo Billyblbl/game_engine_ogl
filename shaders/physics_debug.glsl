@@ -1,20 +1,28 @@
 
-layout(std140, binding = 0) uniform Camera { mat4 vp; };
-layout(std140, binding = 1) uniform Object { vec4 color; };
+struct Instance {
+	mat3 transform;
+	vec4 color;
+};
+
+layout(std140) uniform Camera { mat4 vp; };
+layout(std430) readonly restrict buffer Instances { Instance instances[]; };
+
+flat pass vec4 color;
 
 #ifdef VERTEX_SHADER
 
-layout(location = 0) in vec2 position;
+in vec2 position;
 
 void main() {
-	gl_Position = vp * vec4(position, 10, 1.0);
+	color = instances[gl_BaseInstance + gl_InstanceID].color;
+	gl_Position = vp * vec4(instances[gl_BaseInstance + gl_InstanceID].transform * vec3(position, 1), 1.0);
 }
 
 #endif
 
 #ifdef FRAGMENT_SHADER
 
-layout(location = 0) out vec4 pixel_color;
+out vec4 pixel_color;
 
 void main() {
 	pixel_color = color;

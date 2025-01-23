@@ -418,7 +418,7 @@ namespace UI {
 		}
 
 		u32 push_text(string str, rtf32 rect, f32 depth, const Text::Font& font, const Text::Style& style) {
-			auto idx = index_of(textures.used(), [&](GLuint id) { return id == font.glyph_atlas.texture.id; });
+			auto idx = index_in(textures.used(), [&](GLuint id) { return id == font.glyph_atlas.texture.id; });
 			if (idx < 0)
 				idx = push_texture(font.glyph_atlas.texture.id);
 			auto [scratch, scope] = scratch_push_scope(str.size() * sizeof(Quad), arena); defer{ scratch_pop_scope(scratch, scope); };

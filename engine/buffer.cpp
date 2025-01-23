@@ -54,13 +54,18 @@ struct GPUBuffer {
 		assert(stretchy() && "Cannot resize immutable GPU buffer");
 		GLuint temp;
 		//* We copy into a temp and back instead of replacing like ArrayList in order to conserve links between ogl objects like VAOs
-		GL_GUARD(glCreateBuffers(1, &temp));
-		GL_GUARD(glNamedBufferStorage(temp, content, null, 0));
-		GL_GUARD(glCopyNamedBufferSubData(id, temp, 0, 0, content));
+		if (content) {
+			GL_GUARD(glCreateBuffers(1, &temp));
+			GL_GUARD(glNamedBufferStorage(temp, content, null, 0));
+			GL_GUARD(glCopyNamedBufferSubData(id, temp, 0, 0, content));
+		}
 		GL_GUARD(glNamedBufferData(id, new_size, null, stretchy_usage()));
-		GL_GUARD(glCopyNamedBufferSubData(temp, id, 0, 0, content));
-		GL_GUARD(glDeleteBuffers(1, &temp));
+		if (content) {
+			GL_GUARD(glCopyNamedBufferSubData(temp, id, 0, 0, content));
+			GL_GUARD(glDeleteBuffers(1, &temp));
+		}
 		size = new_size;
+		assert(size >= content);
 		return *this;
 	}
 
@@ -80,12 +85,12 @@ struct GPUBuffer {
 		return write_as<const T>(carray(&obj, 1), offset);
 	}
 
-	num_range<u64> allocate(u64 size) {
-		auto needed_size = content + size;
+	num_range<u64> allocate(u64 allocation) {
+		auto needed_size = content + allocation;
 		if (needed_size > size)
 			resize(round_up_bit(needed_size));
-		num_range<u64> r = { content, content + size };
-		content += size;
+		num_range<u64> r = { content, content + allocation };
+		content += allocation;
 		return r;
 	}
 
@@ -93,6 +98,7 @@ struct GPUBuffer {
 
 	num_range<u64> push(ROBuffer buff) {
 		auto r = allocate(buff.size_bytes());
+		assert(size >= content);
 		r = write(buff, r.min);
 		return r;
 	}
@@ -104,6 +110,11 @@ struct GPUBuffer {
 	Buffer map(num_range<u64> range = {}, GLbitfield access = GL_MAP_WRITE_BIT | GL_MAP_FLUSH_EXPLICIT_BIT) {
 		if (range.size() == 0)
 			range = { 0, u64(size) };
+		if (range.max > u64(size)) {
+			assert(stretchy() && "Attempt to map past end of non-stretchy buffer");
+			resize(range.max + 1);
+		}
+
 		auto mapping = GL_GUARD(glMapNamedBufferRange(id, range.min, range.size(), access));
 		return carray((byte*)mapping, range.size());
 	}

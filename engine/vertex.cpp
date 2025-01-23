@@ -15,6 +15,7 @@ struct VertexAttributeFormat {
 	GLuint relative_offset;
 };
 
+
 template<typename T> constexpr auto vattr_fmt(GLuint offset, GLboolean normalised = GL_FALSE) {
 	return VertexAttributeFormat{
 		.count = Format<T>.channel_count,
@@ -54,7 +55,7 @@ struct VertexArray {
 		return attr;
 	}
 
-	GLuint bind_vattrib(GLuint pipeline, const cstr name, GLuint binding, const VertexAttributeFormat& format) {
+	[[deprecated]] GLuint bind_vattrib(GLuint pipeline, const cstr name, GLuint binding, const VertexAttributeFormat& format) {
 		auto attr = get_shader_input(pipeline, name, R_VERT);
 		conf_vattrib(attr, format);
 		GL_GUARD(glVertexArrayAttribBinding(id, attr, binding));
@@ -77,8 +78,9 @@ struct VertexArray {
 };
 
 struct QuadGeo {
-	static constexpr u32 QUAD_INDICES[6] = { 0, 1, 2, 2, 1, 3 };
+	static constexpr u32 QUAD_INDICES[6] = { 0, 1, 2, 2, 3, 0 };
 	template<typename I> struct Idx { I i[6]; };
+	template<typename V> struct Vert { V v[4]; };
 
 	v2f32 vertices[4];
 	u32 indices[6];
@@ -94,13 +96,22 @@ struct QuadGeo {
 		}};
 	}
 
+	template<typename V> static Vert<V> make_vertices(reg_polytope<V> rect) {
+		return { .v = {
+			rect.min,
+			V(rect.max.x, rect.min.y),
+			rect.max,
+			V(rect.min.x, rect.max.y)
+		}};
+	}
+
 	static QuadGeo create(rtf32 rect, u32 starting_index = 0) {
 		return {
 			.vertices = {
 				rect.min,
 				v2f32(rect.max.x, rect.min.y),
-				v2f32(rect.min.x, rect.max.y),
-				rect.max
+				rect.max,
+				v2f32(rect.min.x, rect.max.y)
 			},
 			.indices = {
 				starting_index + QUAD_INDICES[0],

@@ -10,6 +10,7 @@
 #include <time.cpp>
 #include <transform.cpp>
 #include <physics_2d.cpp>
+#include <physics_2d_debug.cpp>
 #include <blblstd.hpp>
 #include <math.cpp>
 #include <animation.cpp>
@@ -360,6 +361,7 @@ struct RefactorScene {
 		}
 		auto [scratch, scope] = scratch_push_scope(1llu << 24); defer{ scratch_pop_scope(scratch, scope); };
 
+
 		auto colliders = map(scratch, larray(test.entities),
 			[](auto& ent) -> Physics2D::Collider { return {
 				.transform = ent.space.transform,
@@ -378,7 +380,7 @@ struct RefactorScene {
 				(colliders[i].layers & colliders[j].layers) && //* On the same layers
 				collide(colliders[i].aabb, colliders[j].aabb)//* AABBs overlaps
 				) {
-				narrows.push({ .colliders = { &colliders[i], &colliders[j] } });
+				narrows.push({ .colliders = { i, j } });
 			}
 		}
 		narrows.shrink_to_content(scratch);
@@ -386,20 +388,29 @@ struct RefactorScene {
 		auto manifolds = List{ scratch.push_array<Physics2D::Manifold>(narrows.current), 0 };
 		for (auto& [col] : narrows.used()) {
 			auto [collided, contact] = intersect_convex(
-				*col[0]->shape, *col[1]->shape,
-				col[0]->transform, col[1]->transform,
+				*colliders[col[0]].shape, *colliders[col[1]].shape,
+				colliders[col[0]].transform, colliders[col[1]].transform,
 				0.f
 			);
 			if (collided)
-				manifolds.push({ .bodies = { col[0]->body_id, col[1]->body_id }, .ctc = contact });
+				manifolds.push({ .bodies = { colliders[col[0]].body_id, colliders[col[1]].body_id }, .ctc = contact });
 		}
 		manifolds.shrink_to_content(scratch);
 
+		Physics2D::Debug::Batch debug_batch;
 		if (debug) {
+			Physics2D::Debug::debug_config.draw_edit("Physics debug config");
+
 			ImGui::Begin("Physics"); defer{ ImGui::End(); };
 			EditorWidget("Colliders", colliders);
 			EditorWidget("Narrow tests", narrows.used());
 			EditorWidget("Manifolds", manifolds.used());
+
+			debug_batch = Physics2D::Debug::Batch::create(&scratch, colliders.size() + narrows.current);
+			for (auto& col : colliders)
+				debug_batch.push_collider(col, v4f32(1, 1, 0, 1));
+			for (auto& [cld] : narrows.used())
+				debug_batch.push_aabb(cld[0]->aabb & cld[1]->aabb, Physics2D::Debug::AABB_INTERSECTION);
 		}
 
 		//* accumulate
@@ -408,31 +419,31 @@ struct RefactorScene {
 			for (auto& ent : test.entities)
 				batch.push_entity(ent.space.transform, ent.color, test.mesh_index, carray(&ent.sprite, 1));
 		}
-		{//* ui
-			auto batch = UI::Batch::start(scratch, 1024, 1024 * 1024, {
-				.canvas_projection = OrthoCamera{
-					.dimensions = v3f32(cam.target.dimensions, 100),
-					// .center = v3f32(0)
-					.center = v3f32(-v2f32(cam.target.dimensions) / 2.f, 0)
-				},
-				.alpha_discard = 0.1f,
-				.padding = {}
-				}); defer{ gfx.ui_rd.apply_batch(batch); };
+		// {//* ui
+		// 	auto batch = UI::Batch::start(scratch, 1024, 1024 * 1024, {
+		// 		.canvas_projection = OrthoCamera{
+		// 			.dimensions = v3f32(cam.target.dimensions, 100),
+		// 			// .center = v3f32(0)
+		// 			.center = v3f32(-v2f32(cam.target.dimensions) / 2.f, 0)
+		// 		},
+		// 		.alpha_discard = 0.1f,
+		// 		.padding = {}
+		// 		}); defer{ gfx.ui_rd.apply_batch(batch); };
 
-				static rtf32 rect = { v2f32(100, 100), v2f32(500, 500) };
-				static Text::Style style = {
-					.color = v4f32(1, 1, 1, 1),
-					.scale = 1,
-					.linespace = 1,
-					.axis = Text::Axis::H
-				};
-				static char text_buffer[1024] = "test hello world";
-				ImGui::Begin("Test text"); defer{ ImGui::End(); };
-				ImGui::InputTextMultiline("Text", text_buffer, IM_ARRAYSIZE(text_buffer));
-				EditorWidget("Rect", rect);
-				EditorWidget("Style", style);
-				batch.push_text(text_buffer, rect, 0, gfx.font, style);
-		}
+		// 		static rtf32 rect = { v2f32(100, 100), v2f32(500, 500) };
+		// 		static Text::Style style = {
+		// 			.color = v4f32(1, 1, 1, 1),
+		// 			.scale = 1,
+		// 			.linespace = 1,
+		// 			.axis = Text::Axis::H
+		// 		};
+		// 		static char text_buffer[1024] = "test hello world";
+		// 		ImGui::Begin("Test text"); defer{ ImGui::End(); };
+		// 		ImGui::InputTextMultiline("Text", text_buffer, IM_ARRAYSIZE(text_buffer));
+		// 		EditorWidget("Rect", rect);
+		// 		EditorWidget("Style", style);
+		// 		batch.push_text(text_buffer, rect, 0, gfx.font, style);
+		// }
 
 		//* submit draws
 		auto drawn = start_render_pass(render_target_pass(cam.target, flex_viewport(cam.target.dimensions, cam.proj.dimensions, FLEX_CONTAINED))); {
@@ -443,16 +454,18 @@ struct RefactorScene {
 				.alpha_discard = 0.01f,
 				.padding = {}
 				}));
-			render_cmd(gfx.draw_tilemap(scratch, gfx.tm_rd,
-				Tilemap::Scene{
-					.view_projection = vp,
-					.parallax_pov = cam.space.transform.translation,
-					.alpha_discard = 0.1f,
-					.padding = {}
-				},
-				gfx.sprite_atlas.texture.id
-			));
-			render_cmd(gfx.draw_ui(scratch, gfx.ui_rd));
+			// render_cmd(gfx.draw_tilemap(scratch, gfx.tm_rd,
+			// 	Tilemap::Scene{
+			// 		.view_projection = vp,
+			// 		.parallax_pov = cam.space.transform.translation,
+			// 		.alpha_discard = 0.1f,
+			// 		.padding = {}
+			// 	},
+			// 	gfx.sprite_atlas.texture.id
+			// ));
+			if (debug)
+				render_cmd(Physics2D::Debug::render(scratch, debug_batch, vp));
+			// render_cmd(gfx.draw_ui(scratch, gfx.ui_rd));
 		}
 		return { drawn, cam.target };
 	}

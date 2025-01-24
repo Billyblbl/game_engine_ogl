@@ -57,7 +57,7 @@ namespace Physics2D {
 		u32 layers;
 	};
 
-	struct NarrowTest { Collider* colliders[2]; };//? pointers or indices ? we already started using those for bodies
+	struct NarrowTest { u32 colliders[2]; };//? pointers or indices ? we already started using those for bodies
 
 	struct Contact {
 		v2f32 penetration;
@@ -76,13 +76,28 @@ namespace Physics2D {
 		return flags;
 	}
 
-	Segment<v2f32> support_fat_point_cloud(Polygon vertices, const m3x3f32& matrix, f32 radius, v2f32 direction) {
+	inline v2f32 support_circle(v2f32 center, f32 radius, v2f32 normalized_direction) {
+		return (normalized_direction * radius) + center;
+	}
+
+	v2f32 support_transformed_circle(const m3x3f32& transform, v2f32 center, f32 radius, v2f32 norm_dir) {
+		v2f32 local_dir = transpose(transform) * v3f32(norm_dir, 0);
+		v2f32 local_point = normalize(local_dir) * radius;
+		assert(!glm::any(isnan(local_point)));
+		return transform * v3f32(local_point + center, 1);
+	}
+
+	Segment<v2f32> support_circle_cloud(Polygon vertices, const m3x3f32& transform, f32 radius, v2f32 norm_dir) {
 		PROFILE_SCOPE(__PRETTY_FUNCTION__);
 		using namespace glm;
 		auto [scratch, scope] = scratch_push_scope(sizeof(f32) * vertices.size() * 3); defer{ scratch_pop_scope(scratch, scope); };
-		auto dir = normalize(direction);
-		auto world_verts = map(scratch, vertices, [&](v2f32 v) -> v2f32 { return matrix * v3f32(v + dir * radius, 1); });
-		auto dots = map(scratch, world_verts, [=](v2f32 v) { return dot(v, dir); });
+
+		v2f32 local_dir = transpose(transform) * v3f32(norm_dir, 0);
+		v2f32 local_offset = normalize(local_dir) * radius;
+		assert(!glm::any(isnan(local_offset)));
+		auto support_verts = map(scratch, vertices, [&](v2f32 v) -> v2f32 { return transform * v3f32(local_offset + v, 1); });
+		auto dots = map(scratch, support_verts, [=](v2f32 v) { return dot(v, norm_dir); });
+
 		//*iA is best support, iB is either 2nd best support or iA
 		i64 iA = best_fit_search(dots, fit_highest<f32>);
 		if (iA < 0)
@@ -97,7 +112,9 @@ namespace Physics2D {
 		else if (iBboffset < 0 && iBa >= 0) iB = iBa;
 		else if (dots[iBa] > dots[iBb]) iB = iBa;
 		else iB = iBb;
-		return { world_verts[iA], world_verts[iB] };
+		assert(!glm::any(isnan(support_verts[iA])));
+		assert(!glm::any(isnan(support_verts[iB])));
+		return { support_verts[iA], support_verts[iB] };
 	}
 
 	template<typename F> concept support_function = requires(const F & f, v2f32 direction) { { f(direction) } -> std::same_as<Segment<v2f32>>; };
@@ -107,25 +124,25 @@ namespace Physics2D {
 		return [&shape, transform](v2f32 direction) -> Segment<v2f32> {
 			PROFILE_SCOPE(__PRETTY_FUNCTION__);
 			switch (shape.type) {
-			case Convex::POLYGON: return support_fat_point_cloud(shape.poly, transform, shape.radius, direction);
+			case Convex::POLYGON: return support_circle_cloud(shape.poly, transform, shape.radius, direction);
 				// case Convex::RECT: ;//TODO IMPLEMENT
-			case Convex::CAPSULE: return support_fat_point_cloud(larray(shape.foci), transform, shape.radius, direction);
+			case Convex::CAPSULE: return support_circle_cloud(larray(shape.foci), transform, shape.radius, direction);
 				// case Convex::ELLIPSE: ;//TODO IMPLEMENT
-			case Convex::CIRCLE: return support_fat_point_cloud(carray(&shape.center, 1), transform, shape.radius, direction);
+			case Convex::CIRCLE: return support_circle_cloud(carray(&shape.center, 1), transform, shape.radius, direction);
 			default: return { v2f32(0), v2f32(0) };
 			}
-			};
+		};
 	}
 
 	rtf32 aabb_convex(const Convex& shape, const m3x3f32& transform) {
 		PROFILE_SCOPE(__PRETTY_FUNCTION__);
-		auto bottom = support_function_of(shape, transform)(v2f32(0, -1)).A;
-		auto top = support_function_of(shape, transform)(v2f32(0, 1)).A;
-		auto left = support_function_of(shape, transform)(v2f32(-1, 0)).A;
-		auto right = support_function_of(shape, transform)(v2f32(1, 0)).A;
+		auto b = support_function_of(shape, transform)(v2f32(+0, -1)).A.y;
+		auto t = support_function_of(shape, transform)(v2f32(+0, +1)).A.y;
+		auto l = support_function_of(shape, transform)(v2f32(-1, +0)).A.x;
+		auto r = support_function_of(shape, transform)(v2f32(+1, +0)).A.x;
 		return {
-			.min = v2f32(left.x, bottom.y),
-			.max = v2f32(right.x, top.y),
+			.min = v2f32(l, b),
+			.max = v2f32(r, t),
 		};
 	}
 
@@ -154,13 +171,14 @@ namespace Physics2D {
 		auto O = v2f32(0);//*origin
 
 		for (auto i = 0; i < 999;i++) {//* inf loop safeguard TODO replace with configurable iteration limit
+			assert(!glm::any(isnan(direction)));
 			auto new_point = minkowski_diff_support(f1, f2, direction);
 			if (dot(new_point, direction) <= 0) //* Did we pass the origin to find A, return early otherwise
 				return no_collision;
 			triangle.push(new_point);
 
 			if (triangle.current == 1) { //* first point case
-				direction = O - triangle[0];
+				direction = normalize(O - triangle[0]);
 			} else if (triangle.current == 2) { //* first line case
 				auto [B, A] = to_tuple<2>(triangle.used());
 				auto AB = B - A;
@@ -230,7 +248,10 @@ namespace Physics2D {
 				auto seg = Segment{ points[i], points[j] };
 				auto normal = normalize(orthogonal_axis(direction(seg)));//* can be wrong way, using abs(ori_to_seg) & *sign(ori_to_seg) avoids problems from this
 				auto ori_to_seg = dot(normal, seg.B);
-				if (abs(ori_to_seg) < closest_seg.distance_to_origin)
+
+				if (abs(ori_to_seg) < precision_threshold)
+					return seg.B;
+				else if (abs(ori_to_seg) < closest_seg.distance_to_origin)
 					closest_seg = { abs(ori_to_seg), normal * sign(ori_to_seg), j };
 			}
 
@@ -282,7 +303,7 @@ namespace Physics2D {
 		if (!collided)
 			return { false, Contact{} };
 
-		auto penetration = EPA(f1, f2, triangle, 16, 0.0001);
+		auto penetration = EPA(f1, f2, triangle, 16, 0.01f);
 
 		if (length(penetration) <= penetration_tolerance)
 			return { false, Contact{} };
@@ -357,12 +378,10 @@ namespace Physics2D {
 				.rotation = degrees(cross(v3f32(contact.levers[1], 0), v3f32(+weighted_impulse, 0)).z * ents[1].props.inverse_inertia)
 			}
 		};
-
 	}
-
 }
 
-#include <imgui_extension.cpp>
+// #include <imgui_extension.cpp>
 
 bool EditorWidget(const cstr label, Physics2D::Properties& props) {
 	bool changed = false;
@@ -530,15 +549,15 @@ bool EditorWidget(const cstr label, Physics2D::Manifold& man) {
 // 		return {};
 
 // 	struct BodyCache {
-// 		m3x3f32 matrix;
+// 		m3x3f32 transform;
 // 		rtf32 aabb;
 // 		Array<rtf32> trees_aabb;
 // 		Array<Array<Shape2D>> flattened;
 // 		static BodyCache cache(Arena& arena, RigidBody& rb) {
 // 			BodyCache c;
-// 			c.matrix = rb.spacial->transform;
-// 			c.trees_aabb = map(arena, rb.shapes, [&](const Shape2D& shape) -> rtf32 { return aabb_transformed_rect(shape.aabb, c.matrix); });
-// 			c.aabb = aabb_shape_group(rb.shapes, c.matrix);
+// 			c.transform = rb.spacial->transform;
+// 			c.trees_aabb = map(arena, rb.shapes, [&](const Shape2D& shape) -> rtf32 { return aabb_transformed_rect(shape.aabb, c.transform); });
+// 			c.aabb = aabb_shape_group(rb.shapes, c.transform);
 // 			c.flattened = map(arena, rb.shapes, [&](const Shape2D&) -> Array<Shape2D> { return {}; });
 // 			return c;
 // 		}
@@ -575,9 +594,9 @@ bool EditorWidget(const cstr label, Physics2D::Manifold& man) {
 // 				PROFILE_SCOPE("Intersect Flattened Nodes");
 // 				auto& flati = cache_shape_tree(ie, is)[in];
 // 				auto& flatj = cache_shape_tree(je, js)[jn];
-// 				if (collide(aabb_transformed_rect(flati.aabb, cache[ie].matrix), aabb_transformed_rect(flatj.aabb, cache[je].matrix))) {
+// 				if (collide(aabb_transformed_rect(flati.aabb, cache[ie].transform), aabb_transformed_rect(flatj.aabb, cache[je].transform))) {
 // 					intersection_cache[jn + in * intersections[1]] = true;
-// 					if (auto [collided, contact] = intersect_convex(flati, flatj, cache[ie].matrix, cache[je].matrix, penetration_tolerance); collided)
+// 					if (auto [collided, contact] = intersect_convex(flati, flatj, cache[ie].transform, cache[je].transform, penetration_tolerance); collided)
 // 						contacts.push(contact);
 // 				} else for (auto im : u64xrange{ in, in + flati.size }) for (auto jm : u64xrange{ jn, jn + flatj.size }) {
 // 					intersection_cache[jm + im * intersections[1]] = true;

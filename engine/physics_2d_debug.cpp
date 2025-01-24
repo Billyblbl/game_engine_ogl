@@ -33,6 +33,34 @@ namespace Physics2D {
 			SHAPE
 		};//! hijacks DrawCommandVertex.base_instance during batch construction, replaced when passing the batch to the renderer for transmission to GPU buffer
 
+		constexpr static u32 DEBUG_CIRCLE_SEGMENTS = 32;
+
+		static struct {
+			bool supports_scan = false;
+			bool aabb = true;
+			u32 circle_segments = DEBUG_CIRCLE_SEGMENTS;
+			u32 scan_segments = DEBUG_CIRCLE_SEGMENTS * 4;
+			v4f32 scan_color = v4f32(1, 0, 1, 1);
+			v4f32 aabb_intersection = v4f32(0, 1, 0, 1);
+			v4f32 collider_aabb = v4f32(1, 0, 0, 1);
+
+			bool draw_edit(const cstr label) {
+				auto changed = false;
+				ImGui::Begin(label); defer{ ImGui::End(); };
+				changed |= ImGui::Checkbox("AABB", &aabb);
+				changed |= ImGui::Checkbox("Supports Scan", &supports_scan);
+				changed |= ImGui::InputInt("Circle Segments", (i32*)&circle_segments);
+				circle_segments = glm::clamp((i32)circle_segments, 3, 256);
+				changed |= ImGui::InputInt("Scan Segments", (i32*)&scan_segments);
+				scan_segments = glm::clamp((i32)scan_segments, 3, 256);
+				changed |= ImGui::ColorEdit4("Scan Color", &scan_color[0]);
+				changed |= ImGui::ColorEdit4("AABB Intersection", &aabb_intersection[0]);
+				changed |= ImGui::ColorEdit4("Collider AABB", &collider_aabb[0]);
+				return changed;
+			}
+
+		} debug_config;
+
 		struct Batch {
 			Arena* arena;
 			u32 total_instances;
@@ -66,21 +94,19 @@ namespace Physics2D {
 			}
 
 			u32 write_capsule(v2f32 foci[2], f32 radius) {
-				auto index = write_circle(foci[0], radius);
-				write_circle(foci[1], radius);
+				auto index = write_circle(foci[0], radius, debug_config.circle_segments);
+				write_circle(foci[1], radius, debug_config.circle_segments);
 				write_polygon(carray(foci, 2));
 				//TODO replace middle line with sides
 				return index;
 			}
 
 			u32 write_ellipse(v2f32 foci[2], f32 radius) {
-				auto index = write_circle(foci[0], radius);
-				write_circle(foci[1], radius);
+				auto index = write_circle(foci[0], radius, debug_config.circle_segments);
+				write_circle(foci[1], radius, debug_config.circle_segments);
 				return index;
 				//TODO implement
 			}
-
-			constexpr static u32 DEBUG_CIRCLE_SEGMENTS = 32;
 
 			u32 write_circle(v2f32 center, f32 radius, u32 segments = DEBUG_CIRCLE_SEGMENTS) {
 				v2f32 v[segments];
@@ -89,29 +115,32 @@ namespace Physics2D {
 				return write_polygon(carray(v, segments));
 			}
 
-			u32 register_shape(Convex* shape, u32 expected_count = 1) {
+			u32 push_content(Convex* shape, num_range<u32> vertex_range, List<Instance> instances_slot = {}) {
 				auto index = shapes.current;
-				auto start_vertex = vertices.current;
-				switch (shape->type) {
-				case Convex::POLYGON: write_polygon(shape->poly); break;
-				case Convex::CIRCLE: write_circle(shape->center, shape->radius); break;
-				case Convex::RECT: write_rect(shape->rect); break;
-				case Convex::CAPSULE: write_capsule(shape->foci, shape->radius); break;
-				case Convex::ELLIPSE: write_ellipse(shape->foci, shape->radius); break;
-				default: return index;
-				}
-				auto vertex_count = vertices.current - start_vertex;
 				shapes.push_growing(*arena, shape);
 				commands.push_growing(*arena,
 					DrawCommandVertex{
-						.count = GLuint(vertex_count),
+						.count = GLuint(vertex_range.size()),
 						.instance_count = 0,
-						.first_vertex = GLuint(start_vertex),
+						.first_vertex = GLuint(vertex_range.min),
 						.base_instance = SHAPE
 					}
 				);
-				instances.push_growing(*arena, List{ arena->push_array<Instance>(expected_count), 0 });
+				instances.push_growing(*arena, instances_slot);
 				return index;
+			}
+
+			u32 register_shape(Convex* shape, u32 expected_count = 1) {
+				auto start_vertex = vertices.current;
+				switch (shape->type) {
+					case Convex::POLYGON: write_polygon(shape->poly); break;
+					case Convex::CIRCLE: write_circle(shape->center, shape->radius); break;
+					case Convex::RECT: write_rect(shape->rect); break;
+					case Convex::CAPSULE: write_capsule(shape->foci, shape->radius); break;
+					case Convex::ELLIPSE: write_ellipse(shape->foci, shape->radius); break;
+					default: return shapes.current;
+				}
+				return push_content(shape, num_range<u32>{ u32(start_vertex), u32(vertices.current) }, List { arena->push_array<Instance>(expected_count), 0 });
 			}
 
 			u32 cache_get_shape(Convex* shape) {
@@ -123,7 +152,10 @@ namespace Physics2D {
 
 			u32 push_collider(const Collider& collider, v4f32 color) {
 				assert(collider.shape);
-				push_aabb(collider.aabb);
+				if (debug_config.aabb)
+					push_aabb(collider.aabb);
+				if (debug_config.supports_scan)
+					push_supports_scan(support_function_of(*collider.shape, collider.transform), debug_config.scan_color, debug_config.scan_segments);
 				auto shape_index = cache_get_shape(collider.shape);
 				auto instance_index = instances[shape_index].current;
 				instances[shape_index].push_growing(*arena, Instance::create(collider.transform, color));
@@ -135,18 +167,30 @@ namespace Physics2D {
 			u32 push_aabb(rtf32 aabb, InstanceID id = COLLIDER_AABB) {
 				auto start_vertex = vertices.current;
 				write_rect(aabb);
-				shapes.push_growing(*arena, nullptr);
-				commands.push_growing(*arena,
-					DrawCommandVertex{
-						.count = 4,
-						.instance_count = 1,
-						.first_vertex = GLuint(start_vertex),
-						.base_instance = id
-					}
-				);
-				instances.push_growing(*arena, { {}, 0 });
+				auto index = push_content(null, { u32(start_vertex), u32(vertices.current) }, { {}, 0 });
+				commands[index].instance_count += 1;
+				commands[index].base_instance = id;
 				total_instances += 1;
 				return 0;
+			}
+
+			template<support_function F> u32 push_supports_scan(const F& f, v4f32 color = v4f32(1, 0, 1, 1), u32 segments = DEBUG_CIRCLE_SEGMENTS * 4) {
+				v2f32 v[segments * 2];
+				for (u32 i = 0; i < segments; i++) {
+					auto seg = f(glm::normalize(v2f32(
+						cosf(2 * glm::pi<f32>() / segments * i),
+						sinf(2 * glm::pi<f32>() / segments * i)
+					)));
+					v[i * 2 + 0] = seg.A;
+					v[i * 2 + 1] = seg.B;
+				}
+				auto start_vertex = vertices.current;
+				write_polygon(carray(v, segments * 2));
+				auto shape_idx = push_content(null, num_range<u32>{ u32(start_vertex), u32(vertices.current) }, List { arena->push_array<Instance>(1), 0 });
+				instances[shape_idx].push_growing(*arena, Instance::create(m3x3f32(1), color));
+				commands[shape_idx].instance_count += 1;
+				total_instances += 1;
+				return shape_idx;
 			}
 
 		};
@@ -163,8 +207,8 @@ namespace Physics2D {
 				vertices.push_as(batch.vertices.used());
 				{
 					auto mapping = List{ instances.map_as<Instance>({0, batch.total_instances + 2}) , 0 }; defer{ instances.unmap_as<Instance>({0, mapping.current}); };
-					mapping.push(ColliderAABB);
-					mapping.push(AABBIntersection);
+					mapping.push(Instance::create(m3x3f32(1), debug_config.collider_aabb));
+					mapping.push(Instance::create(m3x3f32(1), debug_config.aabb_intersection));
 					for (usize i = 0; i < batch.commands.current; i++) switch (batch.commands[i].base_instance) {
 						case COLLIDER_AABB: batch.commands[i].base_instance = 0; break;
 						case AABB_INTERSECTION: batch.commands[i].base_instance = 1; break;

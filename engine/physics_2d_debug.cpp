@@ -43,19 +43,22 @@ namespace Physics2D {
 			v4f32 scan_color = v4f32(1, 0, 1, 1);
 			v4f32 aabb_intersection = v4f32(0, 1, 0, 1);
 			v4f32 collider_aabb = v4f32(1, 0, 0, 1);
+			v4f32 supports = v4f32(0, 1, 1, 1);
 
 			bool draw_edit(const cstr label) {
 				auto changed = false;
-				ImGui::Begin(label); defer{ ImGui::End(); };
-				changed |= ImGui::Checkbox("AABB", &aabb);
-				changed |= ImGui::Checkbox("Supports Scan", &supports_scan);
-				changed |= ImGui::InputInt("Circle Segments", (i32*)&circle_segments);
-				circle_segments = glm::clamp((i32)circle_segments, 3, 256);
-				changed |= ImGui::InputInt("Scan Segments", (i32*)&scan_segments);
-				scan_segments = glm::clamp((i32)scan_segments, 3, 256);
-				changed |= ImGui::ColorEdit4("Scan Color", &scan_color[0]);
-				changed |= ImGui::ColorEdit4("AABB Intersection", &aabb_intersection[0]);
-				changed |= ImGui::ColorEdit4("Collider AABB", &collider_aabb[0]);
+				if (ImGui::Begin(label)) {
+					changed |= ImGui::Checkbox("AABB", &aabb);
+					changed |= ImGui::Checkbox("Supports Scan", &supports_scan);
+					changed |= ImGui::InputInt("Circle Segments", (i32*)&circle_segments);
+					circle_segments = glm::clamp((i32)circle_segments, 3, 256);
+					changed |= ImGui::InputInt("Scan Segments", (i32*)&scan_segments);
+					scan_segments = glm::clamp((i32)scan_segments, 3, 256);
+					changed |= ImGui::ColorEdit4("Scan Color", &scan_color[0]);
+					changed |= ImGui::ColorEdit4("AABB Intersection", &aabb_intersection[0]);
+					changed |= ImGui::ColorEdit4("Collider AABB", &collider_aabb[0]);
+					changed |= ImGui::ColorEdit4("supports color", &supports[0]);
+				} ImGui::End();
 				return changed;
 			}
 
@@ -186,6 +189,17 @@ namespace Physics2D {
 				}
 				auto start_vertex = vertices.current;
 				write_polygon(carray(v, segments * 2));
+				auto shape_idx = push_content(null, num_range<u32>{ u32(start_vertex), u32(vertices.current) }, List { arena->push_array<Instance>(1), 0 });
+				instances[shape_idx].push_growing(*arena, Instance::create(m3x3f32(1), color));
+				commands[shape_idx].instance_count += 1;
+				total_instances += 1;
+				return shape_idx;
+			}
+
+			u32 push_segment(v2f32 a, v2f32 b, v4f32 color = v4f32(1, 0, 1, 1)) {
+				v2f32 line[2] = { a, b };
+				auto start_vertex = vertices.current;
+				write_polygon(larray(line));
 				auto shape_idx = push_content(null, num_range<u32>{ u32(start_vertex), u32(vertices.current) }, List { arena->push_array<Instance>(1), 0 });
 				instances[shape_idx].push_growing(*arena, Instance::create(m3x3f32(1), color));
 				commands[shape_idx].instance_count += 1;

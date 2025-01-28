@@ -1,4 +1,4 @@
-- [x] Tilemap renderr
+- [x] Tilemap renderer
 - [x] Tilemap pipeline
-- [x] Tilemap rendering
+- [x] Tilemap rendering process
 - [x] Test

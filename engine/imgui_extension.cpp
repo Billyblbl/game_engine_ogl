@@ -243,20 +243,20 @@ inline bool EditorWidget(const cstr label, string data) {
 template <typename T, typename U = int> struct has_name : std::false_type {};
 template <typename T> struct has_name<T, decltype((void)T::name, 0)> : std::true_type {};
 
-template<typename T> inline bool EditorWidget(const cstr label, Array<T> data, bool foldable = true) {
+template<typename T> inline bool EditorWidgetArray(const cstr label, Array<T> data, auto widget, bool foldable = true) {
 	bool changed = false;
 	if (!foldable || ImGui::TreeNode(label)) {
 		for (u32 i = 0; i < data.size(); i++) {
 			if constexpr (has_name<T>::value) {
 				string name = data[i].name;
 				ImGui::PushID(i);
-				changed |= EditorWidget((const cstrp)name.data(), data[i]);
+				changed |= widget(name.data(), data[i]);
 				ImGui::PopID();
 			} else {
 				char label_buff[32];
-				snprintf(label_buff, 32, "%u", i);
+				snprintf(label_buff, 32, "[%u]", i);
 				ImGui::PushID(i);
-				changed |= EditorWidget((const cstrp)label_buff, data[i]);
+				changed |= widget(label_buff, data[i]);
 				ImGui::PopID();
 			}
 		}
@@ -270,11 +270,11 @@ inline bool EditorWidget(const cstr label, Array<char> data) {
 	return ImGui::InputText(label, data.data(), data.size());
 }
 
-template<typename T> inline bool EditorWidget(const cstr label, T* data) {
+template<typename T> inline bool EditorWidgetPtr(const cstr label, T* data, auto widget) {
 	auto buff_size = snprintf(nullptr, 0, "%s : %p", label, data);
 	char buffer[buff_size + 1];
 	snprintf(buffer, buff_size, "%s : %p", label, data);
-	return EditorWidget(buffer, *data);
+	return widget(buffer, *data);
 }
 
 #endif

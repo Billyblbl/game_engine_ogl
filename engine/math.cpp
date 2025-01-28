@@ -87,6 +87,7 @@ template<typename P> struct reg_polytope {
 	inline Segment<P> diagonal() const { return { min, max }; }
 	bool contain(P p) const { return glm::all(glm::lessThanEqual(p, max)) && glm::all(glm::lessThanEqual(min, p)); }
 	P size() const { return max - min; }
+	P center() const { return (min + max) / 2.f; }
 };
 
 template<typename P> reg_polytope<P> bounds(Segment<P> s) {
@@ -209,6 +210,8 @@ using tsi8 = reg_polytope<v4i8>;
 using tsi16 = reg_polytope<v4i16>;
 using tsi32 = reg_polytope<v4i32>;
 using tsi64 = reg_polytope<v4i64>;
+
+template<typename T> auto pow2(T x) { return x * x; }
 
 template<typename V> struct grid_iterator {
 	V dimensions;

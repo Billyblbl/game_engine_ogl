@@ -1,6 +1,6 @@
-- [ ] Narrow phase detection
-- [ ] Debug renderer
-- [ ] Physical response
+- [x] Narrow phase detection
+- [x] Debug renderer
+- [x] Physical response
 - [ ] Broad phase aabb tree
 	- [ ] make broad phase data structs based on narrow's input
 - [ ] Broad phase tilemap sample

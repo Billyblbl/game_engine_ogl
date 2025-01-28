@@ -14,6 +14,14 @@ namespace Physics2D {
 
 	constexpr f32 GRAVITY = 9.807f;
 
+	union Momentum {
+		v3f32 vec = v3f32(0);
+		struct {
+			v2f32 velocity;
+			f32 angular_velocity;
+		};
+	};
+
 	union Properties {
 		v4f32 vec = v4f32(0);
 		struct {
@@ -22,6 +30,12 @@ namespace Physics2D {
 			f32 restitution;
 			f32 friction;
 		};
+	};
+
+	struct Body {
+		v2f32 center_mass;
+		Momentum momentum;
+		Properties props;
 	};
 
 	struct Convex {
@@ -35,20 +49,6 @@ namespace Physics2D {
 		};
 	};
 
-	enum Flags : u32 {
-		DETECT = 0,
-		PHYSICAL = 1 << 0,
-		LINEAR = 1 << 1,
-		ANGULAR = 1 << 2,
-		ELASTIC = 1 << 3,
-		FRICTION = 1 << 4
-	};
-
-	struct RigidBody {
-		Spacial2D* spacial;
-		Properties props;
-	};
-
 	struct Collider {
 		m3x3f32 transform;
 		rtf32 aabb;
@@ -57,24 +57,18 @@ namespace Physics2D {
 		u32 layers;
 	};
 
-	struct NarrowTest { u32 colliders[2]; };//? pointers or indices ? we already started using those for bodies
+	struct NarrowTest { u32 ids[2]; };
 
 	struct Contact {
 		v2f32 penetration;
-		v2f32 levers[2];
-		f32 surface;
+		Segment<v2f32> supports[2];
+		rtf32 aabb;
 	};
 
 	struct Manifold {
-		u32 bodies[2];
+		NarrowTest src;
 		Contact ctc;
 	};
-
-	u32 collision_flags(Properties p, u32 flags = PHYSICAL) {
- 		if ((flags & PHYSICAL)) for (int i = 0; i < 4; i++) if (p.vec[i] > 0)
-			flags |= (PHYSICAL << (i + 1));
-		return flags;
-	}
 
 	inline v2f32 support_circle(v2f32 center, f32 radius, v2f32 normalized_direction) {
 		return (normalized_direction * radius) + center;
@@ -131,6 +125,13 @@ namespace Physics2D {
 			case Convex::CIRCLE: return support_circle_cloud(carray(&shape.center, 1), transform, shape.radius, direction);
 			default: return { v2f32(0), v2f32(0) };
 			}
+			};
+	}
+
+	rtf32 aabb_segment(const Segment<v2f32>& segment) {
+		return {
+			.min = glm::min(segment.A, segment.B),
+			.max = glm::max(segment.A, segment.B),
 		};
 	}
 
@@ -159,7 +160,8 @@ namespace Physics2D {
 	template<support_function F1, support_function F2> inline tuple<bool, Triangle> GJK(
 		const F1& f1,
 		const F2& f2,
-		v2f32 start_direction = glm::normalize(v2f32(1))
+		v2f32 start_direction = glm::normalize(v2f32(1)),
+		i32 max_iterations = 999
 	) {
 		using namespace glm;
 		constexpr tuple<bool, Triangle> no_collision = { false, Triangle{} };
@@ -170,7 +172,7 @@ namespace Physics2D {
 		auto direction = start_direction;
 		auto O = v2f32(0);//*origin
 
-		for (auto i = 0; i < 999;i++) {//* inf loop safeguard TODO replace with configurable iteration limit
+		for (auto i = 0; i < max_iterations; i++) {
 			assert(!glm::any(isnan(direction)));
 			auto new_point = minkowski_diff_support(f1, f2, direction);
 			if (dot(new_point, direction) <= 0) //* Did we pass the origin to find A, return early otherwise
@@ -183,7 +185,7 @@ namespace Physics2D {
 				auto [B, A] = to_tuple<2>(triangle.used());
 				auto AB = B - A;
 				auto AO = O - A;
-				auto ABperp_axis = v2f32(-AB.y, AB.x);
+				auto ABperp_axis = orthogonal_axis(AB);
 				if (dot(AO, ABperp_axis) == 0) {//* origin is on AB
 					triangle.push(v2f32(0));
 					return { true, Triangle::from_array(triangle.used()) };
@@ -195,8 +197,8 @@ namespace Physics2D {
 				auto AB = B - A;
 				auto AC = C - A;
 				auto AO = O - A;
-				auto ABperp_axis = v2f32(-AB.y, AB.x);
-				auto ACperp_axis = v2f32(-AC.y, AC.x);
+				auto ABperp_axis = orthogonal_axis(AB);
+				auto ACperp_axis = orthogonal_axis(AC);
 				if (dot(AO, ABperp_axis) == 0) //* origin is on AB
 					return { true, Triangle::from_array(triangle.used()) };
 				if (dot(AO, ACperp_axis) == 0) //* origin is on AC
@@ -235,24 +237,39 @@ namespace Physics2D {
 		points.push(larray(triangle.vertices));
 
 		auto best_point_index = 0;
-		for (auto iteration : u64xrange{ 0, max_iteration }) {
-			(void)iteration;
+		while (max_iteration-- > 0) {
+			auto O = average(points.used());
 			struct {
 				f32 distance_to_origin = std::numeric_limits<f32>::max();
 				v2f32 normal = v2f32(0);
-				u64 index = 0;
+				u64 pindex = 0;
 			} closest_seg;
 
 			for (auto i : u64xrange{ 0, points.current }) {//* find edge closest to origin
 				auto j = (i + 1) % points.current;
 				auto seg = Segment{ points[i], points[j] };
-				auto normal = normalize(orthogonal_axis(direction(seg)));//* can be wrong way, using abs(ori_to_seg) & *sign(ori_to_seg) avoids problems from this
-				auto ori_to_seg = dot(normal, seg.B);
+				auto OA = seg.A - O;
+				auto normal_axis = orthogonal_axis(direction(seg));
+				auto side = sign(dot(normal_axis, OA));
+				if (side == 0) {//* handle flat triangle
+						closest_seg = {
+							0,
+							normalize(normal_axis),
+							j//* using j so that the inserted point will be between i and j
+						};
+				} else {
+					v2f32 normal = normalize(side * normal_axis);
+					assert(!glm::any(glm::isnan(normal)));
+					auto dist_to_ori = abs(dot(normal, seg.A));
 
-				if (abs(ori_to_seg) < precision_threshold)
-					return seg.B;
-				else if (abs(ori_to_seg) < closest_seg.distance_to_origin)
-					closest_seg = { abs(ori_to_seg), normal * sign(ori_to_seg), j };
+					if (dist_to_ori < closest_seg.distance_to_origin) {
+						closest_seg = {
+							dist_to_ori,
+							normal,
+							j//* using j so that the inserted point will be between i and j
+						};
+					}
+				}
 			}
 
 			auto support_point = minkowski_diff_support(f1, f2, closest_seg.normal);
@@ -261,7 +278,7 @@ namespace Physics2D {
 			if (error <= precision_threshold) //* new point is close enough
 				return closest_seg.normal * closest_seg.distance_to_origin;
 			else
-				points.insert_ordered(best_point_index = closest_seg.index, support_point);
+				points.insert_ordered(best_point_index = closest_seg.pindex, support_point);//* slow af, might want to replace array list ? but we need ordered specifically for indexed access, so linked list would be slow too (unless maybe if we use ptr instead of index, replace (i, j) with (node, node->next))
 		}
 		return points[best_point_index];
 	}
@@ -270,34 +287,11 @@ namespace Physics2D {
 		return glm::cross(v3f32(a, 0), v3f32(b, 0)).z;
 	}
 
-	inline v2f32 contact_point(Segment<v2f32> supports[2]) {
-		PROFILE_SCOPE(__PRETTY_FUNCTION__);
-		v2f32 v[] = { direction(supports[0]), direction(supports[1]) };
-		auto cr = cross_2(v[0], v[1]);
-		if (cr == 0) {//* parallel -> has to overlap in our case, meaning the center of the intersection of their AABB is the middle of the intersection segments (since its one of its 2 diagonals)
-			auto b = intersect(bounds(supports[0]), bounds(supports[1]));
-			auto i = (b.min + b.max) / 2.f;
-			return i;
-		} else { //* https://www.youtube.com/watch?v=5FkOO1Wwb8w&ab_channel=EngineerNick
-			auto v01A = direction(Segment{ supports[0].A, supports[1].A });//* AC
-			auto t1 = +cross_2(v01A, v[1]) / cr;
-			auto t2 = -cross_2(v01A, v[0]) / cr;
-			auto i1 = supports[0].A + v[0] * t1;
-			if (!glm::any(isnan(i1))) return i1;
-			auto i2 = supports[1].A + v[1] * t2;
-			if (!glm::any(isnan(i2))) return i2;
-			return (assert(false), v2f32(0));
-		}
-	}
-
-	tuple<bool, Contact> intersect_convex(
-		const Convex& shape1, const Convex& shape2,
-		const m3x3f32& transform1, const m3x3f32& transform2,
+	template<support_function F1, support_function F2> tuple<bool, Contact> intersect_convex(
+		F1 f1, F2 f2,
 		f32 penetration_tolerance = 0
 	) {
 		PROFILE_SCOPE(__PRETTY_FUNCTION__);
-		auto f1 = support_function_of(shape1, transform1);
-		auto f2 = support_function_of(shape2, transform2);
 		auto [collided, triangle] = GJK(f1, f2);
 
 		if (!collided)
@@ -305,36 +299,30 @@ namespace Physics2D {
 
 		auto penetration = EPA(f1, f2, triangle, 16, 0.01f);
 
-		if (length(penetration) <= penetration_tolerance)
+		if (length2(penetration) <= penetration_tolerance)
 			return { false, Contact{} };
 
-		auto offset_t1 = translate(transform1, v2f32(-penetration));
 		auto contact_dir = v2f32(normalize(v2f64(penetration)));
-		Segment<v2f32> supports[] = {
-			support_function_of(shape1, offset_t1)(contact_dir),
-			support_function_of(shape2, transform2)(contact_dir)
-		};
-		auto point = contact_point(supports);
 
-		return { collided, {
+		Contact ctc = {
 			.penetration = penetration,
-			.levers = {
-				point - v2f32(offset_t1 * v3f32(0, 0, 1)),
-				point - v2f32(transform2 * v3f32(0, 0, 1))
-			},
-			.surface = 0
-		} };
+			.supports = { f1(+contact_dir), f2(-contact_dir) },
+			.aabb = {}
+		};
+		ctc.aabb = aabb_segment(ctc.supports[0]) & aabb_segment(ctc.supports[1]);
+		return { collided, ctc };
 	}
 
-	v2f32 velocity_at_point(const Transform2D& velocity, v2f32 point) {
-		return velocity.translation + orthogonal(point) * glm::radians(velocity.rotation);
+	v2f32 velocity_at_point(const Momentum& momentum, v2f32 point) {
+		return momentum.velocity + orthogonal(point) * glm::radians(momentum.angular_velocity);
 	}
 
 	// //* linear + angular momentum deltas -> https://www.youtube.com/watch?v=VbvdoLQQUPs&ab_channel=Two-BitCoding
 	// //* static friction taken from : https://gamedevelopment.tutsplus.com/how-to-create-a-custom-2d-physics-engine-friction-scene-and-jump-table--gamedev-7756t
 	// //* heavily modified since first written from these videos
-	tuple<Transform2D, Transform2D> contact_response(
-		RigidBody ents[2],
+	tuple<Momentum, Momentum> contact_response(
+		const Body& body0,
+		const Body& body1,
 		const Contact& contact,
 		f32 elasticity,
 		f32 kinetic_friction,
@@ -342,46 +330,72 @@ namespace Physics2D {
 	) {
 		PROFILE_SCOPE(__PRETTY_FUNCTION__);
 		using namespace glm;
+		auto c = contact.aabb.center();
+		v2f32 levers[] = { c - body0.center_mass, c - body1.center_mass };
+
+		auto contact_relative_vel = velocity_at_point(body1.momentum, levers[1]) - velocity_at_point(body0.momentum, levers[0]);
+
 		auto normal = length2(contact.penetration) > 0 ? normalize(contact.penetration) : v2f32(0);
-		auto contact_relative_vel = velocity_at_point(ents[1].spacial->velocity, contact.levers[1]) - velocity_at_point(ents[0].spacial->velocity, contact.levers[0]);
 		auto tangent = orthogonal_axis(normal) * sign(dot(orthogonal_axis(normal), contact_relative_vel));
 
+		if (dot(contact_relative_vel, normal) > 0)
+			return { {}, {} };
+
 		auto cancel = [](v2f32 v, v2f32 d)->f32 { return length(d) > 0 && length(v) > 0 ? -dot(v, d) : 0; };
-		f32 normal_impulse = max(0.f, cancel(contact_relative_vel, normal));
-		f32 friction_impulse = cancel(contact_relative_vel, tangent);
+		f32 normal_energy = max(0.f, cancel(contact_relative_vel, normal));
+		f32 friction_energy = cancel(contact_relative_vel, tangent);
 
-		auto overcome_static = abs(friction_impulse) > abs(normal_impulse * static_friction);
-
+		auto overcome_static = abs(friction_energy) > abs(normal_energy * static_friction);
 		v2f32 impulse =
-			normal * (1.f + elasticity) * normal_impulse + //* contact elastic bounce
-			tangent * (overcome_static ? kinetic_friction : 1.f) * friction_impulse; //* static friction resistance | kinetic friction dragging
+			normal * (1.f + elasticity) * normal_energy + //* contact elastic bounce
+			tangent * (overcome_static ? kinetic_friction : 1.f) * friction_energy; //* static friction resistance | kinetic friction dragging
 
 		if (length2(impulse) == 0)
-			return {};
+			return { {},{} };
 
-		auto pow2 = [](f32 x) -> f32 { return x * x; };
-		auto attenuation = f32(ents[0].props.inverse_mass + ents[1].props.inverse_mass +
-			pow2(dot(orthogonal_axis(contact.levers[0]), normalize(impulse))) * ents[0].props.inverse_inertia +
-			pow2(dot(orthogonal_axis(contact.levers[1]), normalize(impulse))) * ents[1].props.inverse_inertia);
-		assert(!isnan(attenuation));
-		auto weighted_impulse = impulse / attenuation;
+		auto impulse_dir = normalize(impulse);
 
+		auto mass_attenuation = body0.props.inverse_mass + body1.props.inverse_mass;
+		auto angular_attenuation =
+			pow2(dot(orthogonal_axis(levers[0]), impulse_dir)) * body0.props.inverse_inertia +
+			pow2(dot(orthogonal_axis(levers[1]), impulse_dir)) * body1.props.inverse_inertia;
+		auto accel_impulse = impulse / (mass_attenuation + angular_attenuation);
+
+		assert(!glm::any(isnan(accel_impulse)));
 		return {
 			{
-				.translation = -weighted_impulse * ents[0].props.inverse_mass,
-				.scale = v2f32(0),
-				.rotation = degrees(cross(v3f32(contact.levers[0], 0), v3f32(-weighted_impulse, 0)).z * ents[0].props.inverse_inertia)
+				.velocity = -accel_impulse * body0.props.inverse_mass,
+				.angular_velocity = degrees(cross(v3f32(levers[0], 0), v3f32(-accel_impulse, 0)).z * body0.props.inverse_inertia)
 			},
 			{
-				.translation = +weighted_impulse * ents[1].props.inverse_mass,
-				.scale = v2f32(0),
-				.rotation = degrees(cross(v3f32(contact.levers[1], 0), v3f32(+weighted_impulse, 0)).z * ents[1].props.inverse_inertia)
+				.velocity = +accel_impulse * body1.props.inverse_mass,
+				.angular_velocity = degrees(cross(v3f32(levers[1], 0), v3f32(+accel_impulse, 0)).z * body1.props.inverse_inertia)
 			}
+		};
+	}
+
+	tuple<v2f32, v2f32> contact_correction(v2f32 penetration, f32 inverse_mass[2]) {
+		PROFILE_SCOPE(__PRETTY_FUNCTION__);
+		auto total_inv_mass = inverse_mass[0] + inverse_mass[1];
+		return {
+			penetration * -inv_lerp(0.f, total_inv_mass, inverse_mass[0]),
+			penetration * +inv_lerp(0.f, total_inv_mass, inverse_mass[1])
 		};
 	}
 }
 
+#pragma region Editor
+
 // #include <imgui_extension.cpp>
+bool EditorWidget(const cstr label, Physics2D::Momentum& props) {
+	bool changed = false;
+	if (ImGui::TreeNode(label)) {
+		defer{ ImGui::TreePop(); };
+		changed |= EditorWidget("Velocity", props.velocity);
+		changed |= EditorWidget("Angular Velocity", props.angular_velocity);
+	}
+	return changed;
+}
 
 bool EditorWidget(const cstr label, Physics2D::Properties& props) {
 	bool changed = false;
@@ -408,8 +422,8 @@ bool EditorWidget(const cstr label, Physics2D::Contact& ctc) {
 	if (ImGui::TreeNode(label)) {
 		defer{ ImGui::TreePop(); };
 		changed |= EditorWidget("penetration", ctc.penetration);
-		changed |= EditorWidget("levers", larray(ctc.levers));
-		changed |= EditorWidget("surface", ctc.surface);
+		changed |= EditorWidgetArray("supports", larray(ctc.supports), [](auto l, auto e) { return EditorWidget(l, e);});
+		changed |= EditorWidget("aabb", ctc.aabb);
 	}
 	return changed;
 }
@@ -421,16 +435,18 @@ bool EditorWidget(const cstr label, Physics2D::Convex& cvx) {
 		const cstrp types[] = { "NONE", "POLYGON", "RECT", "CAPSULE", "ELLIPSE", "CIRCLE" };
 		i32 t = cvx.type;
 		changed |= ImGui::Combo("type", &t, types, array_size(types));
-		if (changed)
+		if (changed) {
 			cvx.type = Physics2D::Convex::Type(t);
+			cvx.poly = {};
+		}
 		changed |= EditorWidget("radius", cvx.radius);
 		switch (cvx.type) {
 		case Physics2D::Convex::POLYGON: changed |= EditorWidget("polygon", cvx.poly); break;
 		case Physics2D::Convex::RECT: changed |= EditorWidget("rect", cvx.rect); break;
-		case Physics2D::Convex::CAPSULE: changed |= EditorWidget("foci", larray(cvx.foci)); break;
-		case Physics2D::Convex::ELLIPSE: changed |= EditorWidget("foci", larray(cvx.foci)); break;
+		case Physics2D::Convex::CAPSULE: changed |= EditorWidgetArray("foci", larray(cvx.foci), [](auto l, auto& e) { return EditorWidget(l, e); }); break;
+		case Physics2D::Convex::ELLIPSE: changed |= EditorWidgetArray("foci", larray(cvx.foci), [](auto l, auto& e) { return EditorWidget(l, e); }); break;
 		case Physics2D::Convex::CIRCLE: changed |= EditorWidget("center", cvx.center); break;
-		default: panic();
+		default: break;
 		}
 	}
 	return changed;
@@ -442,7 +458,7 @@ bool EditorWidget(const cstr label, Physics2D::Collider& col) {
 		defer{ ImGui::TreePop(); };
 		changed |= EditorWidget("transform", col.transform);
 		changed |= EditorWidget("aabb", col.aabb);
-		changed |= EditorWidget("shape", col.shape);
+		changed |= EditorWidgetPtr("shape", col.shape, [](auto l, auto& e) { return EditorWidget(l, e); });
 		changed |= EditorWidget("body_id", col.body_id);
 		changed |= EditorWidget("layers", col.layers);
 	}
@@ -450,18 +466,20 @@ bool EditorWidget(const cstr label, Physics2D::Collider& col) {
 }
 
 bool EditorWidget(const cstr label, Physics2D::NarrowTest& test) {
-	return EditorWidget(label, larray(test.colliders));
+	return EditorWidgetArray(label, larray(test.ids), [](const cstr label, auto& c) { return EditorWidget(label, c); });
 }
 
 bool EditorWidget(const cstr label, Physics2D::Manifold& man) {
 	bool changed = false;
 	if (ImGui::TreeNode(label)) {
 		defer{ ImGui::TreePop(); };
-		changed |= EditorWidget("bodies", larray(man.bodies));
 		changed |= EditorWidget("contact", man.ctc);
+		changed |= EditorWidget("colliders", man.src);
 	}
 	return changed;
 }
+
+#pragma endregion Editor
 
 #pragma region OLD
 

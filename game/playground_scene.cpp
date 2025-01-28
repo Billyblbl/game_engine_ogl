@@ -201,6 +201,8 @@ struct RefactorScene {
 			v4f32 color;
 			// Physics2D::RigidBody body;
 			Physics2D::Convex* shape;
+			Physics2D::Momentum momentum;
+			Physics2D::Properties props;
 		} entities[3];
 		u32 mesh_index;
 	} test;
@@ -277,7 +279,7 @@ struct RefactorScene {
 				.radius = 1,
 				.center = { 0, 0 },
 			}
-		});
+			});
 
 		scene.test = {
 			.shapes = shapes,
@@ -294,7 +296,9 @@ struct RefactorScene {
 					},
 					.sprite = { v2u32(0), v2u32(1) },
 					.color = v4f32(1, 0, 0, 1),
-					.shape = &shapes[0]
+					.shape = &shapes[0],
+					.momentum = {.vec = v3f32(0) },
+					.props = {.vec = v4f32(1, 1, 1, 1) },
 				},
 				{
 					.space = {
@@ -309,6 +313,8 @@ struct RefactorScene {
 					.sprite = { v2u32(0), v2u32(1) },
 					.color = v4f32(0, 1, 0, 1),
 					.shape = &shapes[0],
+					.momentum = {.vec = v3f32(0) },
+					.props = {.vec = v4f32(1, 1, 1, 1) },
 				},
 				{
 					.space = {
@@ -323,6 +329,8 @@ struct RefactorScene {
 					.sprite = { v2u32(0), v2u32(1) },
 					.color = v4f32(0, 0, 1, 1),
 					.shape = &shapes[0],
+					.momentum = {.vec = v3f32(0) },
+					.props = {.vec = v4f32(1, 1, 1, 1) },
 				}
 			},
 			.mesh_index = mesh_index
@@ -335,7 +343,6 @@ struct RefactorScene {
 		PROFILE_SCOPE(__PRETTY_FUNCTION__);
 		if (debug) {
 			if (ImGui::Begin("Test")) {
-				defer{ ImGui::End(); };
 				EditorWidget("Tilemap", gfx.level);
 				for (u32 i = 0; auto & ent : test.entities) {
 					ImGui::PushID(i); defer{ ImGui::PopID(); };
@@ -343,11 +350,12 @@ struct RefactorScene {
 					ImGui::Indent(); defer{ ImGui::Unindent(); };
 					ImGui::BeginGroup(); defer{ ImGui::EndGroup(); };
 					EditorWidget("space", ent.space);
+					EditorWidget("momentum", ent.momentum);
 					EditorWidget("sprite", ent.sprite);
 					ImGui::ColorEdit4("color", glm::value_ptr(ent.color));
 				}
 				EditorWidget("mesh_index", test.mesh_index);
-			}
+			} ImGui::End();
 			if (ImGui::Begin("Misc")) {
 				EditorWidget("Clock", clock);
 				if (ImGui::TreeNode("Camera")) {
@@ -360,7 +368,24 @@ struct RefactorScene {
 			} ImGui::End();
 		}
 		auto [scratch, scope] = scratch_push_scope(1llu << 24); defer{ scratch_pop_scope(scratch, scope); };
+		update(clock);
 
+		for(auto& ent : test.entities) {
+			//* gravity to origin
+			ent.momentum.velocity += -ent.space.transform.translation * Physics2D::GRAVITY * clock.dt;
+
+			//* integrate
+			ent.space.transform.translation += ent.momentum.velocity * clock.dt;
+			ent.space.transform.rotation += ent.momentum.angular_velocity * clock.dt;
+		}
+
+		auto bodies = map(scratch, larray(test.entities),
+			[](auto& ent) -> Physics2D::Body { return {
+				.center_mass = ent.space.transform.translation,
+				.momentum = ent.momentum,
+				.props = ent.props
+			}; }
+		);
 
 		auto colliders = map(scratch, larray(test.entities),
 			[](auto& ent) -> Physics2D::Collider { return {
@@ -371,6 +396,9 @@ struct RefactorScene {
 				.layers = 1
 			}; }
 		);
+		colliders[0].body_id = 0;
+		colliders[1].body_id = 1;
+		colliders[2].body_id = 2;
 
 		//TODO proper broad phase
 		auto narrows = List{ scratch.push_array<Physics2D::NarrowTest>(colliders.size() * colliders.size()), 0 };
@@ -380,37 +408,88 @@ struct RefactorScene {
 				(colliders[i].layers & colliders[j].layers) && //* On the same layers
 				collide(colliders[i].aabb, colliders[j].aabb)//* AABBs overlaps
 				) {
-				narrows.push({ .colliders = { i, j } });
+				narrows.push({ .ids = { i, j } });
 			}
 		}
 		narrows.shrink_to_content(scratch);
 
 		auto manifolds = List{ scratch.push_array<Physics2D::Manifold>(narrows.current), 0 };
-		for (auto& [col] : narrows.used()) {
-			auto [collided, contact] = intersect_convex(
-				*colliders[col[0]].shape, *colliders[col[1]].shape,
-				colliders[col[0]].transform, colliders[col[1]].transform,
+
+		struct {
+			Physics2D::Momentum momentum;
+			v2f32 correction;
+		} deltas[3];
+
+		// Physics2D::Momentum deltas[3];
+		memset(deltas, 0, sizeof(deltas));
+
+		for (auto& col : narrows.used()) {
+			auto [collided, contact] = Physics2D::intersect_convex(
+				support_function_of(*colliders[col.ids[0]].shape, colliders[col.ids[0]].transform),
+				support_function_of(*colliders[col.ids[1]].shape, colliders[col.ids[1]].transform),
 				0.f
 			);
-			if (collided)
-				manifolds.push({ .bodies = { colliders[col[0]].body_id, colliders[col[1]].body_id }, .ctc = contact });
+			if (collided) {
+				manifolds.push({
+					.src = col,
+					.ctc = contact
+				});
+
+				//TODO check if physical collision
+				//TODO somehow distribute energy changes, currently every contact gets a response with full momentum from initial state
+
+				auto& body0 = bodies[colliders[col.ids[0]].body_id];
+				auto& body1 = bodies[colliders[col.ids[1]].body_id];
+
+				auto [d0, d1] = Physics2D::contact_response(body0, body1, contact,
+					min(body0.props.restitution, body1.props.restitution),
+					average({body0.props.friction, body1.props.friction}) * clock.dt,
+					body0.props.friction * body1.props.friction
+				);
+
+				f32 inv_mass[] = { body0.props.inverse_mass, body1.props.inverse_mass };
+				auto [c0, c1] = Physics2D::contact_correction(contact.penetration, inv_mass);
+
+				deltas[colliders[col.ids[0]].body_id].momentum.vec += d0.vec;
+				deltas[colliders[col.ids[0]].body_id].correction += c0;
+
+				deltas[colliders[col.ids[1]].body_id].momentum.vec += d1.vec;
+				deltas[colliders[col.ids[1]].body_id].correction += c1;
+			}
 		}
 		manifolds.shrink_to_content(scratch);
+		for (u32 i = 0; i < bodies.size(); i++) {
+			test.entities[i].momentum.vec += deltas[i].momentum.vec;
+			test.entities[i].space.transform.translation += deltas[i].correction;
+		}
+
 
 		Physics2D::Debug::Batch debug_batch;
 		if (debug) {
 			Physics2D::Debug::debug_config.draw_edit("Physics debug config");
 
-			ImGui::Begin("Physics"); defer{ ImGui::End(); };
-			EditorWidget("Colliders", colliders);
-			EditorWidget("Narrow tests", narrows.used());
-			EditorWidget("Manifolds", manifolds.used());
+			if (ImGui::Begin("Physics")) {
+				EditorWidgetArray("Colliders", colliders, [](auto l, auto e) { return EditorWidget(l, e); });
+				EditorWidgetArray("Narrow tests", narrows.used(), [](auto l, auto e) { return EditorWidget(l, e); });
+				EditorWidgetArray("Manifolds", manifolds.used(), [](auto l, auto e) { return EditorWidget(l, e); });
+			} ImGui::End();
 
 			debug_batch = Physics2D::Debug::Batch::create(&scratch, colliders.size() + narrows.current);
 			for (auto& col : colliders)
 				debug_batch.push_collider(col, v4f32(1, 1, 0, 1));
-			for (auto& [cld] : narrows.used())
-				debug_batch.push_aabb(cld[0]->aabb & cld[1]->aabb, Physics2D::Debug::AABB_INTERSECTION);
+			// for (auto& [cld] : narrows.used())
+			// 	debug_batch.push_aabb(colliders[cld[0]].aabb & colliders[cld[1]].aabb, Physics2D::Debug::AABB_INTERSECTION);
+			for (auto& man : manifolds.used()) {
+				debug_batch.push_aabb(man.ctc.aabb, Physics2D::Debug::AABB_INTERSECTION);
+
+				debug_batch.push_segment(man.ctc.supports[0].A, man.ctc.supports[0].B, Physics2D::Debug::debug_config.supports);
+				debug_batch.push_segment(man.ctc.supports[1].A, man.ctc.supports[1].B, Physics2D::Debug::debug_config.supports);
+
+				debug_batch.push_segment(man.ctc.supports[0].A, man.ctc.supports[0].A - man.ctc.penetration, Physics2D::Debug::debug_config.supports);
+				debug_batch.push_segment(man.ctc.supports[0].B, man.ctc.supports[0].B - man.ctc.penetration, Physics2D::Debug::debug_config.supports);
+				debug_batch.push_segment(man.ctc.supports[1].A, man.ctc.supports[1].A + man.ctc.penetration, Physics2D::Debug::debug_config.supports);
+				debug_batch.push_segment(man.ctc.supports[1].B, man.ctc.supports[1].B + man.ctc.penetration, Physics2D::Debug::debug_config.supports);
+			}
 		}
 
 		//* accumulate

@@ -1,9 +1,13 @@
 - [x] Narrow phase detection
 - [x] Debug renderer
 - [x] Physical response
-- [ ] Broad phase aabb tree
-	- [ ] make broad phase data structs based on narrow's input
+- [ ] ~~Broad phase aabb tree~~
+	- just keep the dumb O(n²) version for live entities, return to broad phase strategies only when needed (at that point should have a better idea of the project's needs)
+- [x] Finish implementing shape types (support functions)
+- [x] Amalgamate update data batch
+- [ ] Tileset shapes
 - [ ] Broad phase tilemap sample
+- [ ] Actor fields
 - [x] decouple & make a version of shape dedicated to narrow
 	- shape is always convex for narrow
 	- simpler shape, only goal is to make a support function

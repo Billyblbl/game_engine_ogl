@@ -104,13 +104,6 @@ namespace Physics2D {
 				return index;
 			}
 
-			u32 write_ellipse(v2f32 foci[2], f32 radius) {
-				auto index = write_circle(foci[0], radius, debug_config.circle_segments);
-				write_circle(foci[1], radius, debug_config.circle_segments);
-				return index;
-				//TODO implement
-			}
-
 			u32 write_circle(v2f32 center, f32 radius, u32 segments = DEBUG_CIRCLE_SEGMENTS) {
 				v2f32 v[segments];
 				for (u32 i = 0; i < segments; i++)
@@ -140,8 +133,7 @@ namespace Physics2D {
 					case Convex::CIRCLE: write_circle(shape->center, shape->radius); break;
 					case Convex::RECT: write_rect(shape->rect); break;
 					case Convex::CAPSULE: write_capsule(shape->foci, shape->radius); break;
-					case Convex::ELLIPSE: write_ellipse(shape->foci, shape->radius); break;
-					default: return shapes.current;
+					case Convex::SEGMENT: write_polygon(carray(&shape->segment.A, 2)); break;
 				}
 				return push_content(shape, num_range<u32>{ u32(start_vertex), u32(vertices.current) }, List { arena->push_array<Instance>(expected_count), 0 });
 			}
@@ -205,6 +197,23 @@ namespace Physics2D {
 				commands[shape_idx].instance_count += 1;
 				total_instances += 1;
 				return shape_idx;
+			}
+
+			void push_sim_step(const SimStep& step) {
+				for (auto& col : step.colliders.used())
+					push_collider(col, v4f32(1, 1, 0, 1));
+				for (auto& [cld] : step.tests.used())
+					push_aabb(step.colliders[cld[0]].aabb & step.colliders[cld[1]].aabb, AABB_INTERSECTION);
+			}
+
+			void push_manifold(const Manifold& man) {
+				push_aabb(man.ctc.aabb, AABB_INTERSECTION);
+				push_segment(man.ctc.supports[0].A, man.ctc.supports[0].B, debug_config.supports);
+				push_segment(man.ctc.supports[1].A, man.ctc.supports[1].B, debug_config.supports);
+				push_segment(man.ctc.supports[0].A, man.ctc.supports[0].A - man.ctc.penetration, debug_config.supports);
+				push_segment(man.ctc.supports[0].B, man.ctc.supports[0].B - man.ctc.penetration, debug_config.supports);
+				push_segment(man.ctc.supports[1].A, man.ctc.supports[1].A + man.ctc.penetration, debug_config.supports);
+				push_segment(man.ctc.supports[1].B, man.ctc.supports[1].B + man.ctc.penetration, debug_config.supports);
 			}
 
 		};

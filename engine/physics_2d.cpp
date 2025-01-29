@@ -39,13 +39,15 @@ namespace Physics2D {
 	};
 
 	struct Convex {
-		enum Type : u32 { NONE, POLYGON, RECT, CAPSULE, ELLIPSE, CIRCLE } type;
+		enum Type : u32 { POLYGON, RECT, CAPSULE, CIRCLE, SEGMENT } type;
+		static constexpr cstrp types[] = { "POLYGON", "RECT", "CAPSULE", "CIRCLE", "SEGMENT" };
 		f32 radius;
 		union {
 			Polygon poly;
 			rtf32 rect;
 			v2f32 foci[2];
 			v2f32 center;
+			Segment<v2f32> segment;
 		};
 	};
 
@@ -119,11 +121,13 @@ namespace Physics2D {
 			PROFILE_SCOPE(__PRETTY_FUNCTION__);
 			switch (shape.type) {
 			case Convex::POLYGON: return support_circle_cloud(shape.poly, transform, shape.radius, direction);
-				// case Convex::RECT: ;//TODO IMPLEMENT
+			case Convex::RECT: {
+				auto [v] = QuadGeo::make_vertices<v2f32>(shape.rect);
+				return support_circle_cloud(larray(v), transform, shape.radius, direction);
+			}
 			case Convex::CAPSULE: return support_circle_cloud(larray(shape.foci), transform, shape.radius, direction);
-				// case Convex::ELLIPSE: ;//TODO IMPLEMENT
 			case Convex::CIRCLE: return support_circle_cloud(carray(&shape.center, 1), transform, shape.radius, direction);
-			default: return { v2f32(0), v2f32(0) };
+			case Convex::SEGMENT: return support_circle_cloud(carray(&shape.segment.A, 2), transform, shape.radius, direction);
 			}
 			};
 	}
@@ -252,11 +256,11 @@ namespace Physics2D {
 				auto normal_axis = orthogonal_axis(direction(seg));
 				auto side = sign(dot(normal_axis, OA));
 				if (side == 0) {//* handle flat triangle
-						closest_seg = {
-							0,
-							normalize(normal_axis),
-							j//* using j so that the inserted point will be between i and j
-						};
+					closest_seg = {
+						0,
+						normalize(normal_axis),
+						j//* using j so that the inserted point will be between i and j
+					};
 				} else {
 					v2f32 normal = normalize(side * normal_axis);
 					assert(!glm::any(glm::isnan(normal)));
@@ -320,7 +324,7 @@ namespace Physics2D {
 	// //* linear + angular momentum deltas -> https://www.youtube.com/watch?v=VbvdoLQQUPs&ab_channel=Two-BitCoding
 	// //* static friction taken from : https://gamedevelopment.tutsplus.com/how-to-create-a-custom-2d-physics-engine-friction-scene-and-jump-table--gamedev-7756t
 	// //* heavily modified since first written from these videos
-	tuple<Momentum, Momentum> contact_response(
+	Pair<Momentum> contact_response(
 		const Body& body0,
 		const Body& body1,
 		const Contact& contact,
@@ -339,7 +343,7 @@ namespace Physics2D {
 		auto tangent = orthogonal_axis(normal) * sign(dot(orthogonal_axis(normal), contact_relative_vel));
 
 		if (dot(contact_relative_vel, normal) > 0)
-			return { {}, {} };
+			return {};
 
 		auto cancel = [](v2f32 v, v2f32 d)->f32 { return length(d) > 0 && length(v) > 0 ? -dot(v, d) : 0; };
 		f32 normal_energy = max(0.f, cancel(contact_relative_vel, normal));
@@ -351,7 +355,7 @@ namespace Physics2D {
 			tangent * (overcome_static ? kinetic_friction : 1.f) * friction_energy; //* static friction resistance | kinetic friction dragging
 
 		if (length2(impulse) == 0)
-			return { {},{} };
+			return {};
 
 		auto impulse_dir = normalize(impulse);
 
@@ -362,7 +366,7 @@ namespace Physics2D {
 		auto accel_impulse = impulse / (mass_attenuation + angular_attenuation);
 
 		assert(!glm::any(isnan(accel_impulse)));
-		return {
+		return { {
 			{
 				.velocity = -accel_impulse * body0.props.inverse_mass,
 				.angular_velocity = degrees(cross(v3f32(levers[0], 0), v3f32(-accel_impulse, 0)).z * body0.props.inverse_inertia)
@@ -371,17 +375,118 @@ namespace Physics2D {
 				.velocity = +accel_impulse * body1.props.inverse_mass,
 				.angular_velocity = degrees(cross(v3f32(levers[1], 0), v3f32(+accel_impulse, 0)).z * body1.props.inverse_inertia)
 			}
-		};
+		} };
 	}
 
-	tuple<v2f32, v2f32> contact_correction(v2f32 penetration, f32 inverse_mass[2]) {
+	Pair<v2f32> contact_correction(v2f32 penetration, f32 inverse_mass[2]) {
 		PROFILE_SCOPE(__PRETTY_FUNCTION__);
 		auto total_inv_mass = inverse_mass[0] + inverse_mass[1];
-		return {
+		return { {
 			penetration * -inv_lerp(0.f, total_inv_mass, inverse_mass[0]),
 			penetration * +inv_lerp(0.f, total_inv_mass, inverse_mass[1])
-		};
+		} };
 	}
+
+	bool broad_phase_test(const Collider& a, const Collider& b) {
+		return
+			(a.body_id != b.body_id || a.body_id == 0 || b.body_id == 0) && //* Not the same body or nullbody
+			(a.layers & b.layers) && //* On the same layers
+			collide(a.aabb, b.aabb)//* AABBs overlaps
+			;
+	}
+
+	struct SimStep {
+		Arena* arena;
+		List<Body> bodies;
+		List<Collider> colliders;
+		List<NarrowTest> tests;
+		f32 dt;
+
+		static SimStep create(Arena& arena, f32 dt, u32 expected_bodies = 1024, u32 expected_colliders_per_bodies = 8) {
+			auto expected_colliders = expected_bodies * expected_colliders_per_bodies;
+			return {
+				.arena = &arena,
+				.bodies = List{ arena.push_array<Body>(expected_bodies), 0 },
+				.colliders = List{ arena.push_array<Collider>(expected_colliders), 0 },
+				.tests = List{ arena.push_array<NarrowTest>(expected_colliders * (expected_colliders - 1)), 0 },
+				.dt = dt
+			};
+		}
+
+		u32 push_body(const Body& body) { return bodies.push_idx(*arena, body); }
+		u32 push_collider(const Collider& col) { return colliders.push_idx(*arena, col); }
+		u32 push_test(NarrowTest test) { return tests.push_idx(*arena, test); }
+
+		Array<NarrowTest> broad_phase_naive(num_range<u32> range = {}) {
+			PROFILE_SCOPE(__PRETTY_FUNCTION__);
+			if (range.size() == 0)
+				range = { 0, u32(colliders.current) };
+			tests.grow(*arena, colliders.current * (colliders.current - 1));
+			for (u32 i = range.min; i < range.max; i++) for (u32 j = i + 1; j < range.max; j++) {
+				if (broad_phase_test(colliders[i], colliders[j]))
+					push_test({ .ids = { i, j } });
+			}
+			return tests.used();
+		}
+
+	};
+
+	struct Delta {
+		Momentum momentum;
+		v2f32 correction;
+		u32 body_id;
+	};
+
+	Array<Manifold> query_collisions(Arena& arena, const SimStep& step) {
+		PROFILE_SCOPE(__PRETTY_FUNCTION__);
+		auto manifolds = List{ arena.push_array<Manifold>(step.tests.current), 0 };
+		for (auto& col : step.tests.used()) {
+			auto [collided, contact] = Physics2D::intersect_convex(
+				support_function_of(*step.colliders[col.ids[0]].shape, step.colliders[col.ids[0]].transform),
+				support_function_of(*step.colliders[col.ids[1]].shape, step.colliders[col.ids[1]].transform),
+				0.f
+			);
+			if (collided) manifolds.push({
+				.src = col,
+				.ctc = contact
+			});
+		}
+		return manifolds.shrink_to_content(arena);
+	}
+
+	Array<Delta> solve_collisions(Arena& arena, const SimStep& step, Array<const Manifold> manifolds) {
+		PROFILE_SCOPE(__PRETTY_FUNCTION__);
+		//TODO somehow distribute energy changes, currently every contact gets a response with full momentum from initial state
+		i32 mapping[step.bodies.current];
+		memset(mapping, -1, step.bodies.current * sizeof(i32));
+
+		auto deltas = List{ arena.push_array<Delta>(step.bodies.current), 0 };
+		for (auto& [col, contact] : manifolds) {
+			u32 body_ids[] = { step.colliders[col.ids[0]].body_id, step.colliders[col.ids[1]].body_id };
+			auto [impulses] = Physics2D::contact_response(step.bodies[body_ids[0]], step.bodies[body_ids[1]], contact,
+				min(step.bodies[body_ids[0]].props.restitution, step.bodies[body_ids[1]].props.restitution),
+				average({step.bodies[body_ids[0]].props.friction, step.bodies[body_ids[1]].props.friction}) * step.dt,
+				step.bodies[body_ids[0]].props.friction * step.bodies[body_ids[1]].props.friction
+			);
+
+			f32 inv_mass[] = { step.bodies[body_ids[0]].props.inverse_mass, step.bodies[body_ids[1]].props.inverse_mass };
+			auto [corrections] = Physics2D::contact_correction(contact.penetration, inv_mass);
+
+			for (u32 i = 0; i < 2; i++) if (mapping[body_ids[i]] == -1) {
+				mapping[body_ids[i]] = deltas.current;
+				deltas.push({
+					.momentum = impulses[i],
+					.correction = corrections[i],
+					.body_id = body_ids[i]
+				});
+			} else {
+				deltas[mapping[body_ids[i]]].correction += corrections[i];
+				deltas[mapping[body_ids[i]]].momentum.vec += impulses[i].vec;
+			}
+		}
+		return deltas.shrink_to_content(arena);
+	}
+
 }
 
 #pragma region Editor
@@ -432,9 +537,8 @@ bool EditorWidget(const cstr label, Physics2D::Convex& cvx) {
 	bool changed = false;
 	if (ImGui::TreeNode(label)) {
 		defer{ ImGui::TreePop(); };
-		const cstrp types[] = { "NONE", "POLYGON", "RECT", "CAPSULE", "ELLIPSE", "CIRCLE" };
 		i32 t = cvx.type;
-		changed |= ImGui::Combo("type", &t, types, array_size(types));
+		changed |= ImGui::Combo("type", &t, Physics2D::Convex::types, array_size(Physics2D::Convex::types));
 		if (changed) {
 			cvx.type = Physics2D::Convex::Type(t);
 			cvx.poly = {};
@@ -444,8 +548,8 @@ bool EditorWidget(const cstr label, Physics2D::Convex& cvx) {
 		case Physics2D::Convex::POLYGON: changed |= EditorWidget("polygon", cvx.poly); break;
 		case Physics2D::Convex::RECT: changed |= EditorWidget("rect", cvx.rect); break;
 		case Physics2D::Convex::CAPSULE: changed |= EditorWidgetArray("foci", larray(cvx.foci), [](auto l, auto& e) { return EditorWidget(l, e); }); break;
-		case Physics2D::Convex::ELLIPSE: changed |= EditorWidgetArray("foci", larray(cvx.foci), [](auto l, auto& e) { return EditorWidget(l, e); }); break;
 		case Physics2D::Convex::CIRCLE: changed |= EditorWidget("center", cvx.center); break;
+		case Physics2D::Convex::SEGMENT: changed |= EditorWidget("segment", cvx.segment); break;
 		default: break;
 		}
 	}
@@ -475,6 +579,18 @@ bool EditorWidget(const cstr label, Physics2D::Manifold& man) {
 		defer{ ImGui::TreePop(); };
 		changed |= EditorWidget("contact", man.ctc);
 		changed |= EditorWidget("colliders", man.src);
+	}
+	return changed;
+}
+
+bool EditorWidget(const cstr label, Physics2D::SimStep& step) {
+	bool changed = false;
+	if (ImGui::TreeNode(label)) {
+		defer{ ImGui::TreePop(); };
+		changed |= EditorWidgetArray("bodies", step.bodies.used(), [](const cstr l, auto& c) { return EditorWidget(l, c); });
+		changed |= EditorWidgetArray("colliders", step.colliders.used(), [](const cstr l, auto& c) { return EditorWidget(l, c); });
+		changed |= EditorWidgetArray("narrow tests", step.tests.used(), [](const cstr l, auto& c) { return EditorWidget(l, c); });
+		changed |= EditorWidget("dt", step.dt);
 	}
 	return changed;
 }

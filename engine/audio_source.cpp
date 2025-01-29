@@ -6,6 +6,7 @@
 #include <math.cpp>
 #include <imgui_extension.cpp>
 #include <audio_buffer.cpp>
+#include <spall/profiling.cpp>
 
 bool EditorWidget(const cstr label, AL_SourceType& type) {
 	static const AL_SourceType types[] = { UNDETERMINED, STATIC, STREAMING };
@@ -116,8 +117,12 @@ struct AudioSource {
 	ALuint id;
 	AL_SourceState state;
 	u64 byte_offset;
-	template<AL_Property P> inline auto get() { return get_source_prop<prop_t<P>>(id, P); }
+	template<AL_Property P> inline auto get() {
+		PROFILE_SCOPE(__PRETTY_FUNCTION__);
+		return get_source_prop<prop_t<P>>(id, P);
+	}
 	template<AL_Property P> inline AudioSource set(prop_t<P> value) {
+		PROFILE_SCOPE(__PRETTY_FUNCTION__);
 		set_source_prop<prop_t<P>>(id, P, value);
 		cache_push();
 		return *this;

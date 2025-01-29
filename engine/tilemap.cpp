@@ -28,10 +28,10 @@ struct Tilemap {
 
 		static Type translate_type(tmx_layer_type type) {
 			switch (type) {
-			case L_LAYER: return LAYER;
 			case L_GROUP: return GROUP;
-			case L_OBJGR: return OBJECT;
+			case L_LAYER: return LAYER;
 			case L_IMAGE: return IMAGE;
+			case L_OBJGR: return OBJECT;
 			default: return TYPE_COUNT;
 			}
 		}

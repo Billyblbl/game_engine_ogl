@@ -30,3 +30,5 @@
 - [x] Decouple sprite mesh renderer from buffers
 	- Tilemap renderer seems to be in an approprotate state for this (pipeline | renderer | batch)
 - [ ] Investigate getting vertex format info directly from the attribute info in the shader
+- [ ] assert ambiguity
+- [ ] formalize "Batch Buffer Accumulator" interface thing, arena + a bunch of list, templated function taking member pointer to list, using arena for growing pushes

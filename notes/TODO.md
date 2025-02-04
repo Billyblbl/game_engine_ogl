@@ -7,7 +7,7 @@
 	- binding may be a perf issue
 		- alternatively using DSA to bind once (or on internal state changes) and never unbind
 			- could still allow double buffering by using 1 buffer using halves
-- [x] Tilemap renderer -> [[Tilemap rework]]
+- [ ] Tilemap renderer -> [[Tilemap rework]]
 	- [x] Command construction
 	- ~~Reuse modified spritemesh renderer instead ?~~
 - [x] Rework ui renderer
@@ -24,11 +24,19 @@
 - [ ] Trim application complexity
 - [ ] Sound perf
 	- profiler indicates pretty long processing, what is going on here ?
+- [ ] Make test environment
+	- [ ] environment tileset
+	- [ ] tilemap
+	- [ ] controllable camera
+	- [ ] play/pause/reset
 
 # Potential tech debt
 
 - [x] Decouple sprite mesh renderer from buffers
 	- Tilemap renderer seems to be in an approprotate state for this (pipeline | renderer | batch)
+
+- [ ] parallel array list data structure
+- [ ] linked buffers accumulator data structure
 - [ ] Investigate getting vertex format info directly from the attribute info in the shader
 - [ ] assert ambiguity
-- [ ] formalize "Batch Buffer Accumulator" interface thing, arena + a bunch of list, templated function taking member pointer to list, using arena for growing pushes
+- [ ] tilemap concerns are too scrambled together, rendering, physics, recursive structural stuff, entities ?

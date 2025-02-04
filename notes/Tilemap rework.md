@@ -2,3 +2,11 @@
 - [x] Tilemap pipeline
 - [x] Tilemap rendering process
 - [x] Test
+- [x] consolidate data into renderer
+	- [x] layer textures
+	- [x] albedo ?
+- [x] either remove tilemap as a struct or make it intermediary
+- [ ] physics
+	- [ ] devise physical layer selection scheme
+	- [x] extract collision shapes
+	- [ ] layer sample

@@ -8,143 +8,38 @@
 #include <tmx_module.h>
 #include <spall/profiling.cpp>
 
-rtu32 make_tile(rtu32 spritesheet, const tmx_tile* tile) {
-	if (!tile) return rtu32{};
-	auto pos = v2u32(tile->ul_x, tile->ul_y);
-	auto dims = v2u32(tile->tileset->tile_width, tile->tileset->tile_height);
-	return sub_rect(spritesheet, rtu32{ pos, pos + dims });
-}
+#include <physics_2d.cpp>
 
-struct Tilemap {
-	struct Node {
-		string name;
-		v2f32 offset;
-		v2f32 parallax_factor;
-		v4f32 tint;
-		f32 opacity;
-		enum Type : u32 { GROUP, LAYER, IMAGE, OBJECT, TYPE_COUNT } type;
-		u32 index;
-		Array<Node> children;
+namespace Tilemap {
 
-		static Type translate_type(tmx_layer_type type) {
-			switch (type) {
-			case L_GROUP: return GROUP;
-			case L_LAYER: return LAYER;
-			case L_IMAGE: return IMAGE;
-			case L_OBJGR: return OBJECT;
-			default: return TYPE_COUNT;
-			}
-		}
-	};
-
-	Atlas2D layer_atlas;
-	Array<rtu32> tiles;
-	Array<rtu32> layers;
-	Array<Node> nodes;
-	v2u32 dimensions;
-	v2u32 tile_pixels;
-
-	static Tilemap load(GLScope& ctx, Atlas2D& texture_atlas, const cstr path) {
+	static tmx_map* load_source(const cstr path) {
 		PROFILE_SCOPE(__PRETTY_FUNCTION__);
 		printf("Loading tilemap %s\n", path);
 		auto source = tmx_load(path);
-		if (!source) {
-			tmx_perror("Tilemap"); //TODO handle failed load
-			return {};
-		}
-		source->user_data.pointer = (void*)path;
-		return create(ctx, texture_atlas, *source);
+		if (!source)
+			tmx_perror("Tilemap");
+		else
+			source->user_data.pointer = (void*)path;
+		return source;
 	}
 
-	static Tilemap create(GLScope& ctx, Atlas2D& texture_atlas, const tmx_map& source) {
-		//* https://libtmx.readthedocs.io/en/latest/renderer-from-scratch.html
-		//TODO shared ressource access, like for spritesheets
-		PROFILE_SCOPE(__PRETTY_FUNCTION__);
-		auto [scratch, scope] = scratch_push_scope(1lu << 17, &ctx.arena); defer{ scratch_pop_scope(scratch, scope); };
-		string original_path = (char*)source.user_data.pointer;
-		auto slash = original_path.find_last_of('/');
-		string dir = slash != string::npos ? original_path.substr(0, slash) : ".";
-
-		//* Load tiles data
-		auto tilesets = List{ scratch.push_array<rtu32>(8), 0 };
-		for (auto& entry : traverse_by<tmx_tileset_list, &tmx_tileset_list::next>(source.ts_head)) {
-			entry.tileset->user_data.integer = tilesets.current;
-			tilesets.push_growing(scratch, texture_atlas.load(scratch.format("%.*s/%.*s",
-				i32(dir.size()), dir.data(),
-				strlen(entry.tileset->image->source), entry.tileset->image->source
-			)));
-		}
-		tilesets.shrink_to_content(scratch);
-		auto tiles = map(ctx.arena, carray(source.tiles, source.tilecount), [&](tmx_tile* tile) { return make_tile(tilesets[tile ? tile->tileset->user_data.integer : 0], tile); });
-
-		//* Load Tree
-		auto layer_count = [&](this const auto& recurse, tmx_layer* list) -> u64 {
-			u64 lcount = 0;
-			for (auto& layer : traverse_by<tmx_layer, &tmx_layer::next>(list)) if (layer.visible) {
-				if (layer.type == L_LAYER)
-					lcount++;
-				else if (layer.type == L_GROUP)
-					lcount += recurse(layer.content.group_head);
-			}
-			return lcount;
-			}(source.ly_head);
-		auto layer_atlas = Atlas2D::create(ctx, v2u32(source.width, source.height * layer_count), R32UI);
-		auto layers = List{ scratch.push_array<rtu32>(256), 0 };
-
-		auto nodes = [&](this const auto& recurse, tmx_layer* list) -> Array<Node> {
-			auto n = List{ ctx.arena.push_array<Node>(count<tmx_layer, &tmx_layer::next>(list)), 0 };
-			for (auto& layer : traverse_by<tmx_layer, &tmx_layer::next>(list)) if (layer.visible) {
-				union { u32 c_u32; v4u8 c_4u8; } color = { .c_u32 = layer.tintcolor };
-				Node node = {
-					.name = layer.name,
-					.offset = v2f32(layer.offsetx, layer.offsety) / v2f32(source.tile_width, source.tile_height),
-					.parallax_factor = v2f32(layer.parallaxx, layer.parallaxy),
-					.tint = v4f32(color.c_4u8.r, color.c_4u8.g, color.c_4u8.b, color.c_4u8.a) / 255.0f,
-					.opacity = f32(layer.opacity),
-					.type = Node::translate_type(layer.type),
-					.index = u32(layers.current),
-					.children = {},
-				};
-				switch (layer.type) {
-				case L_GROUP: node.children = recurse(layer.content.group_head); break;
-				case L_OBJGR: break; //TODO implement
-				case L_IMAGE: layers.push_growing(scratch, texture_atlas.load(scratch.format("%.*s/%.*s", i32(dir.size()), dir.data(), strlen(layer.content.image->source), layer.content.image->source))); break;
-				case L_LAYER: layers.push_growing(scratch, layer_atlas.push(make_image(carray(layer.content.gids, source.width * source.height), v2u32(source.width, source.height), 1))); break;
-				default: break;
-				}
-				n.push(node);
-			}
-			return n.used();
-			}(source.ly_head);
-
-		Tilemap map = {
-			.layer_atlas = layer_atlas,
-			.tiles = tiles,
-			.layers = ctx.arena.push_array(layers.used()),
-			.nodes = nodes,
-			.dimensions = v2u32(source.width, source.height),
-			.tile_pixels = v2u32(source.tile_width, source.tile_height),
-		};
-		map.describe();
-		return map;
+	static auto load_proc(const cstr path, auto proc) {
+		auto source = load_source(path); defer{ tmx_map_free(source); };
+		return proc(*source);
 	}
 
-	void describe() const {
-		printf("Tilemap:\n");
-		printf("%*sDimensions %ux%u\n", 2, "", dimensions.x, dimensions.y);
-		printf("%*sTile Size %ux%u\n", 2, "", tile_pixels.x, tile_pixels.y);
-		printf("%*sTiles %llu\n", 2, "", tiles.size());
-		printf("%*sLayers %llu\n", 2, "", layers.size());
-		printf("%*sNodes %llu\n", 2, "",
-			[&](this const auto& recurse, Array<Node> n) -> u64 {
-				u64 count = 0;
-				for (auto& node : n) {
-					count++;
-					if (node.type == Node::GROUP)
-						count += recurse(node.children);
-				}
-				return count;
-			}(nodes));
+	tmx_property* expect_property(tmx_properties* props, tmx_property_type type, const cstr name) {
+		auto prop = tmx_get_property(props, name);
+		return prop && prop->type == type ? prop : null;
+	}
+
+	Image get_layer_tiles(Arena& arena, const tmx_layer& layer, v2u32 dimensions, bool remove_flip_bits = true) {
+		auto content = carray(layer.content.gids, dimensions.x  * dimensions.y);
+		if (remove_flip_bits)
+			content = map(arena, content, [&](auto gid){ return gid & TMX_FLIP_BITS_REMOVAL; });
+		else
+			content = arena.push_array(content);
+		return make_image(content, dimensions, 1);
 	}
 
 	//* Rendering
@@ -168,9 +63,19 @@ struct Tilemap {
 		GPUBuffer quads;
 		GPUBuffer sprites;
 		GPUBuffer scene;
+		TexBuffer layers;
+		TexBuffer albedo;
 		VertexArray vao;
-		GLuint layers;
 	};
+
+	Array<tmx_tile*> get_tiles(const tmx_map& source) { return carray(source.tiles, source.tilecount); }
+
+	rtu32 make_tile(rtu32 spritesheet, const tmx_tile* tile) {
+		if (!tile) return rtu32{};
+		auto pos = v2u32(tile->ul_x, tile->ul_y);
+		auto dims = v2u32(tile->tileset->tile_width, tile->tileset->tile_height);
+		return sub_rect(spritesheet, rtu32{ pos, pos + dims });
+	}
 
 	struct Pipeline {
 		GLuint id;
@@ -206,48 +111,101 @@ struct Tilemap {
 			};
 		}
 
-		Renderer make_renderer(GLScope& ctx, const Tilemap& tm) {
+		Renderer make_renderer(GLScope& ctx, const tmx_map& source) {
 			PROFILE_SCOPE(__PRETTY_FUNCTION__);
-			v2f32 vertices[4 * tm.layers.size()];
-			u32 indices[6 * tm.layers.size()];
-			Quad quads[tm.layers.size()];
-			u32 quad_count = 0;
+			auto [scratch, scope] = scratch_push_scope(0, &ctx.arena); defer{ scratch_pop_scope(scratch, scope); };
+			string original_path = (char*)source.user_data.pointer;
+			auto slash = original_path.find_last_of('/');
+			string dir = slash != string::npos ? original_path.substr(0, slash) : ".";
+			auto make_rel_path = [dir](Arena& arena, string path) -> string { return arena.format("%.*s/%.*s",
+					i32(dir.size()), dir.data(),
+					i32(path.size()), path.data()
+			); };
+			auto dimensions = v2u32(source.width, source.height);
 
-			[&](this const auto& recurse, Array<const Tilemap::Node> nodes, v2f32 offset = v2f32(0)) -> void {
-				for (auto& node : nodes) {
-					auto local_offset = offset + node.offset;
-					if (node.type == Tilemap::Node::GROUP)
-						recurse(node.children, local_offset);
-					else if (node.type == Tilemap::Node::LAYER) {
-						auto rect = rtf32{ local_offset, local_offset + v2f32(tm.dimensions) };
-						auto [v, i] = QuadGeo::create(rect, 4 * quad_count);
-						copy(larray(v), carray(&vertices[4 * quad_count], 4));
-						copy(larray(i), carray(&indices[6 * quad_count], 6));
-						quads[quad_count] = {
-							.layer_sprite = tm.layers[node.index],
-							.parallax = v2f32(node.parallax_factor),
-							.depth = length(node.parallax_factor)
+			auto texture_atlas = Atlas2D::create(ctx, v2u32(2000));//TODO precompute atlas size
+
+			//* Load tiles data
+			auto tilesets_spritesheets = List{ scratch.push_array<rtu32>(8), 0 };
+			for (auto& entry : traverse_by<tmx_tileset_list, &tmx_tileset_list::next>(source.ts_head)) {
+				entry.tileset->user_data.integer = tilesets_spritesheets.current;
+				string img = entry.tileset->image->source;
+				string complete = make_rel_path(scratch, img);
+				tilesets_spritesheets.push_growing(scratch, texture_atlas.load(complete));
+			}
+			tilesets_spritesheets.shrink_to_content(scratch);
+			auto tiles = map(ctx.arena, get_tiles(source), [&](tmx_tile* tile)-> rtu32 { return make_tile(tilesets_spritesheets[tile ? tile->tileset->user_data.integer : 0], tile); });
+
+			//* Count ressources
+
+			//* x:rect y:layers z:images
+			auto counts = [&](this const auto& recurse, tmx_layer* list) -> v3u64 {
+				v3u64 tcount = v3u64(0);
+				for (auto& layer : traverse_by<tmx_layer, &tmx_layer::next>(list)) if (layer.visible) switch(layer.type) {
+					case L_LAYER: tcount += v3u64(1, 1, 0); break;
+					case L_IMAGE: tcount += v3u64(1, 0, 1); break;
+					case L_GROUP: tcount += recurse(layer.content.group_head); break;
+					default: break;
+				}
+				return tcount;
+			}(source.ly_head);
+			auto rect_count = counts.x, layer_count = counts.y, img_count = counts.z;
+
+			printf("Loading %llu rect : %llu layers + %llu images\n", rect_count, layer_count, img_count);
+
+			auto layer_atlas = Atlas2D::create(ctx, v2u32(dimensions.x, dimensions.y * layer_count), R32UI);
+
+			//* Load Tree vertex data
+			v2f32 vertices[4 * rect_count];
+			u32 indices[6 * rect_count];
+			Quad quads[rect_count];
+			u32 quad_idx = 0;
+
+			[&](this const auto& recurse, tmx_layer* list, v2f32 offset = v2f32(0)) -> void {
+				for (auto& layer : traverse_by<tmx_layer, &tmx_layer::next>(list)) if (layer.visible) {
+					auto local_offset = offset + v2f32(layer.offsetx, layer.offsety) / v2f32(source.tile_width, source.tile_height);
+
+					switch (layer.type) {
+					case L_GROUP: recurse(layer.content.group_head, local_offset); break;
+					case L_IMAGE: {
+						auto sprite = texture_atlas.load(make_rel_path(scratch, layer.content.image->source));
+						//TODO add geometry for image quad & handle its rendering in shader
+						(void)sprite;
+					} break;
+					case L_LAYER: {
+						auto rect = rtf32{ local_offset, local_offset + v2f32(dimensions) };
+						auto [v, i] = QuadGeo::create(rect, 4 * quad_idx);
+						copy(larray(v), carray(&vertices[4 * quad_idx], 4));
+						copy(larray(i), carray(&indices[6 * quad_idx], 6));
+						//TODO handle layer.tintcolor & layer.opacity
+						quads[quad_idx] = {
+							.layer_sprite = layer_atlas.push(get_layer_tiles(scratch, layer, dimensions, false)),
+							.parallax = v2f32(layer.parallaxx, layer.parallaxy),
+							.depth = f32(quad_idx)//TODO decide how to assign depth
 						};
-						quad_count += 1;
+						quad_idx += 1;
+					} break;
+					default: break;
 					}
 				}
-			}(tm.nodes);
+			}(source.ly_head);
 
 			Renderer rd = {
-				.indices = GPUBuffer::upload(ctx, carray(indices, 6 * quad_count)),
-				.vertices = GPUBuffer::upload(ctx, carray(vertices, 4 * quad_count)),
-				.quads = GPUBuffer::upload(ctx, carray(quads, quad_count)),
-				.sprites = GPUBuffer::upload(ctx, tm.tiles),
+				.indices = GPUBuffer::upload(ctx, carray(indices, 6 * quad_idx)),
+				.vertices = GPUBuffer::upload(ctx, carray(vertices, 4 * quad_idx)),
+				.quads = GPUBuffer::upload(ctx, carray(quads, quad_idx)),
+				.sprites = GPUBuffer::upload(ctx, tiles),
 				.scene = GPUBuffer::create(ctx, sizeof(Scene), GL_DYNAMIC_STORAGE_BIT),
-				.vao = VertexArray::create(ctx),
-				.layers = tm.layer_atlas.texture.id
+				.layers = layer_atlas.texture,
+				.albedo = texture_atlas.texture,
+				.vao = VertexArray::create(ctx)
 			};
 
 			rd.vao.conf_vattrib(inputs.vertices.positions, vattr_fmt<v2f32>(0));
 			return rd;
 		}
 
-		RenderCommand operator()(Arena& arena, Renderer& renderer, const Scene& s, GLuint albedo) {
+		RenderCommand operator()(Arena& arena, Renderer& renderer, const Scene& s) {
 			PROFILE_SCOPE(__PRETTY_FUNCTION__);
 			renderer.scene.write_one(s);
 			return {
@@ -276,8 +234,8 @@ struct Tilemap {
 					}
 				}),
 				.textures = arena.push_array({
-					TextureBinding{.textures = arena.push_array({ albedo }), .target = inputs.albedo_atlas },
-					TextureBinding{.textures = arena.push_array({ renderer.layers }), .target = inputs.tilemap_layers },
+					TextureBinding{.textures = arena.push_array({ renderer.albedo.id }), .target = inputs.albedo_atlas },
+					TextureBinding{.textures = arena.push_array({ renderer.layers.id }), .target = inputs.tilemap_layers },
 				}),
 				.buffers = arena.push_array({
 					BufferObjectBinding {
@@ -302,69 +260,81 @@ struct Tilemap {
 			};
 		}
 	};
+
+	//* Physics
+	struct Shape {
+		Physics2D::Convex cvx;
+		m3x3f32 transform;
+	};
+
+	struct Collision {
+		Array<const Shape> shapes;
+		m3x3f32 transform;
+	};
+
+	Array<Shape> object_shape(Arena& arena, tmx_object* obj_head) {
+		PROFILE_SCOPE(__PRETTY_FUNCTION__);
+		auto surface_count = count<tmx_object, &tmx_object::next>(obj_head);
+		auto [scratch, scope] = scratch_push_scope(max(1lu << 22, surface_count * 2), &arena); defer{ scratch_pop_scope(scratch, scope); };
+		auto cvxs = List{ scratch.push_array<Shape>(surface_count * 2), 0 };
+		for (auto& obj : traverse_by<tmx_object, &tmx_object::next>(obj_head)) {
+			auto push_content_points = [&](Arena& arena, const tmx_object& obj) { return map(arena, carray(obj.content.shape->points, obj.content.shape->points_len), [&](const f64* pt) -> v2f32 { return v2f32(pt[0], pt[1]);}); };
+			m3x3f32 transform = Transform2D{
+				.translation = v2f32(obj.x, obj.y),
+				.scale = v2f32(1),
+				.rotation = f32(obj.rotation)
+			};
+			rtf32 rect = { v2f32(0), v2f32(obj.width, obj.height) };
+			switch (obj.obj_type) {
+			case OT_POLYLINE: {
+				auto points = push_content_points(scratch, obj);
+				for (auto i : u64xrange{ 0, points.size() - 1 })
+					cvxs.push_growing(scratch, { Physics2D::Convex::make(Segment{ points[i], points[i + 1] }, 0), transform });
+			} break;
+			case OT_POLYGON: {
+				auto local_scope = scratch.current;
+				auto concave = push_content_points(scratch, obj);
+				auto [polys, verts] = ear_clip(arena, concave);
+				scratch_pop_scope(scratch, local_scope);
+				for (auto poly : polys)
+					cvxs.push_growing(scratch, { Physics2D::Convex::make(poly, 0), transform });
+			} break;
+			case OT_POINT: { cvxs.push_growing(scratch, { Physics2D::Convex::ORIGIN(), transform }); } break;
+			case OT_SQUARE: { cvxs.push_growing(scratch, { Physics2D::Convex::make(rect, 0), transform }); } break;
+			case OT_ELLIPSE: {
+				cvxs.push_growing(scratch, { Physics2D::Convex::UNIT_CIRCLE(), transform * m3x3f32(Transform2D{
+					.translation = rect.center(),
+					.scale = rect.size() / 2.f,
+					.rotation = 0
+				}) });
+			} break;
+			default: break;
+			}
+		}
+		return arena.push_array(cvxs.used());
+	}
+
+	Array<Collision> tile_shapeset(Arena& arena, Array<tmx_tile*> tiles, v2u32 tile_dimensions) {
+		PROFILE_SCOPE(__PRETTY_FUNCTION__);
+		return map(arena, tiles,
+			[&](tmx_tile* tile) -> Collision {
+				if (tile)
+					return {
+						.shapes = object_shape(arena, tile->collision),
+						.transform = Transform2D{
+							.translation = v2f32(0),
+							.scale = 1.f / v2f32(tile_dimensions),
+							.rotation = 0
+						}
+					};
+				else
+					return {{}, {}};
+			}
+		);
+	}
+
 };
 
-bool EditorWidget(const cstr label, Tilemap& tm) {
-	bool changed = false;
-	if (ImGui::TreeNode(label)) {
-		defer{ ImGui::TreePop(); };
-		changed |= EditorWidget("Layer Atlas", tm.layer_atlas);
-		changed |= EditorWidget("tiles", tm.tiles);
-		changed |= EditorWidget("layers", tm.layers);
-		changed |= EditorWidget("nodes", tm.nodes);
-		changed |= EditorWidget("dimensions", tm.dimensions);
-		changed |= EditorWidget("tile_pixels", tm.tile_pixels);
-	}
-	return changed;
-}
-
-#include <shape_2d.cpp>
-
-// Array<Shape2D> object_shape(Arena& arena, tmx_object* obj_head) {
-// 	static v2f32 g_origin[] = { v2f32(0) };
-// 	PROFILE_SCOPE(__PRETTY_FUNCTION__);
-// 	auto surface_count = count<tmx_object, &tmx_object::next>(obj_head);
-// 	auto [scratch, scope] = scratch_push_scope(max(1lu << 22, surface_count * 2), &arena); defer{ scratch_pop_scope(scratch, scope); };
-// 	auto objs = List{ scratch.push_array<Shape2D>(surface_count * 2), 0 };
-// 	for (auto& obj : traverse_by<tmx_object, &tmx_object::next>(obj_head)) {
-// 		auto transform = identity_2d;
-// 		transform.translation = v2f32(obj.x, obj.y);
-// 		transform.rotation = glm::radians(obj.rotation);
-// 		auto push_content_points = [&](Arena& arena, tmx_object& obj) { return map(arena, carray(obj.content.shape->points, obj.content.shape->points_len), [&](f64* pt) -> v2f32 { return v2f32(pt[0], pt[1]);}); };
-// 		switch (obj.obj_type) {
-// 		case OT_POLYLINE: {
-// 			auto points = push_content_points(arena, obj);
-// 			for (auto i : u64xrange{ 0, points.size() - 1 })
-// 				objs.push_growing(scratch, make_shape_2d(transform, 0, points.subspan(i, 2)));
-// 		} break;
-// 		case OT_POLYGON: {
-// 			auto local_scope = scratch.current;
-// 			auto concave = push_content_points(scratch, obj);
-// 			auto [polys, verts] = ear_clip(arena, concave);
-// 			scratch_pop_scope(scratch, local_scope);
-// 			for (auto poly : polys)
-// 				objs.push_growing(scratch, make_shape_2d(transform, 0, poly));
-// 		} break;
-// 		case OT_POINT: { objs.push_growing(scratch, make_shape_2d(transform, 0, larray(g_origin))); } break;
-// 		case OT_SQUARE: {
-// 			objs.push_growing(scratch, make_box_shape(arena.push_array<v2f32>(4), v2f32(obj.width, obj.height), v2f32(obj.width, obj.height) / 2.f, transform));
-// 		} break;
-// 		case OT_ELLIPSE: {
-// 			auto dims = v2f32(obj.width, obj.height);
-// 			transform.translation += dims / 2.f;
-// 			transform.scale *= dims / v2f32(max(dims.x, dims.y));
-// 			objs.push_growing(scratch, make_circle_shape(max(dims.x, dims.y) / 2.f, transform));
-// 		} break;
-// 		default: break;;
-// 		}
-// 	}
-// 	return arena.push_array(objs.used());
-// }
-
-// Array<Shape2D> tile_shapeset(Arena& arena, Array<tmx_tile*> tiles) {
-// 	PROFILE_SCOPE(__PRETTY_FUNCTION__);
-// 	return map(arena, tiles, [&](tmx_tile* tile) -> Shape2D { return make_shape_2d(identity_2d, 0, {}, tile ? object_shape(arena, tile->collision) : Array<Shape2D>{}); });
-// }
 
 // Shape2D tilemap_layer_shape(Arena& arena, const tmx_layer& layer, v2u32 dimensions, Array<Shape2D> shapeset, v2u32 tile_dimensions) {
 // 	PROFILE_SCOPE(__PRETTY_FUNCTION__);

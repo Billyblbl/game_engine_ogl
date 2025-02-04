@@ -49,6 +49,79 @@ namespace Physics2D {
 			v2f32 center;
 			Segment<v2f32> segment;
 		};
+
+		static const Convex& ORIGIN() {
+			static Convex c = {
+				.type = CIRCLE,
+				.radius = 0,
+				.center = v2f32(0)
+			};
+			return c;
+		}
+
+		static const Convex& UNIT_CIRCLE() {
+			static Convex c = {
+				.type = CIRCLE,
+				.radius = 1,
+				.center = v2f32(0)
+			};
+			return c;
+		}
+
+		static const Convex& UNIT_RECT() {
+			static Convex c = {
+				.type = RECT,
+				.radius = 1,
+				.rect = rtf32{.min = v2f32(0), .max = v2f32(1)}
+			};
+			return c;
+		}
+
+		static Convex make(rtf32 rect, f32 radius) {
+			return {
+				.type = Convex::RECT,
+				.radius = radius,
+				.rect = rect
+			};
+		}
+
+		static Convex make(Segment<v2f32> segment, f32 radius) {
+			return {
+				.type = Convex::SEGMENT,
+				.radius = radius,
+				.segment = segment
+			};
+		}
+
+		static Convex make(Array<const v2f32> points, f32 radius) {
+			if (points.size() == 0) return {};
+			if (points.size() == 1) return {
+				.type = Convex::CIRCLE,
+				.radius = radius,
+				.center = points[0]
+			};
+			if (points.size() == 2) {
+				if (radius == 0) return {
+					.type = Convex::SEGMENT,
+					.radius = radius,
+					.segment = { points[0], points[1] }
+				};
+				else return {
+					.type = Convex::CAPSULE,
+					.radius = radius,
+					.foci = {
+						points[0],
+						points[1]
+					}
+				};
+			}
+
+			return {
+				.type = Convex::POLYGON,
+				.radius = radius,
+				.poly = points
+			};
+		}
 	};
 
 	struct Collider {

@@ -175,7 +175,6 @@ struct RefactorScene {
 		SpriteMesh::Pipeline draw_sprite_meshes;
 		SpriteMesh::Renderer sm_rd;
 
-		Tilemap level;
 		Tilemap::Pipeline draw_tilemap;
 		Tilemap::Renderer tm_rd;
 
@@ -199,7 +198,6 @@ struct RefactorScene {
 			Spacial2D space;
 			rtu32 sprite;
 			v4f32 color;
-			// Physics2D::RigidBody body;
 			Physics2D::Convex* shape;
 			Physics2D::Momentum momentum;
 			Physics2D::Properties props;
@@ -224,9 +222,8 @@ struct RefactorScene {
 		} };
 		auto mesh_index = sprite_renderer.push_quad_mesh(larray(q), 16);
 
-		auto tm = Tilemap::load(ctx, atlas, assets.level);
 		auto tm_ppl = Tilemap::Pipeline::create(ctx);
-		auto tm_rd = tm_ppl.make_renderer(ctx, tm);
+		auto tm_rd = Tilemap::load_proc(assets.level, [&](auto map){ return tm_ppl.make_renderer(ctx, map); });
 
 		auto ui_ppl = UI::Pipeline::create(ctx);
 		auto ui_rd = ui_ppl.make_renderer(ctx);
@@ -239,7 +236,6 @@ struct RefactorScene {
 				.draw_sprite_meshes = sprite_pipeline,
 				.sm_rd = sprite_renderer,
 
-				.level = tm,
 				.draw_tilemap = tm_ppl,
 				.tm_rd = tm_rd,
 
@@ -279,7 +275,7 @@ struct RefactorScene {
 				.radius = 1,
 				.center = { 0, 0 },
 			}
-			});
+		});
 
 		scene.test = {
 			.shapes = shapes,
@@ -345,7 +341,7 @@ struct RefactorScene {
 		if (debug) {
 			if (ImGui::Begin("Test")) {
 				EditorWidget("Gravity Scale", gravity_scale);
-				EditorWidget("Tilemap", gfx.level);
+				// EditorWidget("Tilemap", gfx.level);
 				for (u32 i = 0; auto & ent : test.entities) {
 					ImGui::PushID(i); defer{ ImGui::PopID(); };
 					ImGui::Text("Sprite [%u]", i++);
@@ -353,6 +349,7 @@ struct RefactorScene {
 					ImGui::BeginGroup(); defer{ ImGui::EndGroup(); };
 					EditorWidget("space", ent.space);
 					EditorWidget("momentum", ent.momentum);
+					EditorWidget("props", ent.props);
 					EditorWidget("sprite", ent.sprite);
 					ImGui::ColorEdit4("color", glm::value_ptr(ent.color));
 				}
@@ -369,13 +366,13 @@ struct RefactorScene {
 				}
 			} ImGui::End();
 		}
-		auto [scratch, scope] = scratch_push_scope(1llu << 24); defer{ scratch_pop_scope(scratch, scope); };
+		auto [scratch, scope] = scratch_push_scope(); defer{ scratch_pop_scope(scratch, scope); };
 		update(clock);
 
 		auto step = Physics2D::SimStep::create(scratch, clock.dt);
 
 		for(auto& ent : test.entities) {
-			//* gravity to origin
+			//* gravity to origin (stronger when farther, closer to a spring)
 			ent.momentum.velocity += -ent.space.transform.translation * Physics2D::GRAVITY * step.dt * gravity_scale;
 
 			//* integrate
@@ -464,16 +461,13 @@ struct RefactorScene {
 				.view_projection = vp,
 				.alpha_discard = 0.01f,
 				.padding = {}
-				}));
-			// render_cmd(gfx.draw_tilemap(scratch, gfx.tm_rd,
-			// 	Tilemap::Scene{
-			// 		.view_projection = vp,
-			// 		.parallax_pov = cam.space.transform.translation,
-			// 		.alpha_discard = 0.1f,
-			// 		.padding = {}
-			// 	},
-			// 	gfx.sprite_atlas.texture.id
-			// ));
+			}));
+			render_cmd(gfx.draw_tilemap(scratch, gfx.tm_rd, {
+				.view_projection = vp,
+				.parallax_pov = cam.space.transform.translation,
+				.alpha_discard = 0.1f,
+				.padding = {}
+			}));
 			if (debug)
 				render_cmd(Physics2D::Debug::render(scratch, debug_batch, vp));
 			// render_cmd(gfx.draw_ui(scratch, gfx.ui_rd));

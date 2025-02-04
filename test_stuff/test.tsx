@@ -5,7 +5,7 @@
  <tile id="0">
   <objectgroup draworder="index" id="4">
    <object id="28" name="AABB" x="7" y="6" width="17" height="24"/>
-   <object id="29" x="2.54545" y="6.18182">
+   <object id="29" x="1.81818" y="6.36364">
     <polygon points="0,0 26.3636,-4 14.9091,24.7273"/>
    </object>
   </objectgroup>

@@ -192,8 +192,7 @@ struct RefactorScene {
 	} cam;
 
 	struct {
-		Array<Physics2D::Convex> shapes;
-
+		Tilemap::Terrain terrain;
 		struct {
 			Spacial2D space;
 			rtu32 sprite;
@@ -206,7 +205,7 @@ struct RefactorScene {
 	} test;
 
 	static RefactorScene create(GLScope& ctx) {
-		auto [scratch, scope] = scratch_push_scope(1ull << 18); defer{ scratch_pop_scope(scratch, scope); };
+		auto [scratch, scope] = scratch_push_scope(0, &ctx.arena); defer{ scratch_pop_scope(scratch, scope); };
 		auto atlas = Atlas2D::create(ctx, v2u32(256 * 8, 256 * 8));
 
 		auto sprite_pipeline = SpriteMesh::Pipeline::create(ctx);
@@ -223,7 +222,14 @@ struct RefactorScene {
 		auto mesh_index = sprite_renderer.push_quad_mesh(larray(q), 16);
 
 		auto tm_ppl = Tilemap::Pipeline::create(ctx);
-		auto tm_rd = Tilemap::load_proc(assets.level, [&](auto map){ return tm_ppl.make_renderer(ctx, map); });
+		auto [tm_rd, tm_terrain] = Tilemap::load_proc(assets.level, [&](auto map) {
+			return tuple(tm_ppl.make_renderer(ctx, map), Tilemap::Terrain::create(ctx.arena, map));
+		});
+
+		printf("Terrain layer count : %llu\n", tm_terrain.layers.size());
+		for (auto& l : tm_terrain.layers) {
+			printf("Terrain layer : %p collision : %u\n", &l, l.collision_layers);
+		}
 
 		auto ui_ppl = UI::Pipeline::create(ctx);
 		auto ui_rd = ui_ppl.make_renderer(ctx);
@@ -269,16 +275,14 @@ struct RefactorScene {
 			.test = {}
 		};
 
-		auto shapes = ctx.arena.push_array<Physics2D::Convex>({
-			{
-				.type = Physics2D::Convex::CIRCLE,
-				.radius = 1,
-				.center = { 0, 0 },
-			}
+		auto& shape = ctx.arena.push(Physics2D::Convex{
+			.type = Physics2D::Convex::CIRCLE,
+			.radius = 1,
+			.center = { 0, 0 },
 		});
 
 		scene.test = {
-			.shapes = shapes,
+			.terrain = tm_terrain,
 			.entities = {
 				{
 					.space = {
@@ -292,7 +296,7 @@ struct RefactorScene {
 					},
 					.sprite = { v2u32(0), v2u32(1) },
 					.color = v4f32(1, 0, 0, 1),
-					.shape = &shapes[0],
+					.shape = &shape,
 					.momentum = {.vec = v3f32(0) },
 					.props = {.vec = v4f32(1, 1, 1, 1) },
 				},
@@ -308,7 +312,7 @@ struct RefactorScene {
 					},
 					.sprite = { v2u32(0), v2u32(1) },
 					.color = v4f32(0, 1, 0, 1),
-					.shape = &shapes[0],
+					.shape = &shape,
 					.momentum = {.vec = v3f32(0) },
 					.props = {.vec = v4f32(1, 1, 1, 1) },
 				},
@@ -324,7 +328,7 @@ struct RefactorScene {
 					},
 					.sprite = { v2u32(0), v2u32(1) },
 					.color = v4f32(0, 0, 1, 1),
-					.shape = &shapes[0],
+					.shape = &shape,
 					.momentum = {.vec = v3f32(0) },
 					.props = {.vec = v4f32(1, 1, 1, 1) },
 				}
@@ -372,8 +376,7 @@ struct RefactorScene {
 		auto step = Physics2D::SimStep::create(scratch, clock.dt);
 
 		for(auto& ent : test.entities) {
-			//* gravity to origin (stronger when farther, closer to a spring)
-			ent.momentum.velocity += -ent.space.transform.translation * Physics2D::GRAVITY * step.dt * gravity_scale;
+			ent.momentum.velocity += v2f32(0, -1) * Physics2D::GRAVITY * step.dt * gravity_scale;
 
 			//* integrate
 			ent.space.transform.translation += ent.momentum.velocity * step.dt;
@@ -389,12 +392,14 @@ struct RefactorScene {
 				.transform = ent.space.transform,
 				.aabb = Physics2D::aabb_convex(*ent.shape, ent.space.transform),
 				.shape = ent.shape,
-				.body_id = bd,
+				.body_id = i32(bd),
 				.layers = 1
 			});
 		}
 
 		step.broad_phase_naive();
+
+		Tilemap::terrain_broadphase(step, test.terrain);
 
 		auto manifolds = Physics2D::query_collisions(scratch, step);
 		// 		//TODO filter manifolds for physical collisions to solve

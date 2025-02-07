@@ -33,10 +33,14 @@
 # Potential tech debt
 
 - [x] Decouple sprite mesh renderer from buffers
-	- Tilemap renderer seems to be in an approprotate state for this (pipeline | renderer | batch)
+	- Tilemap renderer seems to be in an appropriate state for this (pipeline | renderer | batch)
 
 - [ ] parallel array list data structure
 - [ ] linked buffers accumulator data structure
 - [ ] Investigate getting vertex format info directly from the attribute info in the shader
-- [ ] assert ambiguity
-- [ ] tilemap concerns are too scrambled together, rendering, physics, recursive structural stuff, entities ?
+- [ ] multiple assert definition ambiguity
+- [x] tilemap concerns are too scrambled together, rendering, physics, recursive structural stuff, entities ?
+- [ ] physics properties should probably be differentiated between body properties and surfaces properties
+	- could register "materials" in sim step and refer to them in colliders
+		- registering in step wont keep it around between frame, do we want it to be supplied in collider or in shape ? feels like it should be in collider
+		- currently have 2 32bit numbers as properties, might not be worth the indirection

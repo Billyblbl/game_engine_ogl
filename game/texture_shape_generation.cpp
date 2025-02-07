@@ -97,7 +97,7 @@ Array<v2f32> decimate(Arena& arena, Array<v2f32> poly) {
 //* selective marching squares
 Array<Segment<v2f32>> marchsq_contour_segments(Arena& arena, v2u64 dimensions, Array<v2i32> pixels, auto sampler) {
 
-	auto [scratch, scope] = scratch_push_scope(5000000); defer { scratch_pop_scope(scratch, scope); };//TODO tune arena size
+	auto [scratch, scope] = scratch_push_scope(0, &arena); defer { scratch_pop_scope(scratch, scope); };
 
 	v2i32 pieces_offsets[] = { v2i32(0), v2i32(1, 0), v2i32(0, 1), v2i32(1) };
 	bool secondary_markings[dimensions.y + 1][dimensions.x + 1];
@@ -181,7 +181,7 @@ Array<Polygon> outline_polygons(Arena& arena, const Image& source, rtu64 clip, c
 	auto flood_filter = [&](v2i64 coord) { return clip.contain(v2i64(clip.min) + coord) && is_collider(source[v2i64(clip.min) + coord]); };
 
 
-	auto [scratch, scope] = scratch_push_scope(5000000); defer{ scratch_pop_scope(scratch, scope); };//TODO tune scratch size
+	auto [scratch, scope] = scratch_push_scope(0, &arena); defer{ scratch_pop_scope(scratch, scope); };
 	auto polygons = List{ arena.push_array<Polygon>(expected_poly_count), 0 };
 
 	for (auto view_px : range2(clip_dims)) if (!sample_markings(view_px) && is_collider(source[clip.min + view_px])) {

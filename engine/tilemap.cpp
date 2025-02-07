@@ -33,13 +33,27 @@ namespace Tilemap {
 		return prop && prop->type == type ? prop : null;
 	}
 
-	Image get_layer_tiles(Arena& arena, const tmx_layer& layer, v2u32 dimensions, bool remove_flip_bits = true) {
+	template<typename T> struct Array2D {
+		Array<T> data;
+		v2u32 dimensions;
+
+		u64 index(v2u32 coord) const {
+			assert(glm::all(glm::lessThan(coord, dimensions)));
+			return coord.x + coord.y * dimensions.x;
+		}
+
+		T& operator[](v2u64 coord) { return data[index(coord)]; };
+		const T& operator[](v2u64 coord) const { return data[index(coord)]; };
+	};
+
+
+	Array2D<u32> get_layer_tiles(Arena& arena, const tmx_layer& layer, v2u32 dimensions, bool remove_flip_bits = true) {
 		auto content = carray(layer.content.gids, dimensions.x  * dimensions.y);
 		if (remove_flip_bits)
 			content = map(arena, content, [&](auto gid){ return gid & TMX_FLIP_BITS_REMOVAL; });
 		else
 			content = arena.push_array(content);
-		return make_image(content, dimensions, 1);
+		return { .data = content, .dimensions = dimensions };
 	}
 
 	//* Rendering
@@ -161,25 +175,29 @@ namespace Tilemap {
 			Quad quads[rect_count];
 			u32 quad_idx = 0;
 
+			auto tile_dimensions = v2u32(source.tile_width, source.tile_height);
 			[&](this const auto& recurse, tmx_layer* list, v2f32 offset = v2f32(0)) -> void {
 				for (auto& layer : traverse_by<tmx_layer, &tmx_layer::next>(list)) if (layer.visible) {
-					auto local_offset = offset + v2f32(layer.offsetx, layer.offsety) / v2f32(source.tile_width, source.tile_height);
+					auto local_offset = v2f32(layer.offsetx, layer.offsety) / v2f32(tile_dimensions);
+					auto global_offset = offset + local_offset;
+					auto parallax = v2f32(layer.parallaxx, layer.parallaxy);
 
 					switch (layer.type) {
-					case L_GROUP: recurse(layer.content.group_head, local_offset); break;
+					case L_GROUP: recurse(layer.content.group_head, global_offset); break;
 					case L_IMAGE: {
 						auto sprite = texture_atlas.load(make_rel_path(scratch, layer.content.image->source));
 						//TODO add geometry for image quad & handle its rendering in shader
 						(void)sprite;
 					} break;
 					case L_LAYER: {
-						auto rect = rtf32{ local_offset, local_offset + v2f32(dimensions) };
+						auto rect = rtf32{ global_offset, global_offset + v2f32(dimensions) };
 						auto [v, i] = QuadGeo::create(rect, 4 * quad_idx);
 						copy(larray(v), carray(&vertices[4 * quad_idx], 4));
 						copy(larray(i), carray(&indices[6 * quad_idx], 6));
 						//TODO handle layer.tintcolor & layer.opacity
+						auto cells = get_layer_tiles(scratch, layer, dimensions, false);
 						quads[quad_idx] = {
-							.layer_sprite = layer_atlas.push(get_layer_tiles(scratch, layer, dimensions, false)),
+							.layer_sprite = layer_atlas.push(make_image(cells.data, cells.dimensions, 1)),
 							.parallax = v2f32(layer.parallaxx, layer.parallaxy),
 							.depth = f32(quad_idx)//TODO decide how to assign depth
 						};
@@ -267,15 +285,23 @@ namespace Tilemap {
 		m3x3f32 transform;
 	};
 
-	struct Collision {
+	struct TileCollider {
 		Array<const Shape> shapes;
 		m3x3f32 transform;
 	};
 
+	u32 get_layer_collision_layers(const tmx_layer& layer, const cstr name = "CollisionLayers") {
+		auto prop = expect_property(layer.properties, PT_INT, name);
+		if (prop)
+			return prop->value.integer;
+		else
+			return 0;
+	}
+
 	Array<Shape> object_shape(Arena& arena, tmx_object* obj_head) {
 		PROFILE_SCOPE(__PRETTY_FUNCTION__);
 		auto surface_count = count<tmx_object, &tmx_object::next>(obj_head);
-		auto [scratch, scope] = scratch_push_scope(max(1lu << 22, surface_count * 2), &arena); defer{ scratch_pop_scope(scratch, scope); };
+		auto [scratch, scope] = scratch_push_scope(0, &arena); defer{ scratch_pop_scope(scratch, scope); };
 		auto cvxs = List{ scratch.push_array<Shape>(surface_count * 2), 0 };
 		for (auto& obj : traverse_by<tmx_object, &tmx_object::next>(obj_head)) {
 			auto push_content_points = [&](Arena& arena, const tmx_object& obj) { return map(arena, carray(obj.content.shape->points, obj.content.shape->points_len), [&](const f64* pt) -> v2f32 { return v2f32(pt[0], pt[1]);}); };
@@ -314,10 +340,10 @@ namespace Tilemap {
 		return arena.push_array(cvxs.used());
 	}
 
-	Array<Collision> tile_shapeset(Arena& arena, Array<tmx_tile*> tiles, v2u32 tile_dimensions) {
+	Array<TileCollider> tile_shapeset(Arena& arena, Array<tmx_tile*> tiles, v2u32 tile_dimensions) {
 		PROFILE_SCOPE(__PRETTY_FUNCTION__);
 		return map(arena, tiles,
-			[&](tmx_tile* tile) -> Collision {
+			[&](tmx_tile* tile) -> TileCollider {
 				if (tile)
 					return {
 						.shapes = object_shape(arena, tile->collision),
@@ -331,6 +357,143 @@ namespace Tilemap {
 					return {{}, {}};
 			}
 		);
+	}
+
+	struct Terrain {
+		struct Collider {
+			Array2D<u32> cells;
+			rtf32 aabb;
+			u32 collision_layers;
+		};
+		Array<const Collider> layers;
+		Array<const TileCollider> tiles;
+
+		static Terrain create(Arena& arena, const tmx_map& map) {
+			PROFILE_SCOPE(__PRETTY_FUNCTION__);
+			auto [scratch, scope] = scratch_push_scope(0, &arena); defer{ scratch_pop_scope(scratch, scope); };
+			auto tile_dimensions = v2u32(map.tile_width, map.tile_height);
+			auto layers = List{ scratch.push_array<Collider>(10), 0 };
+			auto base_aabb = rtf32{ v2f32(0), v2f32(map.width, map.height) };
+			[&](this const auto& recurse, tmx_layer* list, v2f32 offset = v2f32(0)) -> void {
+				for (auto& layer : traverse_by<tmx_layer, &tmx_layer::next>(list)) if (layer.visible) {
+					auto local_offset = v2f32(layer.offsetx, layer.offsety) / v2f32(tile_dimensions);
+					auto global_offset = offset + local_offset;
+					auto parallax = v2f32(layer.parallaxx, layer.parallaxy);
+					switch (layer.type) {
+						case L_GROUP: recurse(layer.content.group_head, global_offset); break;
+						case L_LAYER:{
+							auto flags = get_layer_collision_layers(layer);
+							if (flags == 0) break;
+							if (glm::all(glm::lessThan(abs(parallax - v2f32(1)), v2f32(0.001f)))) {
+								fprintf(stderr, "Collision layer '%s' cannot have parallax != 1\n", layer.name);
+								break;
+							}
+							layers.push_growing(scratch, {
+								.cells = get_layer_tiles(arena, layer, v2u32(map.width, map.height)),
+								.aabb = { base_aabb.min + global_offset, base_aabb.max + global_offset },
+								.collision_layers = flags
+							});
+						} break;
+						default: break;
+					}
+				}
+			}(map.ly_head);
+			return {
+				.layers = arena.push_array(layers.used()),
+				.tiles = tile_shapeset(arena, get_tiles(map), tile_dimensions)
+			};
+		}
+	};
+
+	tuple<i32xrange, i32xrange> grid_ranges(rti32 grid) {
+		return {
+			i32xrange{ grid.min.x, grid.max.x },
+			i32xrange{ grid.min.y, grid.max.y }
+		};
+	}
+
+	void terrain_broadphase(Physics2D::SimStep& step, const Terrain& terrain) {
+		struct CellCache {
+			num_range<u32> collider_range;
+			i32 tile_collider_index;
+		};
+		auto terrain_bd = step.push_body({// TODO get properties from source
+			.center_mass = v2f32(0),
+			.momentum = { .vec = v3f32(0) },
+			.props = {
+				.inverse_mass = 0,
+				.inverse_inertia = 0,
+				.restitution = 0.5f,
+				.friction = 0.5f
+			}
+		});
+		auto cache_load_cell = [&](const Terrain::Collider& layer, v2u32 coord) -> CellCache {
+			auto layer_offset = layer.aabb.min;
+			m3x3f32 cell_xform = Transform2D{ .translation = layer_offset + v2f32(coord.x, layer.cells.dimensions.y - coord.y), .scale = v2f32(1, -1), .rotation = 0 };
+			u32 start = step.colliders.current;
+			auto tile = layer.cells[coord];
+			auto tile_xform = terrain.tiles[tile].transform;
+			// step.colliders.grow(*step.arena, terrain.tiles[tile].shapes.size());
+			for (auto& shape : terrain.tiles[tile].shapes) {
+				auto xform = cell_xform * tile_xform * shape.transform;
+				step.push_collider(Physics2D::Collider{
+					.transform = xform,
+					.aabb = Physics2D::aabb_convex(shape.cvx, xform),
+					.shape = &shape.cvx,
+					.body_id = i32(terrain_bd),
+					.layers = layer.collision_layers
+				});
+			}
+			// if (step.colliders.current > start) {
+			// 	fprintf(stderr, "col range (%u, %u)\n", start, u32(step.colliders.current));
+			// }
+			return {
+				.collider_range = { .min = start, .max = u32(step.colliders.current) },
+				.tile_collider_index = i32(tile)
+			};
+		};
+
+		for (const auto& layer : terrain.layers) {
+			CellCache cache[layer.cells.dimensions.y][layer.cells.dimensions.x];
+
+			{//* init footprints to invalids
+				auto [rx, ry] = grid_ranges({ .min = v2u32(0), .max = layer.cells.dimensions });
+				for (auto y : ry) for (auto x : rx) cache[y][x] = {
+					.collider_range = {0, 0},
+					.tile_collider_index = -1
+				};
+			}
+
+			auto layer_offset = layer.aabb.min;
+			for (auto col_idx : u32xrange { 0, step.colliders.current } ) if (
+				step.colliders[col_idx].layers & layer.collision_layers &&
+				collide(step.colliders[col_idx].aabb, layer.aabb)
+			) { //* for every collider that intersects the tilemap layer
+				auto intersection = step.colliders[col_idx].aabb & layer.aabb;
+				//! rel_overlap is y up, cell coordinates in layer are y down (grid_overlap)
+				rtf32 rel_overlap = { .min = intersection.min - layer_offset, .max = intersection.max - layer_offset };
+				rti32 grid_overlap = {
+					.min = glm::floor(v2f32(rel_overlap.min.x, layer.cells.dimensions.y - rel_overlap.max.y)),
+					.max = glm::ceil(v2f32(rel_overlap.max.x, layer.cells.dimensions.y - rel_overlap.min.y)),
+				};
+				assert(glm::all(glm::greaterThanEqual(grid_overlap.min, v2i32(0))));
+				assert(glm::all(glm::lessThanEqual(grid_overlap.max, v2i32(layer.cells.dimensions))));
+				auto [rx, ry] = grid_ranges(grid_overlap);
+				for (auto y : ry) for (auto x : rx) { //* every cell in the overlap
+					if (cache[y][x].tile_collider_index < 0)
+						cache[y][x] = cache_load_cell(layer, v2u32(x, y));
+					// else {
+					// 	fprintf(stderr, "[%i, %i] tile_collider_index = %i\n", x, y, cache[y][x].tile_collider_index);
+					// }
+					auto range = cache[y][x].collider_range;
+					for (auto i : iter_ex(range)) if (Physics2D::broad_phase_test(
+					// for (auto i : iter_ex(footprint[y][x].collider_range)) if (Physics2D::broad_phase_test(
+						step.colliders[col_idx],
+						step.colliders[i]
+					)) step.push_test({ .ids = { col_idx, i } });
+				}
+			}
+		}
 	}
 
 };

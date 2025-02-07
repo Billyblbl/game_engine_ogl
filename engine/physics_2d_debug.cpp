@@ -68,7 +68,7 @@ namespace Physics2D {
 			Arena* arena;
 			u32 total_instances;
 			List<v2f32> vertices;
-			List<Convex*> shapes;
+			List<const Convex*> shapes;
 			List<DrawCommandVertex>	commands;
 			List<List<Instance>> instances;
 
@@ -77,7 +77,7 @@ namespace Physics2D {
 					.arena = arena,
 					.total_instances = 0,
 					.vertices = { arena->push_array<v2f32>(expected_shapes), 0 },
-					.shapes = { arena->push_array<Convex*>(expected_shapes), 0 },
+					.shapes = { arena->push_array<const Convex*>(expected_shapes), 0 },
 					.commands = { arena->push_array<DrawCommandVertex>(expected_shapes), 0 },
 					.instances = { arena->push_array<List<Instance>>(expected_shapes), 0 }
 				};
@@ -96,7 +96,7 @@ namespace Physics2D {
 				return write_polygon(larray(v));
 			}
 
-			u32 write_capsule(v2f32 foci[2], f32 radius) {
+			u32 write_capsule(const v2f32 foci[2], f32 radius) {
 				auto index = write_circle(foci[0], radius, debug_config.circle_segments);
 				write_circle(foci[1], radius, debug_config.circle_segments);
 				write_polygon(carray(foci, 2));
@@ -111,7 +111,7 @@ namespace Physics2D {
 				return write_polygon(carray(v, segments));
 			}
 
-			u32 push_content(Convex* shape, num_range<u32> vertex_range, List<Instance> instances_slot = {}) {
+			u32 push_content(const Convex* shape, num_range<u32> vertex_range, List<Instance> instances_slot = {}) {
 				auto index = shapes.current;
 				shapes.push_growing(*arena, shape);
 				commands.push_growing(*arena,
@@ -126,7 +126,7 @@ namespace Physics2D {
 				return index;
 			}
 
-			u32 register_shape(Convex* shape, u32 expected_count = 1) {
+			u32 register_shape(const Convex* shape, u32 expected_count = 1) {
 				auto start_vertex = vertices.current;
 				switch (shape->type) {
 					case Convex::POLYGON: write_polygon(shape->poly); break;
@@ -138,8 +138,8 @@ namespace Physics2D {
 				return push_content(shape, num_range<u32>{ u32(start_vertex), u32(vertices.current) }, List { arena->push_array<Instance>(expected_count), 0 });
 			}
 
-			u32 cache_get_shape(Convex* shape) {
-				auto shape_index = index_of(shapes.used(), shape);
+			u32 cache_get_shape(const Convex* shape) {
+				auto shape_index = index_of(cast<const Convex*>(shapes.used()), shape);
 				if (shape_index == -1)
 					return register_shape(shape);
 				return shape_index;

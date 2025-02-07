@@ -160,7 +160,7 @@ namespace Text {
 			if (auto err = FT_Set_Pixel_Sizes(face, font_size.x, font_size.y))
 				pfterror(__FILE__, __LINE__, err);
 
-			auto [scratch, scope] = scratch_push_scope(1 << 18); defer{ scratch_pop_scope(scratch, scope); };
+			auto [scratch, scope] = scratch_push_scope(); defer{ scratch_pop_scope(scratch, scope); };
 
 			struct Mapping { FT_ULong code; FT_UInt gindex; };
 			auto available_glyphs = List{ scratch.push_array<Mapping>(DEFAULT_PRINTABLE.size()), 0 };
@@ -421,7 +421,7 @@ namespace UI {
 			auto idx = index_in(textures.used(), [&](GLuint id) { return id == font.glyph_atlas.texture.id; });
 			if (idx < 0)
 				idx = push_texture(font.glyph_atlas.texture.id);
-			auto [scratch, scope] = scratch_push_scope(str.size() * sizeof(Quad), arena); defer{ scratch_pop_scope(scratch, scope); };
+			auto [scratch, scope] = scratch_push_scope(); defer{ scratch_pop_scope(scratch, scope); };
 
 			return next_sheet(Sheet{
 				.tint = style.color,

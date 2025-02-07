@@ -137,7 +137,7 @@ tuple<Array<Polygon>, Array<v2f32>> ear_clip(Arena& arena, Polygon polygon, bool
 		return { dec, p };
 	}
 
-	auto [scratch, scope] = scratch_push_scope(5000000); defer{ scratch_pop_scope(scratch, scope); };
+	auto [scratch, scope] = scratch_push_scope(); defer{ scratch_pop_scope(scratch, scope); };
 
 	auto wo = poly_wo(polygon);
 	auto remaining = List{ arena.push_array(polygon), polygon.size() };

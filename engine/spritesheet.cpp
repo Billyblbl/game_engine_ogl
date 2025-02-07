@@ -273,7 +273,7 @@ i32 get_entry(const SpritesheetLayout& layout, string id) {
 }
 
 Array<SpriteAnimation> build_animations(Arena& arena, const SpritesheetLayout& layout, v2u32 texture_dimensions, Array<const string> animations) {
-	auto [scratch, scope] = scratch_push_scope(layout.dimensions.x * layout.dimensions.y * sizeof(rtu32) * 2); defer { scratch_pop_scope(scratch, scope); };
+	auto [scratch, scope] = scratch_push_scope(); defer { scratch_pop_scope(scratch, scope); };
 	auto sheet = slice_spritesheet(scratch, texture_dimensions, layout.dimensions);
 	return map(arena, animations, (
 		[&](string id) -> SpriteAnimation {

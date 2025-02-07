@@ -7,6 +7,8 @@
 	- [x] albedo ?
 - [x] either remove tilemap as a struct or make it intermediary
 - [ ] physics
-	- [ ] devise physical layer selection scheme
+	- [x] devise physical layer selection scheme
 	- [x] extract collision shapes
-	- [ ] layer sample
+	- [x] layer sample
+	- [ ] static body properties
+	

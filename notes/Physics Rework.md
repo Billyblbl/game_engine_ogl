@@ -5,8 +5,8 @@
 	- just keep the dumb O(n²) version for live entities, return to broad phase strategies only when needed (at that point should have a better idea of the project's needs)
 - [x] Finish implementing shape types (support functions)
 - [x] Amalgamate update data batch
-- [ ] Tileset shapes
-- [ ] Broad phase tilemap sample
+- [x] Tileset shapes
+- [x] Broad phase tilemap sample
 - [ ] Actor fields
 - [x] decouple & make a version of shape dedicated to narrow
 	- shape is always convex for narrow

@@ -127,8 +127,8 @@ namespace Physics2D {
 	struct Collider {
 		m3x3f32 transform;
 		rtf32 aabb;
-		Convex* shape;//TODO maybe replace with some sort of ressource handle instead ? invites complexity tho, so maybe keep it a pointer but ensure this is only used a s a temporary lifetime struct
-		u32 body_id;
+		const Convex* shape;//TODO maybe replace with some sort of ressource handle instead ? invites complexity tho, so maybe keep it a pointer but ensure this is only used as a temporary lifetime struct
+		i32 body_id;
 		u32 layers;
 	};
 
@@ -159,7 +159,7 @@ namespace Physics2D {
 	Segment<v2f32> support_circle_cloud(Polygon vertices, const m3x3f32& transform, f32 radius, v2f32 norm_dir) {
 		PROFILE_SCOPE(__PRETTY_FUNCTION__);
 		using namespace glm;
-		auto [scratch, scope] = scratch_push_scope(sizeof(f32) * vertices.size() * 3); defer{ scratch_pop_scope(scratch, scope); };
+		auto [scratch, scope] = scratch_push_scope(); defer{ scratch_pop_scope(scratch, scope); };
 
 		v2f32 local_dir = transpose(transform) * v3f32(norm_dir, 0);
 		v2f32 local_offset = normalize(local_dir) * radius;
@@ -201,6 +201,7 @@ namespace Physics2D {
 			case Convex::CAPSULE: return support_circle_cloud(larray(shape.foci), transform, shape.radius, direction);
 			case Convex::CIRCLE: return support_circle_cloud(carray(&shape.center, 1), transform, shape.radius, direction);
 			case Convex::SEGMENT: return support_circle_cloud(carray(&shape.segment.A, 2), transform, shape.radius, direction);
+			default: panic();
 			}
 			};
 	}
@@ -462,10 +463,9 @@ namespace Physics2D {
 
 	bool broad_phase_test(const Collider& a, const Collider& b) {
 		return
-			(a.body_id != b.body_id || a.body_id == 0 || b.body_id == 0) && //* Not the same body or nullbody
+			(a.body_id != b.body_id || a.body_id < 0 || b.body_id < 0) && //* Not the same body or nullbody
 			(a.layers & b.layers) && //* On the same layers
-			collide(a.aabb, b.aabb)//* AABBs overlaps
-			;
+			collide(a.aabb, b.aabb); //* AABBs overlaps
 	}
 
 	struct SimStep {
@@ -507,7 +507,7 @@ namespace Physics2D {
 	struct Delta {
 		Momentum momentum;
 		v2f32 correction;
-		u32 body_id;
+		i32 body_id;
 	};
 
 	Array<Manifold> query_collisions(Arena& arena, const SimStep& step) {
@@ -535,7 +535,7 @@ namespace Physics2D {
 
 		auto deltas = List{ arena.push_array<Delta>(step.bodies.current), 0 };
 		for (auto& [col, contact] : manifolds) {
-			u32 body_ids[] = { step.colliders[col.ids[0]].body_id, step.colliders[col.ids[1]].body_id };
+			i32 body_ids[] = { step.colliders[col.ids[0]].body_id, step.colliders[col.ids[1]].body_id };
 			auto [impulses] = Physics2D::contact_response(step.bodies[body_ids[0]], step.bodies[body_ids[1]], contact,
 				min(step.bodies[body_ids[0]].props.restitution, step.bodies[body_ids[1]].props.restitution),
 				average({step.bodies[body_ids[0]].props.friction, step.bodies[body_ids[1]].props.friction}) * step.dt,

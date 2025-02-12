@@ -412,7 +412,10 @@ namespace Tilemap {
 		};
 	}
 
-	void terrain_broadphase(Physics2D::SimStep& step, const Terrain& terrain) {
+	Array<Physics2D::NarrowTest> terrain_broadphase(Physics2D::SimStep& step, const Terrain& terrain, u32range collider_range = {}) {
+		if (collider_range.size() == 0)
+			collider_range = { 0, u32(step.colliders.current) };
+		auto tests_start = step.tests.current;
 		struct CellCache {
 			num_range<u32> collider_range;
 			i32 tile_collider_index;
@@ -465,7 +468,7 @@ namespace Tilemap {
 			}
 
 			auto layer_offset = layer.aabb.min;
-			for (auto col_idx : u32xrange { 0, step.colliders.current } ) if (
+			for (auto col_idx : iter_ex(collider_range)) if (
 				step.colliders[col_idx].layers & layer.collision_layers &&
 				collide(step.colliders[col_idx].aabb, layer.aabb)
 			) { //* for every collider that intersects the tilemap layer
@@ -482,18 +485,14 @@ namespace Tilemap {
 				for (auto y : ry) for (auto x : rx) { //* every cell in the overlap
 					if (cache[y][x].tile_collider_index < 0)
 						cache[y][x] = cache_load_cell(layer, v2u32(x, y));
-					// else {
-					// 	fprintf(stderr, "[%i, %i] tile_collider_index = %i\n", x, y, cache[y][x].tile_collider_index);
-					// }
-					auto range = cache[y][x].collider_range;
-					for (auto i : iter_ex(range)) if (Physics2D::broad_phase_test(
-					// for (auto i : iter_ex(footprint[y][x].collider_range)) if (Physics2D::broad_phase_test(
+					for (auto i : iter_ex(cache[y][x].collider_range)) if (Physics2D::broad_phase_test(
 						step.colliders[col_idx],
 						step.colliders[i]
 					)) step.push_test({ .ids = { col_idx, i } });
 				}
 			}
 		}
+		return step.tests.used().subspan(tests_start);
 	}
 
 };

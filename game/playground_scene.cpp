@@ -191,6 +191,7 @@ struct RefactorScene {
 		RenderTarget target;
 	} cam;
 
+	static constexpr u32 ENTITY_COUNT = 3;
 	struct {
 		Tilemap::Terrain terrain;
 		struct {
@@ -200,7 +201,7 @@ struct RefactorScene {
 			Physics2D::Convex* shape;
 			Physics2D::Momentum momentum;
 			Physics2D::Properties props;
-		} entities[3];
+		} entities[ENTITY_COUNT];
 		u32 mesh_index;
 	} test;
 
@@ -375,6 +376,7 @@ struct RefactorScene {
 
 		auto step = Physics2D::SimStep::create(scratch, clock.dt);
 
+		auto first_ent_body = step.bodies.current;
 		for(auto& ent : test.entities) {
 			ent.momentum.velocity += v2f32(0, -1) * Physics2D::GRAVITY * step.dt * gravity_scale;
 
@@ -397,17 +399,19 @@ struct RefactorScene {
 			});
 		}
 
-		step.broad_phase_naive();
-
+		//* Broadphase
+		Physics2D::broadphase_naive(step);
 		Tilemap::terrain_broadphase(step, test.terrain);
 
+		//* Processing
 		auto manifolds = Physics2D::query_collisions(scratch, step);
-		// 		//TODO filter manifolds for physical collisions to solve
-		auto deltas = Physics2D::solve_collisions(scratch, step, manifolds);
+		auto physical = filter(scratch, manifolds, [&](auto m){ return Physics2D::is_physical(step, m); });
+		auto deltas = Physics2D::solve_collisions(scratch, step, /*manifolds*/ physical);
+		auto bodies = Physics2D::apply_resolution(step, deltas);
 
-		for (auto& [momentum, correction, body_id] : deltas) {
-			test.entities[body_id].momentum.vec += momentum.vec;
-			test.entities[body_id].space.transform.translation += correction;
+		for (auto i : u32xrange { 0, ENTITY_COUNT }) {
+			test.entities[i].momentum = bodies[first_ent_body + i].momentum;
+			test.entities[i].space.transform.translation = bodies[first_ent_body + i].center_mass;
 		}
 
 		Physics2D::Debug::Batch debug_batch;

@@ -490,19 +490,21 @@ namespace Physics2D {
 		u32 push_collider(const Collider& col) { return colliders.push_idx(*arena, col); }
 		u32 push_test(NarrowTest test) { return tests.push_idx(*arena, test); }
 
-		Array<NarrowTest> broad_phase_naive(num_range<u32> range = {}) {
-			PROFILE_SCOPE(__PRETTY_FUNCTION__);
-			if (range.size() == 0)
-				range = { 0, u32(colliders.current) };
-			tests.grow(*arena, colliders.current * (colliders.current - 1));
-			for (u32 i = range.min; i < range.max; i++) for (u32 j = i + 1; j < range.max; j++) {
-				if (broad_phase_test(colliders[i], colliders[j]))
-					push_test({ .ids = { i, j } });
-			}
-			return tests.used();
-		}
-
 	};
+
+	Array<NarrowTest> broadphase_naive(SimStep& step, num_range<u32> range = {}) {
+		PROFILE_SCOPE(__PRETTY_FUNCTION__);
+		if (range.size() == 0)
+			range = { 0, u32(step.colliders.current) };
+
+		auto start = step.tests.current;
+		step.tests.grow(*step.arena, step.colliders.current * (step.colliders.current - 1));
+		for (u32 i = range.min; i < range.max; i++) for (u32 j = i + 1; j < range.max; j++) {
+			if (broad_phase_test(step.colliders[i], step.colliders[j]))
+			step.push_test({ .ids = { i, j } });
+		}
+		return step.tests.used().subspan(start);
+	}
 
 	struct Delta {
 		Momentum momentum;
@@ -558,6 +560,28 @@ namespace Physics2D {
 			}
 		}
 		return deltas.shrink_to_content(arena);
+	}
+
+	Array<const Body> apply_resolution(SimStep& step, Array<const Delta> deltas, u32range body_range = {}) {
+		if (body_range.size() == 0)
+			body_range = { 0, u32(step.bodies.current) };
+		for (auto& [momentum, correction, body_id] : deltas) if (body_range.contains_idx(body_id)) {
+			step.bodies[body_id].momentum.vec += momentum.vec;
+			step.bodies[body_id].center_mass += correction;
+		}
+		return step.bodies.used().subspan(body_range.min, body_range.size());
+	}
+
+	bool is_physical(const SimStep& step, const Manifold& manifold/*TODO, ??? flag_matrix*/) {
+		auto& [col, contact] = manifold;
+		i32 body_ids[] = { step.colliders[col.ids[0]].body_id, step.colliders[col.ids[1]].body_id };
+
+		//TODO auto by_flags = flag_matrix_match(step.colliders[col.ids[0]].layers, step.colliders[col.ids[1]].layers, flag_matrix);
+
+		auto angularly = step.bodies[body_ids[0]].props.inverse_inertia != 0 || step.bodies[body_ids[1]].props.inverse_inertia != 0;
+		auto linearly = step.bodies[body_ids[0]].props.inverse_mass != 0 || step.bodies[body_ids[1]].props.inverse_mass != 0;
+
+		return angularly || linearly;//TODO || by_flags
 	}
 
 }

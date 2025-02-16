@@ -1,8 +1,5 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <map version="1.10" tiledversion="1.11.2" class="Level" orientation="orthogonal" renderorder="right-down" width="30" height="20" tilewidth="32" tileheight="32" infinite="0" nextlayerid="9" nextobjectid="66">
- <properties>
-  <property name="CollisionLayers" type="int" propertytype="Collision" value="0"/>
- </properties>
  <tileset firstgid="1" source="test.tsx"/>
  <group id="6" name="root">
   <layer id="7" name="Test Layer Physics" width="30" height="20">

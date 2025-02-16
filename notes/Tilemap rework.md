@@ -6,7 +6,7 @@
 	- [x] layer textures
 	- [x] albedo ?
 - [x] either remove tilemap as a struct or make it intermediary
-- [ ] physics
+- [ ] physics [[Physics Rework]]
 	- [x] devise physical layer selection scheme
 	- [x] extract collision shapes
 	- [x] layer sample

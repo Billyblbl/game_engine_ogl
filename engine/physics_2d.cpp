@@ -501,24 +501,18 @@ namespace Physics2D {
 		step.tests.grow(*step.arena, step.colliders.current * (step.colliders.current - 1));
 		for (u32 i = range.min; i < range.max; i++) for (u32 j = i + 1; j < range.max; j++) {
 			if (broad_phase_test(step.colliders[i], step.colliders[j]))
-			step.push_test({ .ids = { i, j } });
+				step.push_test({ .ids = { i, j } });
 		}
 		return step.tests.used().subspan(start);
 	}
 
-	struct Delta {
-		Momentum momentum;
-		v2f32 correction;
-		i32 body_id;
-	};
-
-	Array<Manifold> query_collisions(Arena& arena, const SimStep& step) {
+	Array<Manifold> query_collisions(Arena& arena, Array<const NarrowTest> tests, Array<const Collider> colliders) {
 		PROFILE_SCOPE(__PRETTY_FUNCTION__);
-		auto manifolds = List{ arena.push_array<Manifold>(step.tests.current), 0 };
-		for (auto& col : step.tests.used()) {
+		auto manifolds = List{ arena.push_array<Manifold>(tests.size()), 0 };
+		for (auto& col : tests) {
 			auto [collided, contact] = Physics2D::intersect_convex(
-				support_function_of(*step.colliders[col.ids[0]].shape, step.colliders[col.ids[0]].transform),
-				support_function_of(*step.colliders[col.ids[1]].shape, step.colliders[col.ids[1]].transform),
+				support_function_of(*colliders[col.ids[0]].shape, colliders[col.ids[0]].transform),
+				support_function_of(*colliders[col.ids[1]].shape, colliders[col.ids[1]].transform),
 				0.f
 			);
 			if (collided) manifolds.push({
@@ -529,22 +523,28 @@ namespace Physics2D {
 		return manifolds.shrink_to_content(arena);
 	}
 
-	Array<Delta> solve_collisions(Arena& arena, const SimStep& step, Array<const Manifold> manifolds) {
+	struct Delta {
+		Momentum momentum;
+		v2f32 correction;
+		i32 body_id;
+	};
+
+	Array<Delta> solve_collisions(Arena& arena, Array<const Body> bodies, Array<const Collider> colliders, Array<const Manifold> manifolds, f32 dt) {
 		PROFILE_SCOPE(__PRETTY_FUNCTION__);
 		//TODO somehow distribute energy changes, currently every contact gets a response with full momentum from initial state
-		i32 mapping[step.bodies.current];
-		memset(mapping, -1, step.bodies.current * sizeof(i32));
+		i32 mapping[bodies.size()];
+		memset(mapping, -1, bodies.size() * sizeof(i32));
 
-		auto deltas = List{ arena.push_array<Delta>(step.bodies.current), 0 };
+		auto deltas = List{ arena.push_array<Delta>(bodies.size()), 0 };
 		for (auto& [col, contact] : manifolds) {
-			i32 body_ids[] = { step.colliders[col.ids[0]].body_id, step.colliders[col.ids[1]].body_id };
-			auto [impulses] = Physics2D::contact_response(step.bodies[body_ids[0]], step.bodies[body_ids[1]], contact,
-				min(step.bodies[body_ids[0]].props.restitution, step.bodies[body_ids[1]].props.restitution),
-				average({step.bodies[body_ids[0]].props.friction, step.bodies[body_ids[1]].props.friction}) * step.dt,
-				step.bodies[body_ids[0]].props.friction * step.bodies[body_ids[1]].props.friction
+			i32 body_ids[] = { colliders[col.ids[0]].body_id, colliders[col.ids[1]].body_id };
+			auto [impulses] = Physics2D::contact_response(bodies[body_ids[0]], bodies[body_ids[1]], contact,
+				min(bodies[body_ids[0]].props.restitution, bodies[body_ids[1]].props.restitution),
+				average({bodies[body_ids[0]].props.friction, bodies[body_ids[1]].props.friction}) * dt,
+				bodies[body_ids[0]].props.friction * bodies[body_ids[1]].props.friction
 			);
 
-			f32 inv_mass[] = { step.bodies[body_ids[0]].props.inverse_mass, step.bodies[body_ids[1]].props.inverse_mass };
+			f32 inv_mass[] = { bodies[body_ids[0]].props.inverse_mass, bodies[body_ids[1]].props.inverse_mass };
 			auto [corrections] = Physics2D::contact_correction(contact.penetration, inv_mass);
 
 			for (u32 i = 0; i < 2; i++) if (mapping[body_ids[i]] == -1) {
@@ -562,24 +562,24 @@ namespace Physics2D {
 		return deltas.shrink_to_content(arena);
 	}
 
-	Array<const Body> apply_resolution(SimStep& step, Array<const Delta> deltas, u32range body_range = {}) {
+	Array<const Body> apply_resolution(Array<Body> bodies, Array<const Delta> deltas, u32range body_range = {}) {
 		if (body_range.size() == 0)
-			body_range = { 0, u32(step.bodies.current) };
+			body_range = { 0, u32(bodies.size()) };
 		for (auto& [momentum, correction, body_id] : deltas) if (body_range.contains_idx(body_id)) {
-			step.bodies[body_id].momentum.vec += momentum.vec;
-			step.bodies[body_id].center_mass += correction;
+			bodies[body_id].momentum.vec += momentum.vec;
+			bodies[body_id].center_mass += correction;
 		}
-		return step.bodies.used().subspan(body_range.min, body_range.size());
+		return bodies.subspan(body_range.min, body_range.size());
 	}
 
-	bool is_physical(const SimStep& step, const Manifold& manifold/*TODO, ??? flag_matrix*/) {
+	bool is_physical(Array<const Body> bodies, Array<const Collider> colliders, const Manifold& manifold/*TODO, ??? flag_matrix*/) {
 		auto& [col, contact] = manifold;
-		i32 body_ids[] = { step.colliders[col.ids[0]].body_id, step.colliders[col.ids[1]].body_id };
+		i32 body_ids[] = { colliders[col.ids[0]].body_id, colliders[col.ids[1]].body_id };
 
-		//TODO auto by_flags = flag_matrix_match(step.colliders[col.ids[0]].layers, step.colliders[col.ids[1]].layers, flag_matrix);
+		//TODO auto by_flags = flag_matrix_match(colliders[col.ids[0]].layers, colliders[col.ids[1]].layers, flag_matrix);
 
-		auto angularly = step.bodies[body_ids[0]].props.inverse_inertia != 0 || step.bodies[body_ids[1]].props.inverse_inertia != 0;
-		auto linearly = step.bodies[body_ids[0]].props.inverse_mass != 0 || step.bodies[body_ids[1]].props.inverse_mass != 0;
+		auto angularly = bodies[body_ids[0]].props.inverse_inertia != 0 || bodies[body_ids[1]].props.inverse_inertia != 0;
+		auto linearly = bodies[body_ids[0]].props.inverse_mass != 0 || bodies[body_ids[1]].props.inverse_mass != 0;
 
 		return angularly || linearly;//TODO || by_flags
 	}

@@ -7,7 +7,16 @@
 - [x] Amalgamate update data batch
 - [x] Tileset shapes
 - [x] Broad phase tilemap sample
-- [ ] Actor fields
+- [x] physical collision filtering
+- [x] decouple query & solve from simstep
+	- [x] query
+	- [x] solve
+	- [x] application ?
+	- might be more to decouple, anything that can just take the buffers as input instead
+- [ ] tilemap surface properties
+- [ ] Layer flags collision matrix ?
+- [ ] fixed timestep
+- [ ] Actor fields ?
 - [x] decouple & make a version of shape dedicated to narrow
 	- shape is always convex for narrow
 	- simpler shape, only goal is to make a support function

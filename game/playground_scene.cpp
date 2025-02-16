@@ -404,10 +404,10 @@ struct RefactorScene {
 		Tilemap::terrain_broadphase(step, test.terrain);
 
 		//* Processing
-		auto manifolds = Physics2D::query_collisions(scratch, step);
-		auto physical = filter(scratch, manifolds, [&](auto m){ return Physics2D::is_physical(step, m); });
-		auto deltas = Physics2D::solve_collisions(scratch, step, /*manifolds*/ physical);
-		auto bodies = Physics2D::apply_resolution(step, deltas);
+		auto manifolds = Physics2D::query_collisions(scratch, step.tests.used(), step.colliders.used());
+		auto physical = filter(scratch, manifolds, [&](auto m){ return Physics2D::is_physical(step.bodies.used(), step.colliders.used(), m); });
+		auto deltas = Physics2D::solve_collisions(scratch, step.bodies.used(), step.colliders.used(), physical, step.dt);
+		auto bodies = Physics2D::apply_resolution(step.bodies.used(), deltas);
 
 		for (auto i : u32xrange { 0, ENTITY_COUNT }) {
 			test.entities[i].momentum = bodies[first_ent_body + i].momentum;

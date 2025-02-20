@@ -45,7 +45,7 @@ namespace Physics2D {
 			v4f32 collider_aabb = v4f32(1, 0, 0, 1);
 			v4f32 supports = v4f32(0, 1, 1, 1);
 
-			bool draw_edit(const cstr label) {
+			bool draw_edit_window(const cstr label) {
 				auto changed = false;
 				if (ImGui::Begin(label)) {
 					changed |= ImGui::Checkbox("AABB", &aabb);
@@ -140,7 +140,7 @@ namespace Physics2D {
 
 			u32 cache_get_shape(const Convex* shape) {
 				auto shape_index = index_of(cast<const Convex*>(shapes.used()), shape);
-				if (shape_index == -1)
+				if (shape_index == NILBODY)
 					return register_shape(shape);
 				return shape_index;
 			}

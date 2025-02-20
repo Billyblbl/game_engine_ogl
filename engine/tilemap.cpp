@@ -412,7 +412,7 @@ namespace Tilemap {
 		};
 	}
 
-	Array<Physics2D::NarrowTest> terrain_broadphase(Physics2D::SimStep& step, const Terrain& terrain, u32range collider_range = {}) {
+	Array<Physics2D::NarrowTest> terrain_broadphase(Physics2D::SimStep& step, const Terrain& terrain, const Physics2D::FlagMatrix<u32>& detections, u32range collider_range = {}) {
 		if (collider_range.size() == 0)
 			collider_range = { 0, u32(step.colliders.current) };
 		auto tests_start = step.tests.current;
@@ -485,9 +485,10 @@ namespace Tilemap {
 				for (auto y : ry) for (auto x : rx) { //* every cell in the overlap
 					if (cache[y][x].tile_collider_index < 0)
 						cache[y][x] = cache_load_cell(layer, v2u32(x, y));
-					for (auto i : iter_ex(cache[y][x].collider_range)) if (Physics2D::broad_phase_test(
+					for (auto i : iter_ex(cache[y][x].collider_range)) if (Physics2D::broadphase_test(
 						step.colliders[col_idx],
-						step.colliders[i]
+						step.colliders[i],
+						detections
 					)) step.push_test({ .ids = { col_idx, i } });
 				}
 			}

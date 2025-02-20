@@ -12,7 +12,44 @@
 
 namespace Physics2D {
 
-	constexpr f32 GRAVITY = 9.807f;
+	template<typename T> struct FlagMatrix {
+		static constexpr auto BIT_SIZE = sizeof(T) * 8;
+		T rows[BIT_SIZE];
+
+		bool operator[](v2u32 coord) const {
+			return rows[coord.y] & (1 << coord.x);
+		}
+
+		static T mask_idx(u32 index) { return (T(1) << index); }
+
+		bool set(u32 row, T xmask, bool value) {
+			rows[row] = (rows[row] & ~(xmask)) | (value ? xmask : 0);
+			return value;
+		}
+
+		bool set(v2u32 coord, bool value, bool symetric = true) {
+			if (symetric)
+				set(coord.x, mask_idx(coord.y), value);
+			return set(coord.y, mask_idx(coord.x), value);
+		}
+
+		bool mask_match(T mask_a, T mask_b) const {
+			for (u32 r = 0; r < BIT_SIZE; r++) {
+				if ((mask_a & mask_idx(r)) && (rows[r] & mask_b))
+					return true;
+			}
+			return false;
+		}
+
+		static FlagMatrix<T> create_fill(bool value = true) {
+			FlagMatrix<T> fm;
+			for (auto& row : fm.rows)
+				row = value ? T(-1) : 0;
+			return fm;
+		}
+	};
+
+	constexpr f32 EARTH_GRAVITY = 9.807f;
 
 	union Momentum {
 		v3f32 vec = v3f32(0);
@@ -131,6 +168,8 @@ namespace Physics2D {
 		i32 body_id;
 		u32 layers;
 	};
+
+	constexpr i32 NILBODY = -1;
 
 	struct NarrowTest { u32 ids[2]; };
 
@@ -461,10 +500,10 @@ namespace Physics2D {
 		} };
 	}
 
-	bool broad_phase_test(const Collider& a, const Collider& b) {
+	bool broadphase_test(const Collider& a, const Collider& b, const FlagMatrix<u32>& detections) {
 		return
 			(a.body_id != b.body_id || a.body_id < 0 || b.body_id < 0) && //* Not the same body or nullbody
-			(a.layers & b.layers) && //* On the same layers
+			detections.mask_match(a.layers, b.layers) && //* On colliding layers
 			collide(a.aabb, b.aabb); //* AABBs overlaps
 	}
 
@@ -475,13 +514,13 @@ namespace Physics2D {
 		List<NarrowTest> tests;
 		f32 dt;
 
-		static SimStep create(Arena& arena, f32 dt, u32 expected_bodies = 1024, u32 expected_colliders_per_bodies = 8) {
+		static SimStep create(Arena* arena, f32 dt, u32 expected_bodies = 1024, u32 expected_colliders_per_bodies = 8) {
 			auto expected_colliders = expected_bodies * expected_colliders_per_bodies;
 			return {
-				.arena = &arena,
-				.bodies = List{ arena.push_array<Body>(expected_bodies), 0 },
-				.colliders = List{ arena.push_array<Collider>(expected_colliders), 0 },
-				.tests = List{ arena.push_array<NarrowTest>(expected_colliders * (expected_colliders - 1)), 0 },
+				.arena = arena,
+				.bodies = List{ arena->push_array<Body>(expected_bodies), 0 },
+				.colliders = List{ arena->push_array<Collider>(expected_colliders), 0 },
+				.tests = List{ arena->push_array<NarrowTest>(expected_colliders * (expected_colliders - 1)), 0 },
 				.dt = dt
 			};
 		}
@@ -492,7 +531,7 @@ namespace Physics2D {
 
 	};
 
-	Array<NarrowTest> broadphase_naive(SimStep& step, num_range<u32> range = {}) {
+	Array<NarrowTest> broadphase_naive(SimStep& step, const FlagMatrix<u32>& detections, num_range<u32> range = {}) {
 		PROFILE_SCOPE(__PRETTY_FUNCTION__);
 		if (range.size() == 0)
 			range = { 0, u32(step.colliders.current) };
@@ -500,7 +539,7 @@ namespace Physics2D {
 		auto start = step.tests.current;
 		step.tests.grow(*step.arena, step.colliders.current * (step.colliders.current - 1));
 		for (u32 i = range.min; i < range.max; i++) for (u32 j = i + 1; j < range.max; j++) {
-			if (broad_phase_test(step.colliders[i], step.colliders[j]))
+			if (broadphase_test(step.colliders[i], step.colliders[j], detections))
 				step.push_test({ .ids = { i, j } });
 		}
 		return step.tests.used().subspan(start);
@@ -540,7 +579,7 @@ namespace Physics2D {
 			i32 body_ids[] = { colliders[col.ids[0]].body_id, colliders[col.ids[1]].body_id };
 			auto [impulses] = Physics2D::contact_response(bodies[body_ids[0]], bodies[body_ids[1]], contact,
 				min(bodies[body_ids[0]].props.restitution, bodies[body_ids[1]].props.restitution),
-				average({bodies[body_ids[0]].props.friction, bodies[body_ids[1]].props.friction}) * dt,
+				average({ bodies[body_ids[0]].props.friction, bodies[body_ids[1]].props.friction }) * dt,
 				bodies[body_ids[0]].props.friction * bodies[body_ids[1]].props.friction
 			);
 
@@ -572,16 +611,22 @@ namespace Physics2D {
 		return bodies.subspan(body_range.min, body_range.size());
 	}
 
-	bool is_physical(Array<const Body> bodies, Array<const Collider> colliders, const Manifold& manifold/*TODO, ??? flag_matrix*/) {
-		auto& [col, contact] = manifold;
-		i32 body_ids[] = { colliders[col.ids[0]].body_id, colliders[col.ids[1]].body_id };
+	Array<const Manifold> filter_physical(Arena& arena, Array<const Body> bodies, Array<const Collider> colliders, Array<const Manifold> manifolds, const FlagMatrix<u32>& flag_matrix) {
+		auto is_physical = [&](const Manifold& manifold){
+			auto& [col, contact] = manifold;
+			i32 body_ids[] = { colliders[col.ids[0]].body_id, colliders[col.ids[1]].body_id };
 
-		//TODO auto by_flags = flag_matrix_match(colliders[col.ids[0]].layers, colliders[col.ids[1]].layers, flag_matrix);
+			auto by_flags = flag_matrix.mask_match(colliders[col.ids[0]].layers, colliders[col.ids[1]].layers);
+			auto angularly = bodies[body_ids[0]].props.inverse_inertia != 0 || bodies[body_ids[1]].props.inverse_inertia != 0;
+			auto linearly = bodies[body_ids[0]].props.inverse_mass != 0 || bodies[body_ids[1]].props.inverse_mass != 0;
 
-		auto angularly = bodies[body_ids[0]].props.inverse_inertia != 0 || bodies[body_ids[1]].props.inverse_inertia != 0;
-		auto linearly = bodies[body_ids[0]].props.inverse_mass != 0 || bodies[body_ids[1]].props.inverse_mass != 0;
+			return (angularly || linearly) && by_flags;
+		};
+		return filter(arena, manifolds, [&](auto& m){ return is_physical(m); });
+	}
 
-		return angularly || linearly;//TODO || by_flags
+	inline u32 step_count(f32 phx_time, f32 real_time, f32 dt, i32range tick_limits) {
+		return u32(glm::clamp(i32((real_time - phx_time) / dt), tick_limits.min, tick_limits.max));
 	}
 
 }

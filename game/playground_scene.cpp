@@ -374,59 +374,93 @@ struct RefactorScene {
 		auto [scratch, scope] = scratch_push_scope(); defer{ scratch_pop_scope(scratch, scope); };
 		update(clock);
 
-		auto step = Physics2D::SimStep::create(scratch, clock.dt);
+		static struct {
+			Arena arena;
+			f32 time;
+			f32 target_dt;
+			struct {
+				Array<Physics2D::Manifold> collisions;
+				Array<Physics2D::Delta> deltas;
+				Physics2D::SimStep step;
+			} last_update;
+		} phx_tests = { Arena::from_vmem(1 << 24, Arena::COMMIT_ON_PUSH | Arena::ALLOW_CHAIN_GROWTH | Arena::ALLOW_MOVE_MORPH), 0, 1.f / 60.f, {} };
 
-		auto first_ent_body = step.bodies.current;
-		for(auto& ent : test.entities) {
-			ent.momentum.velocity += v2f32(0, -1) * Physics2D::GRAVITY * step.dt * gravity_scale;
+		//* Physics Simulation iterations
+		auto phx_it_this_frame = Physics2D::step_count(phx_tests.time, clock.current, phx_tests.target_dt, { 0, 5 });
+		for (auto phx_it : u32xrange{ 0, phx_it_this_frame }) {
+			(void)phx_it;
+			phx_tests.arena.reset();
+			auto step = Physics2D::SimStep::create(&phx_tests.arena, phx_tests.target_dt);
+			phx_tests.time += phx_tests.target_dt;
+			//TODO physics steps
 
-			//* integrate
-			ent.space.transform.translation += ent.momentum.velocity * step.dt;
-			ent.space.transform.rotation += ent.momentum.angular_velocity * step.dt;
+			auto first_ent_body = step.bodies.current;
+			for (auto& ent : test.entities) {
+				ent.momentum.velocity += v2f32(0, -1) * Physics2D::EARTH_GRAVITY * step.dt * gravity_scale;
 
-			//* submit to simulation
-			auto bd = step.push_body({
-				.center_mass = ent.space.transform.translation,
-				.momentum = ent.momentum,
-				.props = ent.props
-			});
-			step.push_collider({
-				.transform = ent.space.transform,
-				.aabb = Physics2D::aabb_convex(*ent.shape, ent.space.transform),
-				.shape = ent.shape,
-				.body_id = i32(bd),
-				.layers = 1
-			});
-		}
+				//* integrate
+				ent.space.transform.translation += ent.momentum.velocity * step.dt;
+				ent.space.transform.rotation += ent.momentum.angular_velocity * step.dt;
 
-		//* Broadphase
-		Physics2D::broadphase_naive(step);
-		Tilemap::terrain_broadphase(step, test.terrain);
+				//* submit to simulation
+				auto bd = step.push_body({
+					.center_mass = ent.space.transform.translation,
+					.momentum = ent.momentum,
+					.props = ent.props
+				});
+				step.push_collider({
+					.transform = ent.space.transform,
+					.aabb = Physics2D::aabb_convex(*ent.shape, ent.space.transform),
+					.shape = ent.shape,
+					.body_id = i32(bd),
+					.layers = 1
+				});
+			}
 
-		//* Processing
-		auto manifolds = Physics2D::query_collisions(scratch, step.tests.used(), step.colliders.used());
-		auto physical = filter(scratch, manifolds, [&](auto m){ return Physics2D::is_physical(step.bodies.used(), step.colliders.used(), m); });
-		auto deltas = Physics2D::solve_collisions(scratch, step.bodies.used(), step.colliders.used(), physical, step.dt);
-		auto bodies = Physics2D::apply_resolution(step.bodies.used(), deltas);
+			//* Broadphase
+			static auto detections = Physics2D::FlagMatrix<u32>::create_fill();
+			Physics2D::broadphase_naive(step, detections);
+			Tilemap::terrain_broadphase(step, test.terrain, detections);
 
-		for (auto i : u32xrange { 0, ENTITY_COUNT }) {
-			test.entities[i].momentum = bodies[first_ent_body + i].momentum;
-			test.entities[i].space.transform.translation = bodies[first_ent_body + i].center_mass;
+			//* Processing
+			static auto physical_collisions = Physics2D::FlagMatrix<u32>::create_fill();
+			auto manifolds = Physics2D::query_collisions(phx_tests.arena, step.tests.used(), step.colliders.used());
+			auto physical = Physics2D::filter_physical(phx_tests.arena, step.bodies.used(), step.colliders.used(), manifolds, physical_collisions);
+			auto deltas = Physics2D::solve_collisions(phx_tests.arena, step.bodies.used(), step.colliders.used(), physical, step.dt);
+			auto bodies = Physics2D::apply_resolution(step.bodies.used(), deltas, { u32(first_ent_body) , u32(step.bodies.current) });
+
+			for (auto i : u32xrange{ 0, ENTITY_COUNT }) {
+				test.entities[i].momentum = bodies[i].momentum;
+				test.entities[i].space.transform.translation = bodies[i].center_mass;
+			}
+
+			phx_tests.last_update = {
+				.collisions = manifolds,
+				.deltas = deltas,
+				.step = step
+			};
 		}
 
 		Physics2D::Debug::Batch debug_batch;
 		if (debug) {
-			Physics2D::Debug::debug_config.draw_edit("Physics debug config");
+			Physics2D::Debug::debug_config.draw_edit_window("Physics debug config");
 
-			if (ImGui::Begin("Physics")) {
-				EditorWidget("Step", step);
-				EditorWidgetArray("Manifolds", manifolds, [](auto l, auto e) { return EditorWidget(l, e); });
-				EditorWidgetArray("Deltas", deltas, [](auto l, auto e) { return EditorWidget(l, e); });
+			if (ImGui::Begin("Physics test last update")) {
+				EditorWidget("Target dt",  phx_tests.target_dt);
+				EditorWidget("Step",  phx_tests.last_update.step);
+				EditorWidgetArray("Collisions", phx_tests.last_update.collisions, [](auto l, auto e) { return EditorWidget(l, e); });
+				EditorWidgetArray("Deltas", phx_tests.last_update.deltas, [](auto l, auto e) { return EditorWidget(l, e); });
+
+				auto it_color = phx_it_this_frame > 0 ? ImVec4(0, 1, 0, 1) : ImVec4(1, 0, 0, 1);
+				ImGui::PushStyleColor(ImGuiCol_::ImGuiCol_Text, it_color);
+				ImGui::Text("Physics Iterations this frame : %u", phx_it_this_frame);
+				ImGui::PopStyleColor();
+
 			} ImGui::End();
 
 			debug_batch = Physics2D::Debug::Batch::create(&scratch);
-			debug_batch.push_sim_step(step);
-			for (auto& man : manifolds)
+			debug_batch.push_sim_step(phx_tests.last_update.step);
+			for (auto& man : phx_tests.last_update.collisions)
 				debug_batch.push_manifold(man);
 		}
 
@@ -470,13 +504,13 @@ struct RefactorScene {
 				.view_projection = vp,
 				.alpha_discard = 0.01f,
 				.padding = {}
-			}));
+				}));
 			render_cmd(gfx.draw_tilemap(scratch, gfx.tm_rd, {
 				.view_projection = vp,
 				.parallax_pov = cam.space.transform.translation,
 				.alpha_discard = 0.1f,
 				.padding = {}
-			}));
+				}));
 			if (debug)
 				render_cmd(Physics2D::Debug::render(scratch, debug_batch, vp));
 			// render_cmd(gfx.draw_ui(scratch, gfx.ui_rd));

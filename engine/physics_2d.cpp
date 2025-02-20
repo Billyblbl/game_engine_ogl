@@ -575,6 +575,7 @@ namespace Physics2D {
 		memset(mapping, -1, bodies.size() * sizeof(i32));
 
 		auto deltas = List{ arena.push_array<Delta>(bodies.size()), 0 };
+		u32 correction_counts[bodies.size()];//! should different corrections be weighed differently ?
 		for (auto& [col, contact] : manifolds) {
 			i32 body_ids[] = { colliders[col.ids[0]].body_id, colliders[col.ids[1]].body_id };
 			auto [impulses] = Physics2D::contact_response(bodies[body_ids[0]], bodies[body_ids[1]], contact,
@@ -588,6 +589,7 @@ namespace Physics2D {
 
 			for (u32 i = 0; i < 2; i++) if (mapping[body_ids[i]] == -1) {
 				mapping[body_ids[i]] = deltas.current;
+				correction_counts[deltas.current] = 1;
 				deltas.push({
 					.momentum = impulses[i],
 					.correction = corrections[i],
@@ -596,8 +598,11 @@ namespace Physics2D {
 			} else {
 				deltas[mapping[body_ids[i]]].correction += corrections[i];
 				deltas[mapping[body_ids[i]]].momentum.vec += impulses[i].vec;
+				correction_counts[mapping[body_ids[i]]] += 1;
 			}
 		}
+		for (auto i : u32xrange {0, u32(deltas.current)})
+			deltas[i].momentum.vec /= correction_counts[i];
 		return deltas.shrink_to_content(arena);
 	}
 

@@ -17,7 +17,7 @@
 	- [x] detection
 	- [x] physical
 - [x] fixed timestep
-- [ ] Fix energy conservation
+- [x] Fix energy conservation
 - [ ] tilemap surface properties
 - [ ] Actor fields ?
 - [x] decouple & make a version of shape dedicated to narrow

@@ -40,6 +40,7 @@
 - [ ] Investigate getting vertex format info directly from the attribute info in the shader
 - [ ] multiple assert definition ambiguity
 - [x] tilemap concerns are too scrambled together, rendering, physics, recursive structural stuff, entities ?
+- [ ] energy conservation on multiple deltas response is currently done by averaging the deltas by correction count, should it be weighted on something ? (solve_collisions)
 - [ ] physics properties should probably be differentiated between body properties and surfaces properties
 	- could register "materials" in sim step and refer to them in colliders
 		- registering in step wont keep it around between frame, do we want it to be supplied in collider or in shape ? feels like it should be in collider

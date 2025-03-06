@@ -90,14 +90,11 @@ static void glfw_error_callback(int error, const cstr description) {
 }
 
 struct App {
-	GLFWwindow* window;
+	GLFWwindow* window;//TODO maybe ? handle multiple windows
 	Input::Context* inputs;
 	v2u32 pixel_dimensions;
-	u64 scene_id;
-	Time::Clock runtime;
 
-	static constexpr u64 ID_EXIT = 0;
-	static App create(const cstr window_title, v2u32 window_dimensions, u64 start_scene) {
+	static App create(const cstr window_title, v2u32 window_dimensions) {
 		PROFILE_SCOPE(__PRETTY_FUNCTION__);
 		//TODO Proper error handling
 		glfwSetErrorCallback(glfw_error_callback);
@@ -114,7 +111,11 @@ struct App {
 
 		int display_w, display_h;
 		glfwGetFramebufferSize(window, &display_w, &display_h);
-		return App{ window, &input_context, v2u32(display_w, display_h), start_scene, Time::start() };
+		return App{
+			.window = window,
+			.inputs = &input_context,
+			.pixel_dimensions = v2u32(display_w, display_h),
+		};
 	}
 
 	void release() {
@@ -122,12 +123,22 @@ struct App {
 		glfwTerminate();
 	}
 
-	bool request_change_scene(u64 target_scene) {
-		scene_id = target_scene;
+	bool update() {
+		PROFILE_SCOPE(__PRETTY_FUNCTION__);
+		int display_w, display_h;
+		glfwGetFramebufferSize(window, &display_w, &display_h);
+		pixel_dimensions.x = display_w;
+		pixel_dimensions.y = display_h;
+		if (glfwWindowShouldClose(window))
+			return false;
+		{
+			PROFILE_SCOPE("sync");
+			glfwSwapBuffers(window);
+		}
+		PROFILE_SCOPE("Inputs");
+		Input::poll(*inputs);
 		return true;
 	}
-
-	bool request_exit() { return request_change_scene(App::ID_EXIT); }
 
 };
 
@@ -147,27 +158,6 @@ bool init_ogl(bool debug = DEBUG_GL) {
 	}
 
 	return true;
-}
-
-bool update(App& app, u64 target_scene) {
-	PROFILE_SCOPE(__PRETTY_FUNCTION__);
-	int display_w, display_h;
-	glfwGetFramebufferSize(app.window, &display_w, &display_h);
-	app.pixel_dimensions.x = display_w;
-	app.pixel_dimensions.y = display_h;
-
-	if (glfwWindowShouldClose(app.window)) {
-		app.scene_id = 0;
-		return false;
-	}
-	{
-		PROFILE_SCOPE("sync");
-		glfwSwapBuffers(app.window);
-	}
-	PROFILE_SCOPE("Inputs");
-	Input::poll(*app.inputs);
-	update(app.runtime);
-	return app.scene_id == target_scene;
 }
 
 RenderPass window_renderpass(GLFWwindow* window) {

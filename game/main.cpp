@@ -6,7 +6,7 @@
 #include <spall/profiling.cpp>
 #include <system_editor.cpp>
 
-bool engine_test(App& app, u64 scene_id) {
+bool engine_test(App& app) {
 	PROFILE_SCOPE(__PRETTY_FUNCTION__);
 	ImGui::init_ogl_glfw(app.window); defer{ ImGui::shutdown_ogl_glfw(); };
 	auto scene = RefactorScene::create(GLScope::global());
@@ -14,7 +14,7 @@ bool engine_test(App& app, u64 scene_id) {
 	glFinish();
 
 	PROFILE_SCOPE("Frame");
-	while (update(app, scene_id)) {
+	while (app.update()) {
 		defer{ profile_scope_restart("Frame"); };
 		ImGui::NewFrame_OGL_GLFW();
 		ImGui::DockSpaceOverViewport(0, ImGui::GetWindowViewport(), ImGuiDockNodeFlags_PassthruCentralNode);
@@ -31,22 +31,17 @@ bool engine_test(App& app, u64 scene_id) {
 			ImGui::Draw();
 		}
 	}
-	return true;
+	return false;
 }
 
 i32 main() {
-	defer { GLScope::global().release(); };
-	enum SceneID : u64 {
-		EXIT = App::ID_EXIT,
-		PLAYGROUND,
-	};
 	PROFILE_PROCESS("engine_test.spall");
 	PROFILE_THREAD(1024 * 1024);
 	PROFILE_SCOPE("Run");
-	auto app = App::create("Test engine", v2u32(1920, 1080), PLAYGROUND); defer{ app.release(); };
+	defer { GLScope::global().release(); };
+	auto app = App::create("Test engine", v2u32(1920, 1080)); defer{ app.release(); };
 	if (!init_ogl())
 		return 1;
-	while (app.scene_id != EXIT)
-		engine_test(app, PLAYGROUND);
+	while (engine_test(app));
 	return 0;
 }

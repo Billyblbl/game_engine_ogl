@@ -152,6 +152,10 @@ inline bool EditorWidget(const cstr label, f32& data) {
 	return ImGui::DragFloat(label, &data, .01f, .0f, .0f, "%.4f");
 }
 
+inline bool EditorWidget(const cstr label, f64& data) {
+	return ImGui::InputDouble(label, &data, .01f, .0f, "%.6f");
+}
+
 inline bool EditorWidget(const cstr label, v2f32& data) {
 	return ImGui::DragFloat2(label, glm::value_ptr(data), .01f, .0f, .0f, "%.4f");
 }

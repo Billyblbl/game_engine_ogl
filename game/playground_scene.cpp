@@ -250,7 +250,7 @@ struct RefactorScene {
 				.ui_rd = ui_rd,
 				.font = font,
 			},
-			.clock = Time::start(),
+			.clock = Time::Clock::start(),
 			.cam = {
 				.space = {
 					.transform = {
@@ -372,7 +372,7 @@ struct RefactorScene {
 			} ImGui::End();
 		}
 		auto [scratch, scope] = scratch_push_scope(); defer{ scratch_pop_scope(scratch, scope); };
-		update(clock);
+		clock.update();
 
 		static struct {
 			Arena arena;
@@ -386,13 +386,12 @@ struct RefactorScene {
 		} phx_tests = { Arena::from_vmem(1 << 24, Arena::COMMIT_ON_PUSH | Arena::ALLOW_CHAIN_GROWTH | Arena::ALLOW_MOVE_MORPH), 0, 1.f / 60.f, {} };
 
 		//* Physics Simulation iterations
-		auto phx_it_this_frame = Physics2D::step_count(phx_tests.time, clock.current, phx_tests.target_dt, { 0, 5 });
+		auto phx_it_this_frame = Physics2D::step_count(phx_tests.time, clock.app_time, phx_tests.target_dt, { 0, 5 });
 		for (auto phx_it : u32xrange{ 0, phx_it_this_frame }) {
 			(void)phx_it;
 			phx_tests.arena.reset();
 			auto step = Physics2D::SimStep::create(&phx_tests.arena, phx_tests.target_dt);
 			phx_tests.time += phx_tests.target_dt;
-			//TODO physics steps
 
 			auto first_ent_body = step.bodies.current;
 			for (auto& ent : test.entities) {
@@ -766,7 +765,7 @@ struct RefactorScene {
 // 			player_input(player->content<Entity>().ctrl);
 
 // 		update_characters(gather<SidescrollCharacter>(scratch, entities.used()), physics.collisions.used(), physics.gravity, clock);
-// 		if (auto it_count = physics.iteration_count(clock.current); it_count > 0)
+// 		if (auto it_count = physics.iteration_count(clock.app_time); it_count > 0)
 // 			physics(gather<RigidBody>(scratch, entities.used()), gather<Spacial2D*>(scratch, entities.used()), it_count);
 
 // 		if (cam.valid() && player.valid())
@@ -809,7 +808,7 @@ struct RefactorScene {
 // 			}
 // 		);
 
-// 		for (auto temp : gather(scratch, entities.used(), Entity::Usable | Entity::Temporary)) if (temp->lifetime.over(clock.current))
+// 		for (auto temp : gather(scratch, entities.used(), Entity::Usable | Entity::Temporary)) if (temp->lifetime.over(clock.app_time))
 // 			temp->discard();
 
 // 		//Resource cleanup

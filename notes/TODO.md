@@ -7,7 +7,7 @@
 	- binding may be a perf issue
 		- alternatively using DSA to bind once (or on internal state changes) and never unbind
 			- could still allow double buffering by using 1 buffer using halves
-- [ ] Tilemap renderer -> [[Tilemap rework]]
+- [x] Tilemap renderer -> [[Tilemap rework]]
 	- [x] Command construction
 	- ~~Reuse modified spritemesh renderer instead ?~~
 - [x] Rework ui renderer
@@ -19,9 +19,12 @@
 		- ui panels can push white or textured quads
 		- "list"-like ui panel layouts may share a sheet for elements
 	- tinted textured quads, sample into white texture for flat colors
-- [ ] Rework physics
+- [x] Rework physics
 	- [[Physics Rework]]
-- [ ] Trim application complexity
+- [x] application utilities pass
+	- [x] gamepad detection
+	- [x] change time to accumulation
+	- [x] change time to 64bits
 - [ ] Sound perf
 	- profiler indicates pretty long processing, what is going on here ?
 - [ ] Make test environment
@@ -45,3 +48,4 @@
 	- could register "materials" in sim step and refer to them in colliders
 		- registering in step wont keep it around between frame, do we want it to be supplied in collider or in shape ? feels like it should be in collider
 		- currently have 2 32bit numbers as properties, might not be worth the indirection
+- [ ] tilemap surface properties

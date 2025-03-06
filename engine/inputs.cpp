@@ -383,7 +383,7 @@ namespace Input {
 	};
 
 	void poll(Context& context) {
-		//Reset states
+		//* Reset states
 		for (auto key : KB::All)
 			context.key_states[KB::index_of(key)] = ButtonState::None;
 		for (auto i : u32xrange{ 0, Mouse::COUNT })
@@ -393,7 +393,7 @@ namespace Input {
 
 		glfwPollEvents();
 
-		// Read pressed button states
+		//* Read pressed button states
 		for (auto key : KB::All) if (glfwGetKey(context.window, key) == Action::Press)
 			context.key_states[KB::index_of(key)] |= ButtonState::Pressed;
 		for (auto i : u32xrange{ 0, Mouse::COUNT }) if (glfwGetMouseButton(context.window, i))
@@ -424,7 +424,6 @@ namespace Input {
 			input[i] = composite(state[i].neg, state[i].pos);
 		return input;
 	}
-
 
 	void context_key_callback(
 		GLFWwindow*,
@@ -478,6 +477,17 @@ namespace Input {
 		return list.used();
 	}
 
+	void context_joystick_callback(int jid, int event) {
+		get_context().gamepads.indices = get_gamepads();
+		auto name = glfwGetJoystickName(jid);
+		if (event == GLFW_CONNECTED) {
+			printf("Detected new gamepad %i : %s\n", jid, name);
+			glfwGetGamepadState(jid, (GLFWgamepadstate*)&get_context().gamepads.states[jid]);
+		} else if (event == GLFW_DISCONNECTED) {
+			printf("Detected disconnected gamepad %i : %s\n", jid, name);
+		}
+	}
+
 	Context& init_context(GLFWwindow* window) {
 		auto& newContext = get_context();
 		newContext.window = window;
@@ -489,10 +499,13 @@ namespace Input {
 		glfwGetCursorPos(window, &newContext.mouse_pos.x, &newContext.mouse_pos.y);
 		glfwSetCursorPosCallback(window, (GLFWcursorposfun)&context_mouse_pos_callback);
 		glfwSetScrollCallback(window, (GLFWscrollfun)&context_scroll_callback);
+		glfwSetJoystickCallback((GLFWjoystickfun)&context_joystick_callback);
 
 		newContext.gamepads.indices = get_gamepads();
-		for (auto id : newContext.gamepads.indices)
+		for (auto id : newContext.gamepads.indices) {
+			printf("Detected initial gamepad %i : %s\n", id, glfwGetJoystickName(id));
 			glfwGetGamepadState(id, (GLFWgamepadstate*)&newContext.gamepads.states[id]);
+		}
 		return newContext;
 	}
 
@@ -555,7 +568,7 @@ namespace Input {
 		switch (source.type) {
 		case AxisSource::Button_Axis: return comp();
 		case AxisSource::GP_Axis: return axis();
-		default: return fail_ret("Invalid input source for single axis, only accpts KB_C_Key, GP_Axis, GP_C_Button", ButtonState::None);
+		default: return fail_ret("Invalid input source for single axis, only accepts Button_Axis, GP_Axis", ButtonState::None);
 		}
 	}
 
